@@ -11,9 +11,6 @@ Parameters:
   JobsTableName:
     Type: String
     Default: afl-app-dev-jobs
-  ScenarioAssetsBucketName:
-    Type: String
-    Default: afl-video-bootstrap-artifactbucket-xiuriidgyft4
   PermissionsBoundaryArn:
     Type: String
 Resources:
