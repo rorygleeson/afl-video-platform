@@ -3,7 +3,7 @@
   "scenarioId": "afl-grand-final-winning-kick",
   "version": "v1",
   "videoGenerationEnabled": false,
-  "model": "gemini-omni-1.2-flash",
+  "model": "UNCONFIGURED",
   "videoConcurrency": 1,
   "requireExplicitPaidAction": true,
   "scenes": [
@@ -24,5 +24,5 @@
     }
   ],
   "maxPaidScenesPerRequest": 1,
-  "notes": "No video generation code yet; flag remains false until paid API, scene-specific idempotency and locks are implemented."
+  "notes": "Config and dry-run previews only. No paid video API submission exists; choose and validate provider schema before enabling."
 }
