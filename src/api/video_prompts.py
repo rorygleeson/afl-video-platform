@@ -11,7 +11,7 @@ PREFIX = "scenarios/afl-grand-final-winning-kick/v1/"
 VIDEO_PREFIX = PREFIX + "video/"
 SCENE_IDS = ("scene1", "scene2", "scene3")
 MAX_TEMPLATE_BYTES = 12000
-NAME_RE = re.compile(r"^[^\\W\\d_][^\\W\\d_ '\\-]{0,39}(?:[ '\\-][^\\W\\d_][^\\W\\d_ '\\-]{0,39})?$", re.UNICODE)
+NAME_RE = re.compile(r"^[^\W\d_]+(?:[ '-][^\W\d_]+)*$", re.UNICODE)
 TEAM_NAMES = {
     "adelaide": "Adelaide Crows", "brisbane": "Brisbane Lions",
     "carlton": "Carlton Blues", "collingwood": "Collingwood Magpies",
