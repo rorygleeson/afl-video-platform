@@ -19,6 +19,7 @@ UPLOAD_BUCKET = os.environ["UPLOAD_BUCKET"]
 JOBS_TABLE = os.environ["JOBS_TABLE"]
 FRONTEND_ORIGIN = os.environ["FRONTEND_ORIGIN"]
 IMAGE_STATE_MACHINE_ARN = os.environ["IMAGE_STATE_MACHINE_ARN"]
+VIDEO_WORKER_ARN = os.environ.get("VIDEO_WORKER_ARN")
 
 # Presigned browser POSTs must target the bucket's regional endpoint and use
 # Signature Version 4. The default client can generate a global endpoint with
@@ -30,6 +31,7 @@ S3 = boto3.client(
 )
 DDB = boto3.resource("dynamodb").Table(JOBS_TABLE)
 STATES = boto3.client("stepfunctions")
+LAMBDA = boto3.client("lambda")
 
 MAX_UPLOAD = 10 * 1024 * 1024
 MIME_EXT = {
@@ -236,10 +238,34 @@ def images_for_job(job):
                           "scenes": public_job(job)["scenes"], "images": images})
 
 
+def google_auth_check():
+    """Keyless Google authentication test; never starts a model job."""
+    if not VIDEO_WORKER_ARN:
+        return response(503, {"status": "NOT_CONFIGURED", "videoGenerationEnabled": False})
+    invocation = LAMBDA.invoke(
+        FunctionName=VIDEO_WORKER_ARN,
+        InvocationType="RequestResponse",
+        Payload=json.dumps({"op": "auth_check"}).encode(),
+    )
+    if invocation.get("FunctionError"):
+        LOG.warning("Google authentication probe failed; inspect video-worker CloudWatch logs")
+        return response(502, {
+            "status": "AUTHENTICATION_FAILED",
+            "videoGenerationEnabled": False,
+            "message": "Check /aws/lambda/afl-app-dev-video-worker logs for the Google API or IAM error",
+        })
+    result = json.loads(invocation["Payload"].read())
+    if result.get("status") != "AUTHENTICATED":
+        return response(502, {"status": "AUTHENTICATION_FAILED", "videoGenerationEnabled": False})
+    return response(200, {"status": "AUTHENTICATED", "videoGenerationEnabled": False})
+
+
 def lambda_handler(event, context):
     method = (event.get("httpMethod") or "").upper()
     path = event.get("path") or ""
     try:
+        if method == "GET" and path == "/video/auth-check":
+            return google_auth_check()
         if method == "GET" and path == "/scenarios":
             return response(200, {
                 "scenarios": [{
