@@ -303,6 +303,25 @@ def recover(job_id):
         failed = 3 - completed
         outcome = "FAILED" if completed == 0 else (
             "COMPLETED" if completed == 3 else "PARTIAL_SUCCESS")
+        # Guard against losing a concurrently saved scene: require each
+        # observed scene status to be unchanged before replacing the scene map.
+        names = {"#status": "status"}
+        values = {
+            ":outcome": outcome, ":scenes": scenes,
+            ":completed": completed, ":failed": failed,
+            ":now": datetime.now(timezone.utc).isoformat(), ":old": overall,
+        }
+        conditions = ["#status = :old"]
+        old_scenes = job.get("scenes") or {}
+        for index, name in enumerate(VALID_SCENES):
+            alias = "#scene" + str(index)
+            names[alias] = name
+            if name in old_scenes and "status" in old_scenes[name]:
+                value_alias = ":old_scene" + str(index)
+                values[value_alias] = old_scenes[name]["status"]
+                conditions.append("scenes." + alias + ".#status = " + value_alias)
+            else:
+                conditions.append("attribute_not_exists(scenes." + alias + ")")
         try:
             TABLE.update_item(
                 Key={"jobId": job_id},
@@ -311,13 +330,9 @@ def recover(job_id):
                     "completedScenes = :completed, failedScenes = :failed, "
                     "completedAt = :now"
                 ),
-                ConditionExpression="#status = :old",
-                ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={
-                    ":outcome": outcome, ":scenes": scenes,
-                    ":completed": completed, ":failed": failed,
-                    ":now": datetime.now(timezone.utc).isoformat(), ":old": overall,
-                },
+                ConditionExpression=" AND ".join(conditions),
+                ExpressionAttributeNames=names,
+                ExpressionAttributeValues=values,
             )
             return {"status": outcome, "completedScenes": completed, "failedScenes": failed}
         except ClientError as exc:
