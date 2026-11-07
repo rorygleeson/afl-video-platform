@@ -93,6 +93,10 @@ Resources:
                 Effect: Allow
                 Action: [s3:PutObject, s3:GetObject]
                 Resource: !Sub '${UploadsBucket.Arn}/uploads/*'
+              - Sid: ReadGeneratedResultImages
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${UploadsBucket.Arn}/results/*'
               - Sid: StartScene1OnExplicitRequest
                 Effect: Allow
                 Action: states:StartExecution
