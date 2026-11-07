@@ -155,7 +155,6 @@ Resources:
             Condition:
               StringEquals:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
-              ForAnyValue:StringEquals:
                 'token.actions.githubusercontent.com:sub':
                   - !Sub 'repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubBranch}'
                   - !Sub 'repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/deploy'
