@@ -36,3 +36,13 @@ The test page intentionally has no live Generate action until the API/image pipe
 ## Important security notes
 
 This is a public HTTPS CloudFront page backed by a **private S3 bucket**. Do not put secrets into frontend HTML/JS. CloudFormation execution permissions remain broad; review and tighten them before using this deployment mechanism for production or an AWS account with other workloads.
+
+## Approved staged video expansion — 8 November 2026 (NOT DEPLOYED)
+
+This page originally covered initial frontend bootstrap; existing stack/bootstrap instructions above are historical. For the current system and next stages see [architecture](ARCHITECTURE.md) and [Video implementation plan](VIDEO_IMPLEMENTATION_PLAN.md).
+
+**Do not create a feature branch.** Commit design/code changes to `main`, and deploy by the existing explicit `deploy` marker flow only at the relevant approved stage. A `main` commit alone does not deploy the app. New resources belong in the separate `afl-app-dev-video` CloudFormation stack; minimal additive backend API/IAM and frontend changes follow after infrastructure simulation, with no alterations to the existing Replicate worker/state-machine definition. Review CloudFormation change sets for replacements.
+
+**Important existing deploy-packaging finding:** `.github/workflows/deploy.yml` currently copies `handler.py` and `video_prompts.py` into `dist/api`, but the ZIP command packages only `handler.py`. Before any API Lambda deployment, fix the ZIP step to include both modules and add a cold-import smoke test. Also verify retention: `results/` images and job TTL currently have a seven-day window; define separate `videos/` retention for later customer use.
+
+Stage gates: 1 docs; 2 actual Google Omni API contract; 3 separate infrastructure & mock worker; 4 additive API and UI; 5 FFmpeg assembly; 6 explicitly authorised real paid tests. **Stop for user approval between stages.** Video generation remains disabled by default.
