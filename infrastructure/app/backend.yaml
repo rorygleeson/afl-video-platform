@@ -1,0 +1,227 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AFL Stage 1B serverless API foundation for selfie uploads and jobs.
+Parameters:
+  ArtifactBucketName:
+    Type: String
+  LambdaArtifactKey:
+    Type: String
+  FrontendOrigin:
+    Type: String
+    AllowedPattern: '^https://[a-zA-Z0-9.-]+$'
+  PermissionsBoundaryArn:
+    Type: String
+Resources:
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'afl-app-dev-uploads-${AWS::AccountId}-${AWS::Region}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins: [!Ref FrontendOrigin]
+            AllowedMethods: [GET, HEAD, POST]
+            AllowedHeaders: ['*']
+            MaxAge: 300
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireTestUploads
+            Status: Enabled
+            Prefix: uploads/
+            ExpirationInDays: 7
+          - Id: AbortIncompleteMultipart
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: afl-app-dev-jobs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: jobId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: jobId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      SSESpecification:
+        SSEEnabled: true
+  ApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-api-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ApiUploadsAndJobs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: PresignAndVerifyUploads
+                Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub '${UploadsBucket.Arn}/uploads/*'
+              - Sid: StoreJobs
+                Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:GetItem]
+                Resource: !GetAtt JobsTable.Arn
+              - Sid: WriteApiLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-api:*'
+  ApiLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: afl-app-dev-api
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      MemorySize: 256
+      Timeout: 15
+      Role: !GetAtt ApiRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref LambdaArtifactKey
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadsBucket
+          JOBS_TABLE: !Ref JobsTable
+          FRONTEND_ORIGIN: !Ref FrontendOrigin
+  ApiLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/afl-app-dev-api
+      RetentionInDays: 14
+  RestApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: afl-app-dev-api
+      Description: Development API using API keys for throttling.
+      EndpointConfiguration:
+        Types: [REGIONAL]
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref RestApi
+      ParentId: !GetAtt RestApi.RootResourceId
+      PathPart: '{proxy+}'
+  ProxyAny:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiLambda.Arn}/invocations'
+  ProxyOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref RestApi
+      ResourceId: !Ref ProxyResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      ApiKeyRequired: false
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode":200}'
+        IntegrationResponses:
+          - StatusCode: '200'
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${FrontendOrigin}'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,x-api-key,Idempotency-Key'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+      MethodResponses:
+        - StatusCode: '200'
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+  Default4xxResponse:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RestApi
+      ResponseType: DEFAULT_4XX
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: !Sub "'${FrontendOrigin}'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,x-api-key,Idempotency-Key'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+  Default5xxResponse:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref RestApi
+      ResponseType: DEFAULT_5XX
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: !Sub "'${FrontendOrigin}'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,x-api-key,Idempotency-Key'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
+  InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ApiLambda
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/*'
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: [ProxyAny, ProxyOptions]
+    Properties:
+      RestApiId: !Ref RestApi
+      StageName: dev
+  ApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: afl-app-dev-test-api-key
+      Enabled: true
+  ApiUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: ApiDeployment
+    Properties:
+      UsagePlanName: afl-app-dev-test-plan
+      ApiStages:
+        - ApiId: !Ref RestApi
+          Stage: dev
+      Throttle:
+        BurstLimit: 10
+        RateLimit: 5
+      Quota:
+        Limit: 10000
+        Period: MONTH
+  UsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref ApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref ApiUsagePlan
+Outputs:
+  ApiBaseUrl:
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/dev'
+  ApiKeyId:
+    Value: !Ref ApiKey
+  UploadsBucketName:
+    Value: !Ref UploadsBucket
+  JobsTableName:
+    Value: !Ref JobsTable
