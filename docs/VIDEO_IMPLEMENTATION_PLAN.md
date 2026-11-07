@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-08. **Stage:** 1 — documentation/design only. **Next gate:** verify the actual Gemini Omni 1.2 Flash Google Cloud API contract before any video deployment. **Repository:** `main`; CD uses the existing `deploy` marker branch and CloudFormation. No feature branch required.
 
-## Goal and current reality
+**Stage 2 official API research (8 November 2026):** [Google Omni Stage 2 API contract](GOOGLE_OMNI_STAGE2_API_CONTRACT.md). The model ID, documented JSON contract and S3-only feasibility are confirmed; authenticated model entitlement, quota and actual inline MP4 retrieval are untested.\n\n## Goal and current reality
 
 Keep the **existing** selfie + team + first/last name -> three parallel Replicate personalised reference images -> private S3 workflow operational and unchanged. Existing Google Workload Identity Federation **auth check** and three **free S3 prompt preview** buttons are deployed. **No paid video generation, video state machine, FFmpeg assembly or video playback has been implemented.**
 
