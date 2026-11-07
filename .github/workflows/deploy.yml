@@ -54,6 +54,7 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
           aws-region: ap-southeast-2
+          disable-retry: true
       - name: Verify caller
         run: aws sts get-caller-identity
       - name: Deploy frontend CloudFormation
