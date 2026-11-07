@@ -49,7 +49,7 @@ function setup() {
   };
   const fetch = async (url, opts = {}) => {
     calls.push({url, opts});
-    if (/\\/video\\/scene[123]\\/preview$/.test(url)) return {
+    if (url.includes('/video/scene') && url.endsWith('/preview')) return {
       ok: true, async json() { return {
         sceneId: url.match(/scene[123]/)[0], playerName: 'Alex Tonelli',
         teamName: 'Geelong Cats', durationSeconds: 8,
