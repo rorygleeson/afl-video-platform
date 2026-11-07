@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Isolated mock-only AFL video pipeline. No model calls and no existing backend modifications.
+Parameters:
+  ArtifactBucketName:
+    Type: String
+  VideoMockWorkerArtifactKey:
+    Type: String
+  UploadsBucketName:
+    Type: String
+    Default: afl-app-dev-uploads-134387458447-ap-southeast-2
+  JobsTableName:
+    Type: String
+    Default: afl-app-dev-jobs
+  ScenarioAssetsBucketName:
+    Type: String
+    Default: afl-video-bootstrap-artifactbucket-xiuriidgyft4
+  PermissionsBoundaryArn:
+    Type: String
+Resources:
+  VideoAdmissionTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: afl-app-dev-video-admission
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: slotId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: slotId
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+  VideoMockWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-video-mock-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: MockVideoLeastPrivilege
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadReferenceImages
+                Effect: Allow
+                Action: [s3:GetObject]
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/results/*'
+              - Sid: WriteMockMarkersOnly
+                Effect: Allow
+                Action: [s3:PutObject]
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/video-mock/*'
+              - Sid: ReadJobs
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${JobsTableName}'
+              - Sid: AdmissionSingleSlot
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:PutItem, dynamodb:DeleteItem]
+                Resource: !GetAtt VideoAdmissionTable.Arn
+              - Sid: Logs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-video-mock-worker:*'
+  VideoMockWorker:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: afl-app-dev-video-mock-worker
+      Description: Mock-only; contains no Google model calls.
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      MemorySize: 256
+      Timeout: 30
+      Role: !GetAtt VideoMockWorkerRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref VideoMockWorkerArtifactKey
+      Environment:
+        Variables:
+          MODE: MOCK_ONLY
+          UPLOAD_BUCKET: !Ref UploadsBucketName
+          JOBS_TABLE: !Ref JobsTableName
+          ADMISSION_TABLE: !Ref VideoAdmissionTable
+  VideoMockWorkerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/afl-app-dev-video-mock-worker
+      RetentionInDays: 14
+  VideoStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-video-sfn-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeVideoMockWorker
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt VideoMockWorker.Arn
+  VideoStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: afl-app-dev-video
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt VideoStateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment":"Mock-only per-scene video workflow. Never calls Google.",
+          "StartAt":"Claim",
+          "TimeoutSeconds":300,
+          "States":{
+            "Claim":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${VideoMockWorker.Arn}","Payload":{"op":"claim","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.claim","Next":"MockSubmit","Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"ClaimFailed"}]},
+            "MockSubmit":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${VideoMockWorker.Arn}","Payload":{"op":"submit","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.submit","Next":"Wait","Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"CleanupFailure"}]},
+            "Wait":{"Type":"Wait","Seconds":2,"Next":"MockPoll"},
+            "MockPoll":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${VideoMockWorker.Arn}","Payload":{"op":"poll","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.poll","Next":"Status","Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"CleanupFailure"}]},
+            "Status":{"Type":"Choice","Choices":[{"Variable":"$.poll.Payload.status","StringEquals":"MOCK_READY","Next":"MockSave"}],"Default":"Wait"},
+            "MockSave":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${VideoMockWorker.Arn}","Payload":{"op":"save","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.save","Next":"Release","Catch":[{"ErrorEquals":["States.ALL"],"ResultPath":"$.error","Next":"CleanupFailure"}]},
+            "Release":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${VideoMockWorker.Arn}","Payload":{"op":"release","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"End":true},
+            "CleanupFailure":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${VideoMockWorker.Arn}","Payload":{"op":"failed","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"End":true},
+            "ClaimFailed":{"Type":"Fail","Error":"AdmissionDenied","Cause":"No active generation started; see execution error."}
+          }
+        }
+Outputs:
+  VideoStateMachineArn:
+    Value: !Ref VideoStateMachine
+  VideoMockWorkerArn:
+    Value: !GetAtt VideoMockWorker.Arn
+  VideoAdmissionTableName:
+    Value: !Ref VideoAdmissionTable
