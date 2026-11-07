@@ -24,11 +24,15 @@ function setup() {
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'status', 'pollStatus', 'key', 'team', 'scenario',
-                      'testGoogle', 'googleStatus']) {
+                      'testGoogle', 'googleStatus', 'firstName', 'lastName',
+                      'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
+                      'videoScene1', 'videoScene2', 'videoScene3']) {
     els[name] = el();
   }
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
+  els.firstName.value = 'Alex';
+  els.lastName.value = 'Tonelli';
   els.scenario.value = 'afl-grand-final-winning-kick';
   els.selfie.files = [{name: 'selfie.png', type: 'image/png', size: 1200}];
   els.results = el();
@@ -45,6 +49,14 @@ function setup() {
   };
   const fetch = async (url, opts = {}) => {
     calls.push({url, opts});
+    if (/\\/video\\/scene[123]\\/preview$/.test(url)) return {
+      ok: true, async json() { return {
+        sceneId: url.match(/scene[123]/)[0], playerName: 'Alex Tonelli',
+        teamName: 'Geelong Cats', durationSeconds: 8,
+        prompt: 'Alex Tonelli plays for Geelong Cats; 3D video prompt',
+        videoGenerationEnabled: false,
+      }; },
+    };
     if (url.endsWith('/video/auth-check')) return {
       ok: true, async json() { return {
         status: 'AUTHENTICATED', videoGenerationEnabled: false,
@@ -168,4 +180,37 @@ test('Google Cloud auth-check button never invokes paid generation', async () =>
   assert.equal(h.els.testGoogle.disabled, false);
   assert.equal(h.calls.filter(c => c.url.endsWith('/video/auth-check')).length, 1);
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 0);
+});
+
+test('separate free video preview buttons substitute name/team without paid API calls', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  assert.equal(h.els.videoPromptSection.hidden, false);
+  for (const n of [1,2,3]) {
+    await h.els['videoScene' + n].listeners.click();
+    assert.match(h.els.videoPromptText.textContent, /Alex Tonelli/);
+    assert.match(h.els.videoPromptText.textContent, /Geelong Cats/);
+  }
+  assert.equal(h.calls.filter(c => c.url.includes('/video/scene') && c.url.endsWith('/preview')).length, 3);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 0);
+  const request = h.calls.find(c => c.url.endsWith('/jobs') && c.opts.method === 'POST');
+  assert.equal(JSON.parse(request.opts.body).firstName, 'Alex');
+  assert.equal(JSON.parse(request.opts.body).lastName, 'Tonelli');
+});
+
+test('first and last names are mandatory before S3 upload', async () => {
+  const h = setup();
+  h.els.lastName.value = '';
+  await h.els.generate.listeners.click();
+  assert.match(h.els.status.textContent, /both first name and surname/);
+  assert.equal(h.calls.length, 0);
+});
+
+test('editing names invalidates existing job and previews', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  await h.els.videoScene1.listeners.click();
+  h.els.firstName.listeners.input();
+  assert.equal(h.els.videoPromptSection.hidden, true);
+  assert.equal(h.els.refresh.hidden, true);
 });
