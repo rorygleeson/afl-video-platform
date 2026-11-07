@@ -257,7 +257,15 @@ def google_auth_check():
             failure = {}
         runtime_type = failure.get("errorType", "") if isinstance(failure, dict) else ""
         if runtime_type in {"Runtime.ImportModuleError", "Runtime.UserCodeSyntaxError"}:
-            code = "VIDEO_WORKER_IMPORT_ERROR"
+            # The module name is public package metadata, not a credential.
+            # Extract only a constrained Python identifier from the Lambda
+            # runtime error, never return the raw message or traceback.
+            module_match = re.search(
+                r"No module named ['\\\"]([A-Za-z_][A-Za-z0-9_.]{0,100})['\\\"]",
+                failure.get("errorMessage", "") if isinstance(failure, dict) else "",
+            )
+            code = ("VIDEO_WORKER_MISSING_MODULE_" + module_match.group(1)
+                    if module_match else "VIDEO_WORKER_IMPORT_ERROR")
         elif runtime_type in {"Runtime.ExitError", "Runtime.OutOfMemory", "Runtime.Unknown"}:
             code = "VIDEO_WORKER_RUNTIME_EXIT"
         elif runtime_type in {"TaskTimedOut", "TimeoutError"}:
