@@ -16,7 +16,7 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub 'afl-app-dev-uploads-\${AWS::AccountId}-\${AWS::Region}'
+      BucketName: !Sub 'afl-app-dev-uploads-${AWS::AccountId}-${AWS::Region}'
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -80,7 +80,7 @@ Resources:
               - Sid: PresignAndVerifyUploads
                 Effect: Allow
                 Action: [s3:PutObject, s3:GetObject]
-                Resource: !Sub '\${UploadsBucket.Arn}/uploads/*'
+                Resource: !Sub '${UploadsBucket.Arn}/uploads/*'
               - Sid: StoreJobs
                 Effect: Allow
                 Action: [dynamodb:PutItem, dynamodb:GetItem]
@@ -88,7 +88,7 @@ Resources:
               - Sid: WriteApiLogs
                 Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
-                Resource: !Sub 'arn:\${AWS::Partition}:logs:\${AWS::Region}:\${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-api:*'
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-api:*'
   ApiLambda:
     Type: AWS::Lambda::Function
     Properties:
@@ -135,7 +135,7 @@ Resources:
       Integration:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
-        Uri: !Sub 'arn:\${AWS::Partition}:apigateway:\${AWS::Region}:lambda:path/2015-03-31/functions/\${ApiLambda.Arn}/invocations'
+        Uri: !Sub 'arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ApiLambda.Arn}/invocations'
   ProxyOptions:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -151,7 +151,7 @@ Resources:
         IntegrationResponses:
           - StatusCode: '200'
             ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: !Sub "'\${FrontendOrigin}'"
+              method.response.header.Access-Control-Allow-Origin: !Sub "'${FrontendOrigin}'"
               method.response.header.Access-Control-Allow-Headers: "'Content-Type,x-api-key,Idempotency-Key'"
               method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
       MethodResponses:
@@ -166,7 +166,7 @@ Resources:
       RestApiId: !Ref RestApi
       ResponseType: DEFAULT_4XX
       ResponseParameters:
-        gatewayresponse.header.Access-Control-Allow-Origin: !Sub "'\${FrontendOrigin}'"
+        gatewayresponse.header.Access-Control-Allow-Origin: !Sub "'${FrontendOrigin}'"
         gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,x-api-key,Idempotency-Key'"
         gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
   Default5xxResponse:
@@ -175,7 +175,7 @@ Resources:
       RestApiId: !Ref RestApi
       ResponseType: DEFAULT_5XX
       ResponseParameters:
-        gatewayresponse.header.Access-Control-Allow-Origin: !Sub "'\${FrontendOrigin}'"
+        gatewayresponse.header.Access-Control-Allow-Origin: !Sub "'${FrontendOrigin}'"
         gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,x-api-key,Idempotency-Key'"
         gatewayresponse.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
   InvokePermission:
@@ -184,7 +184,7 @@ Resources:
       Action: lambda:InvokeFunction
       FunctionName: !Ref ApiLambda
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:\${AWS::Partition}:execute-api:\${AWS::Region}:\${AWS::AccountId}:\${RestApi}/*/*/*'
+      SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/*'
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn: [ProxyAny, ProxyOptions]
@@ -218,7 +218,7 @@ Resources:
       UsagePlanId: !Ref ApiUsagePlan
 Outputs:
   ApiBaseUrl:
-    Value: !Sub 'https://\${RestApi}.execute-api.\${AWS::Region}.\${AWS::URLSuffix}/dev'
+    Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/dev'
   ApiKeyId:
     Value: !Ref ApiKey
   UploadsBucketName:
