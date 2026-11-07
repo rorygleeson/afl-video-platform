@@ -1,27 +1,30 @@
 {
   "scenarioId": "afl-grand-final-winning-kick",
   "version": "v1",
-  "pilotSceneId": "scene1",
   "scenes": [
     {
       "id": "scene1",
       "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene1-start.png",
       "operation": "image_edit",
       "model": "google/nano-banana-pro",
-      "enabled": true
+      "enabled": true,
+      "promptInstructions": "Replace central player face with selfie and central player's kit with selected team; preserve original running pose, ball and stadium."
     },
     {
       "id": "scene2",
       "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene2-start.png",
-      "operation": "master_copy",
-      "enabled": false
+      "operation": "image_edit",
+      "enabled": true,
+      "model": "google/nano-banana-pro",
+      "promptInstructions": "Replace face of central player with selfie; keep original kicking preparation pose and ball placement. Change main player's kit to selected team."
     },
     {
       "id": "scene3",
       "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene3-start.png",
       "operation": "image_edit",
       "model": "google/nano-banana-pro",
-      "enabled": false
+      "enabled": true,
+      "promptInstructions": "Replace central athlete face only with the selfie; retain teammates' distinct faces. Change central athlete and all visible teammates into matching selected team playing guernseys; preserve celebration poses."
     }
   ],
   "teamGuernseys": {

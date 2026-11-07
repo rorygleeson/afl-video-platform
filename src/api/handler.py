@@ -1,4 +1,4 @@
-"""AFL development API with explicitly started Scene 1 image-generation pilot."""
+"""AFL API with explicitly started three-scene image generation."""
 import hashlib
 import json
 import logging
@@ -117,7 +117,11 @@ def public_job(item):
         "team": item["team"],
         "status": item["status"],
         "createdAt": item["createdAt"],
-        "imageCount": 1 if item.get("scene1Key") else 0,
+        "imageCount": sum(1 for scene in item.get("scenes", {}).values() if scene.get("status") == "COMPLETED"),
+        "sceneCount": 3,
+        "completedScenes": sum(1 for scene in item.get("scenes", {}).values() if scene.get("status") == "COMPLETED"),
+        "failedScenes": sum(1 for scene in item.get("scenes", {}).values() if scene.get("status") == "FAILED"),
+        "scenes": {scene_id: {"status": item.get("scenes", {}).get(scene_id, {}).get("status", "PENDING")} for scene_id in ("scene1", "scene2", "scene3")},
     }
 
 
@@ -186,8 +190,8 @@ def create_job(event):
         return response(409, {"error": "Idempotency-Key has already been used for a different request"})
 
 
-def start_scene1(job_id):
-    """Explicitly start one billable image edit; deterministic execution name."""
+def start_images(job_id):
+    """Explicitly start three parallel paid image edits, one execution per job."""
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
@@ -203,22 +207,24 @@ def start_scene1(job_id):
         return response(202, {"jobId": job_id, "status": "GENERATING_IMAGES",
                               "message": "Generation already requested"})
     return response(202, {"jobId": job_id, "status": "GENERATING_IMAGES",
-                          "message": "Scene 1 pilot started; this may incur a Replicate charge"})
+                          "message": "Three parallel scene edits started; these may incur Replicate charges"})
 
 
 def images_for_job(job):
     images = []
-    key = job.get("scene1Key")
-    if key and job.get("status") == "SCENE1_COMPLETED":
-        images.append({
-            "sceneId": "scene1",
-            "url": S3.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": UPLOAD_BUCKET, "Key": key},
-                ExpiresIn=300,
-            ),
-        })
-    return response(200, {"jobId": job["jobId"], "status": job["status"], "images": images})
+    for scene_id in ("scene1", "scene2", "scene3"):
+        scene = job.get("scenes", {}).get(scene_id, {})
+        key = scene.get("resultKey")
+        if key and scene.get("status") == "COMPLETED":
+            images.append({
+                "sceneId": scene_id,
+                "url": S3.generate_presigned_url(
+                    "get_object", Params={"Bucket": UPLOAD_BUCKET, "Key": key},
+                    ExpiresIn=300,
+                ),
+            })
+    return response(200, {"jobId": job["jobId"], "status": job["status"],
+                          "scenes": public_job(job)["scenes"], "images": images})
 
 
 def lambda_handler(event, context):
@@ -232,7 +238,7 @@ def lambda_handler(event, context):
                     "name": "AFL Grand Final — Winning Kick",
                     "sceneCount": 3,
                     "imageGenerationEnabled": True,
-                    "pilotScene": "scene1",
+                    "parallelScenes": True,
                 }]
             })
         if method == "POST" and path == "/uploads":
@@ -241,7 +247,7 @@ def lambda_handler(event, context):
             return create_job(event)
         generate_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/generate", path)
         if method == "POST" and generate_match:
-            return start_scene1(generate_match.group(1))
+            return start_images(generate_match.group(1))
         match = re.fullmatch(r"/jobs/([0-9a-f]{32})(/images)?", path)
         if method == "GET" and match:
             job = get_job(match.group(1))

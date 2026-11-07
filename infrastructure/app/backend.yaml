@@ -329,81 +329,117 @@ Resources:
       StateMachineType: STANDARD
       RoleArn: !GetAtt ImageStateMachineRole.Arn
       Definition:
-        Comment: One billable Replicate prediction for Scene 1 only. No retries of submission.
-        StartAt: Submit
-        TimeoutSeconds: 1500
+        Comment: Parallel, independently tracked Replicate edits for all configured scenes.
+        StartAt: Prepare
+        TimeoutSeconds: 1800
         States:
-          Submit:
+          Prepare:
             Type: Task
             Resource: arn:aws:states:::lambda:invoke
             Parameters:
               FunctionName: ${WorkerArn}
               Payload:
-                op: submit
+                op: prepare
                 jobId.$: $.jobId
-            ResultPath: $.submit
-            Catch:
-              - ErrorEquals: [States.ALL]
-                ResultPath: $.error
-                Next: MarkFailed
-            Next: WaitForPrediction
-          WaitForPrediction:
-            Type: Wait
-            Seconds: 12
-            Next: Poll
-          Poll:
+            ResultPath: $.prepared
+            Next: ParallelScenes
+          ParallelScenes:
+            Type: Map
+            ItemsPath: $.prepared.Payload.scenes
+            MaxConcurrency: 3
+            ItemSelector:
+              jobId.$: $.jobId
+              sceneId.$: $$.Map.Item.Value
+            ResultPath: $.sceneResults
+            ItemProcessor:
+              ProcessorConfig:
+                Mode: INLINE
+              StartAt: Submit
+              States:
+                Submit:
+                  Type: Task
+                  Resource: arn:aws:states:::lambda:invoke
+                  Parameters:
+                    FunctionName: ${WorkerArn}
+                    Payload:
+                      op: submit
+                      jobId.$: $.jobId
+                      sceneId.$: $.sceneId
+                  ResultPath: $.submitted
+                  Catch:
+                    - ErrorEquals: [States.ALL]
+                      ResultPath: $.error
+                      Next: MarkSceneFailed
+                  Next: WaitForPrediction
+                WaitForPrediction:
+                  Type: Wait
+                  Seconds: 12
+                  Next: Poll
+                Poll:
+                  Type: Task
+                  Resource: arn:aws:states:::lambda:invoke
+                  Parameters:
+                    FunctionName: ${WorkerArn}
+                    Payload:
+                      op: check
+                      jobId.$: $.jobId
+                      sceneId.$: $.sceneId
+                      predictionId.$: $.submitted.Payload.predictionId
+                  ResultPath: $.poll
+                  Retry:
+                    - ErrorEquals: [States.TaskFailed]
+                      IntervalSeconds: 4
+                      MaxAttempts: 2
+                      BackoffRate: 2
+                  Catch:
+                    - ErrorEquals: [States.ALL]
+                      ResultPath: $.error
+                      Next: MarkSceneFailed
+                  Next: PredictionStatus
+                PredictionStatus:
+                  Type: Choice
+                  Choices:
+                    - Variable: $.poll.Payload.status
+                      StringEquals: succeeded
+                      Next: SaveScene
+                    - Variable: $.poll.Payload.status
+                      StringEquals: failed
+                      Next: MarkSceneFailed
+                  Default: WaitForPrediction
+                SaveScene:
+                  Type: Task
+                  Resource: arn:aws:states:::lambda:invoke
+                  Parameters:
+                    FunctionName: ${WorkerArn}
+                    Payload:
+                      op: save
+                      jobId.$: $.jobId
+                      sceneId.$: $.sceneId
+                      predictionId.$: $.submitted.Payload.predictionId
+                      output.$: $.poll.Payload.output
+                  Catch:
+                    - ErrorEquals: [States.ALL]
+                      ResultPath: $.error
+                      Next: MarkSceneFailed
+                  End: true
+                MarkSceneFailed:
+                  Type: Task
+                  Resource: arn:aws:states:::lambda:invoke
+                  Parameters:
+                    FunctionName: ${WorkerArn}
+                    Payload:
+                      op: failed
+                      jobId.$: $.jobId
+                      sceneId.$: $.sceneId
+                  End: true
+            Next: Finalize
+          Finalize:
             Type: Task
             Resource: arn:aws:states:::lambda:invoke
             Parameters:
               FunctionName: ${WorkerArn}
               Payload:
-                op: check
-                jobId.$: $.jobId
-                predictionId.$: $.submit.Payload.predictionId
-            ResultPath: $.poll
-            Retry:
-              - ErrorEquals: [States.TaskFailed]
-                IntervalSeconds: 4
-                MaxAttempts: 2
-                BackoffRate: 2
-            Catch:
-              - ErrorEquals: [States.ALL]
-                ResultPath: $.error
-                Next: MarkFailed
-            Next: PredictionStatus
-          PredictionStatus:
-            Type: Choice
-            Choices:
-              - Variable: $.poll.Payload.status
-                StringEquals: succeeded
-                Next: SaveResult
-              - Variable: $.poll.Payload.status
-                StringEquals: failed
-                Next: MarkFailed
-            Default: WaitForPrediction
-          SaveResult:
-            Type: Task
-            Resource: arn:aws:states:::lambda:invoke
-            Parameters:
-              FunctionName: ${WorkerArn}
-              Payload:
-                op: save
-                jobId.$: $.jobId
-                predictionId.$: $.submit.Payload.predictionId
-                output.$: $.poll.Payload.output
-            ResultPath: $.saved
-            Catch:
-              - ErrorEquals: [States.ALL]
-                ResultPath: $.error
-                Next: MarkFailed
-            End: true
-          MarkFailed:
-            Type: Task
-            Resource: arn:aws:states:::lambda:invoke
-            Parameters:
-              FunctionName: ${WorkerArn}
-              Payload:
-                op: failed
+                op: finalize
                 jobId.$: $.jobId
             End: true
       DefinitionSubstitutions:
