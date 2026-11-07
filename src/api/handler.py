@@ -1,4 +1,4 @@
-"""Stage 1B development API. No image generation in this milestone."""
+"""AFL development API with explicitly started Scene 1 image-generation pilot."""
 import hashlib
 import json
 import logging
@@ -18,6 +18,7 @@ LOG.setLevel(logging.INFO)
 UPLOAD_BUCKET = os.environ["UPLOAD_BUCKET"]
 JOBS_TABLE = os.environ["JOBS_TABLE"]
 FRONTEND_ORIGIN = os.environ["FRONTEND_ORIGIN"]
+IMAGE_STATE_MACHINE_ARN = os.environ["IMAGE_STATE_MACHINE_ARN"]
 
 # Presigned browser POSTs must target the bucket's regional endpoint and use
 # Signature Version 4. The default client can generate a global endpoint with
@@ -28,6 +29,7 @@ S3 = boto3.client(
     config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
 )
 DDB = boto3.resource("dynamodb").Table(JOBS_TABLE)
+STATES = boto3.client("stepfunctions")
 
 MAX_UPLOAD = 10 * 1024 * 1024
 MIME_EXT = {
@@ -115,7 +117,7 @@ def public_job(item):
         "team": item["team"],
         "status": item["status"],
         "createdAt": item["createdAt"],
-        "imageCount": 0,
+        "imageCount": 1 if item.get("scene1Key") else 0,
     }
 
 
@@ -184,6 +186,41 @@ def create_job(event):
         return response(409, {"error": "Idempotency-Key has already been used for a different request"})
 
 
+def start_scene1(job_id):
+    """Explicitly start one billable image edit; deterministic execution name."""
+    job = get_job(job_id)
+    if not job:
+        return response(404, {"error": "Job not found"})
+    if job.get("status") != "AWAITING_IMAGE_PIPELINE":
+        return response(200, {"job": public_job(job), "message": "Job already started"})
+    try:
+        STATES.start_execution(
+            stateMachineArn=IMAGE_STATE_MACHINE_ARN,
+            name=job_id,
+            input=json.dumps({"jobId": job_id}, separators=(",", ":")),
+        )
+    except STATES.exceptions.ExecutionAlreadyExists:
+        return response(202, {"jobId": job_id, "status": "GENERATING_IMAGES",
+                              "message": "Generation already requested"})
+    return response(202, {"jobId": job_id, "status": "GENERATING_IMAGES",
+                          "message": "Scene 1 pilot started; this may incur a Replicate charge"})
+
+
+def images_for_job(job):
+    images = []
+    key = job.get("scene1Key")
+    if key and job.get("status") == "SCENE1_COMPLETED":
+        images.append({
+            "sceneId": "scene1",
+            "url": S3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": UPLOAD_BUCKET, "Key": key},
+                ExpiresIn=300,
+            ),
+        })
+    return response(200, {"jobId": job["jobId"], "status": job["status"], "images": images})
+
+
 def lambda_handler(event, context):
     method = (event.get("httpMethod") or "").upper()
     path = event.get("path") or ""
@@ -194,20 +231,24 @@ def lambda_handler(event, context):
                     "id": SCENARIO_ID,
                     "name": "AFL Grand Final — Winning Kick",
                     "sceneCount": 3,
-                    "imageGenerationEnabled": False,
+                    "imageGenerationEnabled": True,
+                    "pilotScene": "scene1",
                 }]
             })
         if method == "POST" and path == "/uploads":
             return presign_upload(event)
         if method == "POST" and path == "/jobs":
             return create_job(event)
+        generate_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/generate", path)
+        if method == "POST" and generate_match:
+            return start_scene1(generate_match.group(1))
         match = re.fullmatch(r"/jobs/([0-9a-f]{32})(/images)?", path)
         if method == "GET" and match:
             job = get_job(match.group(1))
             if not job:
                 return response(404, {"error": "Job not found"})
             if match.group(2):
-                return response(200, {"jobId": job["jobId"], "status": job["status"], "images": []})
+                return images_for_job(job)
             return response(200, {"job": public_job(job)})
         return response(404, {"error": "Unknown endpoint"})
     except ValueError as exc:
