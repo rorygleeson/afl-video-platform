@@ -198,13 +198,14 @@ class ParallelSceneTests(unittest.TestCase):
               patch.object(worker, "scene_update") as update,
               patch.object(worker, "get_token", return_value="r8_fake"),
               patch.object(worker.time, "sleep") as sleep,
+              patch.object(worker.random, "uniform", return_value=0),
               patch.object(worker, "request_json",
-                           side_effect=[worker.ReplicateHTTPError(429),
+                           side_effect=[worker.ReplicateHTTPError(429, retry_after=15),
                                         {"id": "pred-scene2"}]) as remote):
             result = worker.submit("a" * 32, "scene2")
         self.assertEqual(result["predictionId"], "pred-scene2")
         self.assertEqual(remote.call_count, 2)
-        sleep.assert_called_once_with(5)
+        sleep.assert_called_once_with(15)
         self.assertEqual(update.call_count, 2)
 
     def test_ambiguous_submission_http_500_is_not_retried(self):
@@ -237,14 +238,44 @@ class ParallelSceneTests(unittest.TestCase):
               patch.object(worker, "scene_update") as update,
               patch.object(worker, "get_token", return_value="r8_fake"),
               patch.object(worker.time, "sleep") as sleep,
+              patch.object(worker.random, "uniform", return_value=0),
               patch.object(worker, "request_json",
                            side_effect=worker.ReplicateHTTPError(429)) as remote):
             with self.assertRaises(worker.ReplicateHTTPError):
                 worker.submit("a" * 32, "scene3")
-        self.assertEqual(remote.call_count, 4)
-        self.assertEqual([c.args[0] for c in sleep.call_args_list], [7, 13, 27])
+        self.assertEqual(remote.call_count, 6)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [1, 2, 4, 8, 16])
         self.assertEqual(update.call_args.args[3]["errorCode"],
                          "REPLICATE_RATE_LIMIT")
+
+    def test_retry_after_http_header_numeric_and_http_date(self):
+        from datetime import datetime, timezone
+        self.assertEqual(worker.retry_after_seconds("60"), 60.0)
+        self.assertEqual(worker.retry_after_seconds("1.5"), 1.5)
+        self.assertIsNone(worker.retry_after_seconds("not a date"))
+        self.assertEqual(worker.retry_after_seconds(
+            "Sat, 07 Nov 2026 11:10:00 GMT",
+            now=datetime(2026, 11, 7, 11, 9, tzinfo=timezone.utc)), 60)
+
+    def test_retry_after_oversized_rejection_is_not_resent(self):
+        job = {"status": "GENERATING_IMAGES", "team": "geelong",
+               "uploadKey": "uploads/" + "b" * 32 + ".png",
+               "scenes": {"scene1": {"status": "PENDING"}}}
+        with (patch.object(worker, "job_by_id", return_value=job),
+              patch.object(worker, "load_scenario", return_value=CONFIG),
+              patch.object(worker.S3, "generate_presigned_url",
+                           return_value="https://s3.example.com/input"),
+              patch.object(worker, "scene_update") as update,
+              patch.object(worker, "get_token", return_value="r8_fake"),
+              patch.object(worker.time, "sleep") as sleep,
+              patch.object(worker, "request_json",
+                           side_effect=worker.ReplicateHTTPError(429, 180)) as remote):
+            with self.assertRaises(worker.ReplicateHTTPError):
+                worker.submit("a" * 32, "scene1")
+        self.assertEqual(remote.call_count, 1)
+        sleep.assert_not_called()
+        self.assertEqual(update.call_args.args[3]["errorCode"],
+                         "REPLICATE_RETRY_AFTER_TOO_LONG")
 
     def test_failed_scene_records_sanitized_reason(self):
         job = {"scenes": {"scene2": {
