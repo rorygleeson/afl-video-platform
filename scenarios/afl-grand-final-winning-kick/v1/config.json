@@ -1,0 +1,47 @@
+{
+  "scenarioId": "afl-grand-final-winning-kick",
+  "version": "v1",
+  "pilotSceneId": "scene1",
+  "scenes": [
+    {
+      "id": "scene1",
+      "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene1-start.png",
+      "operation": "image_edit",
+      "model": "google/nano-banana-pro",
+      "enabled": true
+    },
+    {
+      "id": "scene2",
+      "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene2-start.png",
+      "operation": "master_copy",
+      "enabled": false
+    },
+    {
+      "id": "scene3",
+      "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene3-start.png",
+      "operation": "image_edit",
+      "model": "google/nano-banana-pro",
+      "enabled": false
+    }
+  ],
+  "teamGuernseys": {
+    "adelaide": "Adelaide Crows: navy blue, red and yellow horizontal bands",
+    "brisbane": "Brisbane Lions: maroon with blue and gold panels",
+    "carlton": "Carlton Blues: deep navy blue guernsey, clean white monogram-like chest mark",
+    "collingwood": "Collingwood Magpies: strong vertical black and white stripes",
+    "essendon": "Essendon Bombers: black guernsey with a bold red diagonal sash",
+    "fremantle": "Fremantle Dockers: purple and white guernsey",
+    "geelong": "Geelong Cats: navy blue and white horizontal hoops",
+    "gold-coast": "Gold Coast Suns: red and gold guernsey",
+    "gws": "Greater Western Sydney Giants: orange and charcoal guernsey",
+    "hawthorn": "Hawthorn Hawks: brown and gold vertical stripes",
+    "melbourne": "Melbourne Demons: dark navy blue with a red upper chest yoke",
+    "north-melbourne": "North Melbourne Kangaroos: royal blue and white vertical stripes",
+    "port-adelaide": "Port Adelaide Power: black, teal and white guernsey",
+    "richmond": "Richmond Tigers: black guernsey with a broad yellow diagonal sash",
+    "st-kilda": "St Kilda Saints: black, red and white vertical panels",
+    "sydney": "Sydney Swans: white and red guernsey",
+    "west-coast": "West Coast Eagles: royal blue and gold guernsey",
+    "western-bulldogs": "Western Bulldogs: royal blue with red and white horizontal chest stripes"
+  }
+}
