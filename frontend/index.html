@@ -19,6 +19,7 @@
     #results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
     #results img{width:100%;border-radius:6px}
     #status{white-space:pre-wrap;overflow-wrap:anywhere}
+    .poll-status{font-size:.9rem;margin-top:8px;color:#526174}
   </style>
 </head>
 <body>
@@ -51,6 +52,7 @@
   <button id="refresh" type="button" hidden>Refresh job status</button>
   <h2>Job status</h2>
   <p id="status" role="status">Loading backend configuration…</p>
+  <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
   <div id="results" aria-label="Reference images"></div>
 </main>
 <script src="./config.js"></script>
@@ -63,8 +65,78 @@
   const generateScene1 = document.getElementById('generateScene1');
   const status = document.getElementById('status');
   const results = document.getElementById('results');
+  const pollStatus = document.getElementById('pollStatus');
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
   let previewUrl, currentJobId, currentPhase = 'Initialising';
+  const POLL_INTERVAL_MS = 5000;
+  const POLL_ERROR_BACKOFF_MS = 15000;
+  const TERMINAL_STATUSES = new Set(['COMPLETED', 'PARTIAL_SUCCESS', 'FAILED']);
+  let pollTimer = null;
+  let pollGeneration = 0;
+  let refreshInFlight = false;
+  let pollingEnabled = false;
+  let pollErrors = 0;
+
+  function clearPollTimer() {
+    if (pollTimer !== null) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function showPollingMessage(message) {
+    pollStatus.hidden = !message;
+    pollStatus.textContent = message;
+  }
+
+  function stopPolling() {
+    pollingEnabled = false;
+    pollGeneration++;
+    clearPollTimer();
+    showPollingMessage('');
+  }
+
+  function schedulePoll(delay = POLL_INTERVAL_MS) {
+    clearPollTimer();
+    if (!pollingEnabled || !currentJobId) return;
+    if (document.hidden) {
+      showPollingMessage('Auto-refresh paused while this tab is hidden.');
+      return;
+    }
+    showPollingMessage(pollErrors
+      ? 'Connection interrupted. Retrying job status automatically…'
+      : 'Automatically checking job status every 5 seconds.');
+    const generation = pollGeneration;
+    pollTimer = setTimeout(() => {
+      pollTimer = null;
+      if (pollingEnabled && generation === pollGeneration) {
+        void refreshJob();
+      }
+    }, delay);
+  }
+
+  function startPolling() {
+    clearPollTimer();
+    pollingEnabled = true;
+    pollErrors = 0;
+    pollGeneration++;
+    if (!document.hidden) {
+      void refreshJob();
+    } else {
+      schedulePoll();
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (!pollingEnabled) return;
+    if (document.hidden) {
+      clearPollTimer();
+      showPollingMessage('Auto-refresh paused while this tab is hidden.');
+    } else if (!refreshInFlight) {
+      clearPollTimer();
+      void refreshJob();
+    }
+  });
 
   status.textContent = apiBaseUrl
     ? 'Backend ready. Enter the API key and choose a selfie.'
@@ -73,6 +145,7 @@
 
   function invalidateJobSelection() {
     if (currentJobId) {
+      stopPolling();
       currentJobId = null;
       generateScene1.hidden = true;
       refresh.hidden = true;
@@ -150,14 +223,23 @@
   });
 
   async function refreshJob() {
-    if (!currentJobId) return;
+    if (!currentJobId || refreshInFlight) return;
+    if (document.hidden && pollingEnabled) {
+      schedulePoll();
+      return;
+    }
     const requestedJobId = currentJobId;
+    const generation = pollGeneration;
+    refreshInFlight = true;
+    clearPollTimer();
+    refresh.disabled = true;
     try {
       const [record, sceneResults] = await Promise.all([
         api('/jobs/' + requestedJobId),
         api('/jobs/' + requestedJobId + '/images'),
       ]);
-      if (requestedJobId !== currentJobId) return;
+      if (requestedJobId !== currentJobId || generation !== pollGeneration) return;
+      pollErrors = 0;
       generateScene1.hidden = record.job.status !== 'AWAITING_IMAGE_PIPELINE';
       const scenes = record.job.scenes || {};
       const statuses = ['scene1', 'scene2', 'scene3'].map(id =>
@@ -169,17 +251,40 @@
       showStatus('Job ' + currentJobId + '\nOverall: ' + record.job.status +
         '\nCompleted: ' + completed + '/3; failed: ' + failed +
         '\n' + statuses.join('\n'));
-      results.replaceChildren();
+
+      // Only append new scenes. Existing thumbnails must not flicker or
+      // reload with a new presigned URL every five seconds.
+      const existing = new Set(
+        [...results.querySelectorAll('img[data-scene-id]')].map(img => img.dataset.sceneId)
+      );
       for (const item of sceneResults.images) {
-        if (!item.url) continue;
+        if (!item.url || existing.has(item.sceneId)) continue;
         const img = document.createElement('img');
         img.src = item.url;
+        img.dataset.sceneId = item.sceneId;
         img.alt = 'Generated ' + item.sceneId;
         img.title = item.sceneId;
         results.appendChild(img);
       }
+      if (TERMINAL_STATUSES.has(record.job.status)) {
+        stopPolling();
+      }
     } catch (error) {
-      showStatus('Could not refresh job: ' + error.message);
+      if (requestedJobId !== currentJobId || generation !== pollGeneration) return;
+      pollErrors++;
+      if (pollingEnabled) {
+        showPollingMessage('Status request failed (' + pollErrors +
+          '). Retrying automatically; no new image generation will be started.');
+      } else {
+        showStatus('Could not refresh job: ' + error.message);
+      }
+    } finally {
+      refreshInFlight = false;
+      refresh.disabled = false;
+      if (pollingEnabled && requestedJobId === currentJobId &&
+          generation === pollGeneration) {
+        schedulePoll(pollErrors ? POLL_ERROR_BACKOFF_MS : POLL_INTERVAL_MS);
+      }
     }
   }
   generateScene1.addEventListener('click', async () => {
@@ -189,15 +294,18 @@
       'Each scene uses your uploaded selfie and selected team guernsey.'
     )) return;
     generateScene1.disabled = true;
+    const jobToGenerate = currentJobId;
     try {
       setPhase('Submitting three scene image edits to Step Functions');
-      const result = await api('/jobs/' + currentJobId + '/generate', {
+      const result = await api('/jobs/' + jobToGenerate + '/generate', {
         method: 'POST',
       });
-      showStatus('Three image generations requested.\nJob: ' + currentJobId +
-        '\nStatus: ' + result.status +
-        '\nTap Refresh job status to check progress.');
+      if (currentJobId !== jobToGenerate) return;
+      showStatus('Three image generations requested.\nJob: ' + jobToGenerate +
+        '\nStatus: ' + (result.status || result.job?.status || 'STARTING') +
+        '\nStatus now updates automatically.');
       generateScene1.hidden = true;
+      startPolling();
     } catch (error) {
       showStatus(describeError(error, currentPhase));
     } finally {
@@ -222,6 +330,7 @@
     }
     generate.disabled = true;
     // Never leave a previous job's paid action available during another upload.
+    stopPolling();
     currentJobId = null;
     generateScene1.hidden = true;
     generateScene1.disabled = false;
