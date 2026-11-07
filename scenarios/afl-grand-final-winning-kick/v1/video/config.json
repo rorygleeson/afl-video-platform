@@ -10,19 +10,30 @@
     {
       "id": "scene1",
       "template": "scene1-video.txt",
-      "durationSeconds": 8
+      "durationSeconds": 8,
+      "commentaryTemplate": "$fullName has the ball! $teamName can win the Grand Final!"
     },
     {
       "id": "scene2",
       "template": "scene2-video.txt",
-      "durationSeconds": 8
+      "durationSeconds": 8,
+      "commentaryTemplate": "$fullName kicks! It's through! $teamName have won the Grand Final!"
     },
     {
       "id": "scene3",
       "template": "scene3-video.txt",
-      "durationSeconds": 10
+      "durationSeconds": 10,
+      "commentaryTemplate": "$teamName are the premiers! $fullName has delivered the winning kick! $teamName are the AFL Grand Final champions!"
     }
   ],
   "maxPaidScenesPerRequest": 1,
-  "notes": "Config and dry-run previews only. No paid video API submission exists; choose and validate provider schema before enabling."
+  "notes": "These are versioned prompts and non-billable preview config only. No paid video endpoint exists yet.",
+  "requiredVariables": [
+    "firstName",
+    "lastName",
+    "fullName",
+    "teamName",
+    "guernsey",
+    "commentary"
+  ]
 }
