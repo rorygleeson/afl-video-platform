@@ -128,6 +128,13 @@ jobs:
           mkdir -p dist/video-worker
           python3 -m pip install --disable-pip-version-check --no-cache-dir             --target dist/video-worker 'google-auth>=2.38,<3' 'requests>=2.31,<3'
           cp src/video_worker/handler.py dist/video-worker/handler.py
+          # Smoke-test actual third-party dependencies as packaged. A py_compile
+          # check alone cannot catch import errors during AWS Lambda cold start.
+          GOOGLE_PROJECT_NUMBER=345956846110 \
+          GOOGLE_WIF_POOL_ID=afl-video-aws \
+          GOOGLE_WIF_PROVIDER_ID=afl-aws-dev \
+          GOOGLE_SERVICE_ACCOUNT=afl-video-worker@afl-video-platform.iam.gserviceaccount.com \
+          PYTHONPATH=dist/video-worker python3 -c 'import handler; assert callable(handler.lambda_handler); print("Video worker imports OK")'
           (cd dist/video-worker && zip -q -r ../video-worker-$GITHUB_SHA.zip .)
           aws s3 cp "dist/video-worker-$GITHUB_SHA.zip"             "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/video-worker/$GITHUB_SHA.zip"             --region ap-southeast-2
       - name: Deploy API and jobs CloudFormation
