@@ -17,6 +17,7 @@ os.environ["AWS_REGION"] = "ap-southeast-2"
 os.environ["AWS_DEFAULT_REGION"] = "ap-southeast-2"
 os.environ["UPLOAD_BUCKET"] = "afl-app-dev-uploads-134387458447-ap-southeast-2"
 os.environ["JOBS_TABLE"] = "afl-app-dev-jobs"
+os.environ["IMAGE_STATE_MACHINE_ARN"] = "arn:aws:states:ap-southeast-2:123456789012:stateMachine:dummy"
 os.environ["FRONTEND_ORIGIN"] = "https://d9i3mlqvt0ks6.cloudfront.net"
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "api"))
