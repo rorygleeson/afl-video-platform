@@ -15,6 +15,8 @@ The architecture document contains:
 - Essential API endpoints, job states, retries and failure handling.
 - A short deployment diagram and a clear distinction between deployed services and the future Veo stage.
 
+Video preparation: [versioned S3 prompt templates, name/team substitution and cost limits](docs/VIDEO_PROMPTS.md).
+
 Additional technical notes: [Parallel scene processing](docs/PARALLEL_SCENES.md) and [the earlier single-scene proof of concept](docs/SCENE1_REPLICATE_PILOT.md).
 
 ## Development reference
