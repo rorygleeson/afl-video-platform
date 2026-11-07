@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "afl-grand-final-winning-kick",
+  "version": "v1",
+  "videoGenerationEnabled": false,
+  "model": "UNCONFIGURED",
+  "videoConcurrency": 1,
+  "maxPaidScenesPerJob": 1,
+  "requireExplicitPaidAction": true,
+  "scenes": [
+    {
+      "id": "scene1",
+      "template": "scene1-video.txt",
+      "durationSeconds": 8
+    },
+    {
+      "id": "scene2",
+      "template": "scene2-video.txt",
+      "durationSeconds": 8
+    },
+    {
+      "id": "scene3",
+      "template": "scene3-video.txt",
+      "durationSeconds": 10
+    }
+  ]
+}
