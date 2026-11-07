@@ -6,7 +6,6 @@ Submit is never automatically retried: billable API calls have uncertain outcome
 import json
 import logging
 import os
-import re
 import time
 import urllib.error
 import urllib.parse
@@ -16,6 +15,7 @@ from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Attr
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -109,10 +109,10 @@ def prepare(job_id):
     update_job(
         job_id,
         "SET #status = :generating, scenes = :scenes, sceneCount = :three, "
-        "completedScenes = :zero, failedScenes = :zero",
+        "completedScenes = :zero, failedScenes = :zero, generationStartedAt = :now",
         {":generating": "GENERATING_IMAGES",
          ":waiting": "AWAITING_IMAGE_PIPELINE",
-         ":scenes": scenes, ":three": 3, ":zero": 0},
+         ":scenes": scenes, ":three": 3, ":zero": 0, ":now": int(time.time())},
         {"#status": "status"},
         "#status = :waiting",
     )
@@ -269,14 +269,100 @@ def finalize(job_id):
         "SET #status = :outcome, completedScenes = :completed, "
         "failedScenes = :failed, completedAt = :t",
         {":outcome": outcome, ":completed": completed, ":failed": failed,
-         ":t": datetime.now(timezone.utc).isoformat()},
+         ":t": datetime.now(timezone.utc).isoformat(), ":generating": "GENERATING_IMAGES"},
         {"#status": "status"},
+        "#status = :generating",
     )
     return {"status": outcome, "completedScenes": completed, "failedScenes": failed}
 
 
+
+def recover(job_id):
+    """Terminalize a failed execution; no new Replicate calls.
+
+    Avoid overwriting any image already marked COMPLETED. The state
+    machine's catch executes this after failed preparation, Map, or finalization.
+    """
+    for attempt in range(3):
+        job = job_by_id(job_id)
+        overall = job.get("status")
+        if overall in ("COMPLETED", "PARTIAL_SUCCESS", "FAILED"):
+            return {"status": overall}
+        if overall not in ("AWAITING_IMAGE_PIPELINE", "GENERATING_IMAGES"):
+            raise RuntimeError("Invalid job status for recovery")
+        scenes = dict(job.get("scenes") or {})
+        if not scenes:
+            scenes = {name: {"status": "PENDING"} for name in VALID_SCENES}
+        for name in VALID_SCENES:
+            scene = dict(scenes.get(name) or {"status": "PENDING"})
+            if scene.get("status") != "COMPLETED":
+                scene["status"] = "FAILED"
+                scene["failedAt"] = datetime.now(timezone.utc).isoformat()
+            scenes[name] = scene
+        completed = sum(1 for scene in scenes.values() if scene["status"] == "COMPLETED")
+        failed = 3 - completed
+        outcome = "FAILED" if completed == 0 else (
+            "COMPLETED" if completed == 3 else "PARTIAL_SUCCESS")
+        try:
+            TABLE.update_item(
+                Key={"jobId": job_id},
+                UpdateExpression=(
+                    "SET #status = :outcome, scenes = :scenes, "
+                    "completedScenes = :completed, failedScenes = :failed, "
+                    "completedAt = :now"
+                ),
+                ConditionExpression="#status = :old",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":outcome": outcome, ":scenes": scenes,
+                    ":completed": completed, ":failed": failed,
+                    ":now": datetime.now(timezone.utc).isoformat(), ":old": overall,
+                },
+            )
+            return {"status": outcome, "completedScenes": completed, "failedScenes": failed}
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise
+    raise RuntimeError("Job changed concurrently during recovery")
+
+
+def reconcile_stalled():
+    """Bounded dev-only watchdog for abandoned active jobs.
+
+    Safety threshold exceeds both Replicate polling and the state-machine
+    timeout. It only marks jobs failed; never launches paid predictions.
+    """
+    cutoff = int(time.time()) - 45 * 60
+    checked = recovered = 0
+    last_key = None
+    # Bounded scan: keep development Lambda runtime and DynamoDB RCU in check.
+    for _ in range(10):
+        kwargs = {
+            "FilterExpression": Attr("status").eq("GENERATING_IMAGES") &
+                                Attr("generationStartedAt").lt(cutoff),
+            "Limit": 100,
+            "ProjectionExpression": "jobId, #status, generationStartedAt",
+            "ExpressionAttributeNames": {"#status": "status"},
+        }
+        if last_key:
+            kwargs["ExclusiveStartKey"] = last_key
+        page = TABLE.scan(**kwargs)
+        for item in page.get("Items", []):
+            checked += 1
+            try:
+                recover(item["jobId"])
+                recovered += 1
+            except Exception:
+                LOG.exception("Could not recover stale job")
+        last_key = page.get("LastEvaluatedKey")
+        if not last_key:
+            break
+    return {"checked": checked, "recovered": recovered}
+
 def lambda_handler(event, context):
     op = event["op"]
+    if op == "reconcile":
+        return reconcile_stalled()
     job_id = event["jobId"]
     scene_id = event.get("sceneId")
     if op == "prepare":
@@ -291,4 +377,6 @@ def lambda_handler(event, context):
         return fail_scene(job_id, scene_id)
     if op == "finalize":
         return finalize(job_id)
+    if op == "recover":
+        return recover(job_id)
     raise ValueError("Unrecognized operation")
