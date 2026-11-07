@@ -1,0 +1,11 @@
+# AFL Grand Final — Scene 3: PREMIERS CELEBRATION
+# Variables: $firstName, $lastName, $fullName, $teamName, $guernsey, $commentary
+# AWS substitutes all variables before the paid API submission.
+
+START FRAME: Use the provided personalised Scene 3 celebration image. The central player is $fullName, playing for $teamName in $guernsey. Preserve the central player's facial identity and the distinct faces of the surrounding teammates. All team guernseys must retain the same selected team design and colours.
+
+MOTION: Portrait 9:16. From the supplied starting pose, teammates rush in and embrace. The central player celebrates the winning goal, throwing arms up and smiling as the stadium erupts. Fast, natural body movement with slight broadcast camera motion; no slow motion, swapped identities, duplicates or uncanny faces. Keep the action readable around the central player.
+
+AUDIO / COMMENTARY: Sustained stadium roar. The commentator enthusiastically says exactly: "$commentary". The full final call must be audible and clearly state that $teamName are the AFL Grand Final champions.
+
+NO TEXT: No subtitles, titles, text overlays, additional logos or watermarks.

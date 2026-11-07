@@ -1,0 +1,11 @@
+# AFL Grand Final — Scene 2: THE WINNING KICK
+# Variables: $firstName, $lastName, $fullName, $teamName, $guernsey, $commentary
+# AWS substitutes all variables from the validated customer job.
+
+START FRAME: Animate the personalised Scene 2 image supplied with this request; it is NOT the unpersonalised master. The central player is $fullName wearing the $teamName guernsey ($guernsey). Preserve face, skin detail, hair, age, physical proportions, playing kit, ball, stadium and existing goalposts.
+
+ACTION: Portrait 9:16, realistic full-speed AFL play, no slow motion. Player starts with the ball in the same initial running position. After approximately two seconds, the player takes a couple of fast strides, drops the AFL football onto the boot and connects once in a realistic drop punt. The ball rockets high over the goal line between the existing tall central posts. Camera widens and moves behind/along the flight of the ball to clearly show the successful goal. Do not reposition goalposts, invent extra balls, repeat the kick or alter the player's face.
+
+AUDIO / COMMENTARY: Explosive crowd reaction at the kick and goal. The commentator says exactly: "$commentary". Football and cheering sounds should feel authentic.
+
+NO TEXT: No captions, on-screen text, extra logos or watermarks.
