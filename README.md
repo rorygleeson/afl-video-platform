@@ -1,10 +1,10 @@
 # AFL Video Platform
 
-Serverless AWS application for personalised AFL-themed scene images, with a future video-generation stage.
+Serverless AWS prototype for personalised AFL-themed reference images, with a separately planned video-generation and assembly stage.
 
-**Current milestone (7 November 2026):** three parallel, personalised reference images generated from a customer's selfie, selected AFL team and three versioned scene masters. Jobs are independently tracked per scene and the phone page polls progress automatically. **Veo video generation, stitching and payments are not yet implemented.**
+**Current milestone (7 November 2026):** three parallel, personalised reference images generated from a customer's selfie, selected AFL team and three versioned scene masters. Jobs are independently tracked per scene and the phone page polls progress automatically. **Google Omni video generation, stitching and payments are not yet implemented.**
 
-## Architecture
+**Approved staged video design (8 November 2026):** [Video implementation plan](docs/VIDEO_IMPLEMENTATION_PLAN.md). This is documentation only; video generation has not been deployed. Each stage requires user approval before proceeding.\n\n## Architecture
 
 **[Read the deployed AWS architecture, diagrams and end-to-end workflow](docs/ARCHITECTURE.md)**
 
@@ -13,7 +13,7 @@ The architecture document contains:
 - A simple Mermaid AWS component diagram (website, API, processing, storage and Replicate).
 - The step-by-step selfie upload and parallel image generation sequence.
 - Essential API endpoints, job states, retries and failure handling.
-- A short deployment diagram and a clear distinction between deployed services and the future Veo stage.
+- A short deployment diagram and a clear distinction between deployed services and the future Omni Flash video stage.
 
 Video preparation: [versioned S3 prompt templates, name/team substitution and cost limits](docs/VIDEO_PROMPTS.md).
 
