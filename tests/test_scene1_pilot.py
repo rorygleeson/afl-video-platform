@@ -72,7 +72,7 @@ class Scene1PilotTests(unittest.TestCase):
         self.assertEqual(url, worker.MODEL_URL)
         self.assertEqual(token, "r8_fake")
         image_input = body["input"]["image_input"]
-        self.assertEqual(image_input, presigned)
+        self.assertEqual(image_input, [presigned[1], presigned[0]])
         self.assertIn("navy blue and white horizontal hoops", body["input"]["prompt"])
         self.assertEqual(body["input"]["aspect_ratio"], "9:16")
         self.assertEqual(body["input"]["resolution"], "2K")
