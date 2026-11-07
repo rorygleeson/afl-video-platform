@@ -28,6 +28,7 @@
   <p class="note">The API endpoint is configured automatically during deployment. Your API key stays in this tab and is not stored in the site. This phase tests uploads and job creation; the three-scene image worker comes next.</p>
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off">
+  <button id="testApi" type="button">Test API connection</button>
   <label for="scenario">Scenario</label>
   <select id="scenario"><option value="afl-grand-final-winning-kick">AFL Grand Final — Winning Kick</option></select>
   <label for="team">Team</label>
@@ -56,11 +57,12 @@
   const input = document.getElementById('selfie');
   const preview = document.getElementById('preview');
   const generate = document.getElementById('generate');
+  const testApi = document.getElementById('testApi');
   const refresh = document.getElementById('refresh');
   const status = document.getElementById('status');
   const results = document.getElementById('results');
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
-  let previewUrl, currentJobId;
+  let previewUrl, currentJobId, currentPhase = 'Initialising';
 
   status.textContent = apiBaseUrl
     ? 'Backend ready. Enter the API key and choose a selfie.'
@@ -100,6 +102,36 @@
   function showStatus(message) {
     status.textContent = message;
   }
+
+  function setPhase(phase) {
+    currentPhase = phase;
+    showStatus(phase + '…');
+  }
+
+  function describeError(error, phase) {
+    // Browsers intentionally obscure many CORS failures as TypeError: Failed to fetch.
+    // Preserve the failing stage so API requests can be distinguished from S3 uploads.
+    const networkError = error instanceof TypeError;
+    const detail = networkError
+      ? 'Browser could not complete the network request (possibly CORS, DNS or connectivity).'
+      : error.message;
+    return 'Failed during: ' + phase + '\n' + detail;
+  }
+
+  testApi.addEventListener('click', async () => {
+    testApi.disabled = true;
+    try {
+      setPhase('Checking API Gateway');
+      const data = await api('/scenarios');
+      showStatus('API Gateway reachable; API key accepted.\n' +
+        'Scenarios available: ' + (data.scenarios?.length ?? 0) +
+        '\nNext, choose a selfie and submit the test job.');
+    } catch (error) {
+      showStatus(describeError(error, 'Checking API Gateway /scenarios'));
+    } finally {
+      testApi.disabled = false;
+    }
+  });
 
   async function refreshJob() {
     if (!currentJobId) return;
@@ -141,7 +173,7 @@
     refresh.hidden = true;
     results.replaceChildren();
     try {
-      showStatus('Requesting secure upload form…');
+      setPhase('Requesting upload form from API Gateway');
       const signed = await api('/uploads', {
         method: 'POST',
         body: JSON.stringify({contentType: file.type, sizeBytes: file.size}),
@@ -151,10 +183,10 @@
         form.append(field, value);
       }
       form.append('file', file);
-      showStatus('Uploading selfie directly to private S3…');
+      setPhase('Uploading selfie directly to private S3');
       const uploaded = await fetch(signed.upload.url, {method: 'POST', body: form});
       if (!uploaded.ok) throw new Error('S3 upload failed: ' + uploaded.status);
-      showStatus('Creating job record…');
+      setPhase('Creating DynamoDB job through API Gateway');
       const created = await api('/jobs', {
         method: 'POST',
         headers: {'Idempotency-Key': crypto.randomUUID()},
@@ -170,7 +202,7 @@
         '\nStatus: ' + created.job.status +
         '\nThe image-generation worker has not been deployed yet.');
     } catch (error) {
-      showStatus('Error: ' + error.message);
+      showStatus(describeError(error, currentPhase));
     } finally {
       generate.disabled = false;
     }

@@ -111,6 +111,53 @@ jobs:
             --output text)
           test -n "$API_URL"
           echo "url=$API_URL" >> "$GITHUB_OUTPUT"
+      - name: Verify browser CORS preflight for API Gateway and upload S3
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin="${{ steps.outputs.outputs.url }}"
+          api_url="${{ steps.backend.outputs.url }}"
+          api_status=$(curl --silent --show-error --retry 2 --retry-delay 2 \
+            --max-time 15 --output /tmp/afl-api-preflight-body \
+            --dump-header /tmp/afl-api-preflight-headers \
+            --write-out '%{http_code}' --request OPTIONS "$api_url/uploads" \
+            --header "Origin: $origin" \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type,x-api-key')
+          echo "API preflight HTTP $api_status"
+          if [ "$api_status" != 200 ]; then
+            cat /tmp/afl-api-preflight-headers
+            cat /tmp/afl-api-preflight-body
+            exit 1
+          fi
+          grep -Fiq "access-control-allow-origin: $origin" /tmp/afl-api-preflight-headers || {
+            echo 'API Gateway preflight missing matching Access-Control-Allow-Origin'
+            cat /tmp/afl-api-preflight-headers
+            exit 1
+          }
+          bucket=$(aws cloudformation describe-stacks --region ap-southeast-2 \
+            --stack-name afl-app-dev-backend \
+            --query "Stacks[0].Outputs[?OutputKey=='UploadsBucketName'].OutputValue | [0]" \
+            --output text)
+          s3_status=$(curl --silent --show-error --retry 2 --retry-delay 2 \
+            --max-time 15 --output /tmp/afl-s3-preflight-body \
+            --dump-header /tmp/afl-s3-preflight-headers \
+            --write-out '%{http_code}' --request OPTIONS \
+            "https://$bucket.s3.ap-southeast-2.amazonaws.com/" \
+            --header "Origin: $origin" \
+            --header 'Access-Control-Request-Method: POST' \
+            --header 'Access-Control-Request-Headers: content-type')
+          echo "S3 preflight HTTP $s3_status"
+          if [ "$s3_status" != 200 ]; then
+            cat /tmp/afl-s3-preflight-headers
+            cat /tmp/afl-s3-preflight-body
+            exit 1
+          fi
+          grep -Fiq "access-control-allow-origin: $origin" /tmp/afl-s3-preflight-headers || {
+            echo 'S3 preflight missing matching Access-Control-Allow-Origin'
+            cat /tmp/afl-s3-preflight-headers
+            exit 1
+          }
       - name: Generate public frontend API configuration
         run: |
           printf 'window.AFL_CONFIG = {"apiBaseUrl":"%s"};\n' \
