@@ -43,6 +43,13 @@ def get_token():
     return token
 
 
+class ReplicateHTTPError(RuntimeError):
+    """A known HTTP rejection, distinct from an uncertain network failure."""
+    def __init__(self, code):
+        self.code = code
+        super().__init__(f"Replicate HTTP {code}")
+
+
 def request_json(url, token, payload=None):
     data = json.dumps(payload, separators=(",", ":")).encode() if payload is not None else None
     req = urllib.request.Request(
@@ -57,7 +64,7 @@ def request_json(url, token, payload=None):
             return json.load(resp)
     except urllib.error.HTTPError as exc:
         LOG.error("Replicate HTTP error code=%d", exc.code)
-        raise RuntimeError(f"Replicate request failed HTTP {exc.code}") from None
+        raise ReplicateHTTPError(exc.code) from None
 
 
 def job_by_id(job_id):
@@ -171,11 +178,37 @@ def submit(job_id, scene_id):
         " No sponsor marks, licensed logos, misleading text, or watermarks. "
         "Single high quality vertical sports photograph; not a collage."
     )
-    result = request_json(MODEL_URL, get_token(), {
+    payload = {
         "input": {"prompt": prompt, "image_input": [master_url, selfie_url],
                   "aspect_ratio": "9:16", "resolution": "2K",
                   "output_format": "png", "allow_fallback_model": False}
-    })
+    }
+    token = get_token()
+    # Replicate explicitly rejects throttled requests with HTTP 429. Only
+    # this definite rejection is safe to resubmit; timeouts, HTTP 5xx and
+    # connection errors have unknown billing outcomes and are NOT retried.
+    # Different per-scene delays prevent all three branches retrying in lockstep.
+    delays = {"scene1": (3, 9, 19), "scene2": (5, 11, 23),
+              "scene3": (7, 13, 27)}[scene_id]
+    for attempt in range(len(delays) + 1):
+        try:
+            result = request_json(MODEL_URL, token, payload)
+            break
+        except ReplicateHTTPError as exc:
+            if exc.code != 429:
+                scene_update(job_id, scene_id, "SUBMITTING",
+                             {"errorCode": f"REPLICATE_HTTP_{exc.code}"},
+                             expected="SUBMITTING")
+                raise
+            if attempt == len(delays):
+                scene_update(job_id, scene_id, "SUBMITTING",
+                             {"errorCode": "REPLICATE_RATE_LIMIT"},
+                             expected="SUBMITTING")
+                raise
+            LOG.warning("Scene %s was rate limited; retrying rejected request %d",
+                        scene_id, attempt + 1)
+            time.sleep(delays[attempt])
+    
     prediction_id = result.get("id")
     if not isinstance(prediction_id, str) or not prediction_id:
         raise RuntimeError("Replicate did not return a prediction identifier")
@@ -246,8 +279,14 @@ def fail_scene(job_id, scene_id):
     status = job.get("scenes", {}).get(scene_id, {}).get("status")
     if status not in ("COMPLETED", "FAILED"):
         try:
+            previous = job.get("scenes", {}).get(scene_id, {})
+            # A sanitized reason for the UI; no selfie URL, token, prompt
+            # or raw provider error body is persisted.
+            reason = previous.get("errorCode") or (
+                "PREDICTION_FAILED" if status == "GENERATING" else "SUBMISSION_FAILED")
             scene_update(job_id, scene_id, "FAILED",
-                         {"failedAt": datetime.now(timezone.utc).isoformat()},
+                         {"failedAt": datetime.now(timezone.utc).isoformat(),
+                          "errorCode": reason},
                          expected=status)
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
@@ -297,6 +336,7 @@ def recover(job_id):
             scene = dict(scenes.get(name) or {"status": "PENDING"})
             if scene.get("status") != "COMPLETED":
                 scene["status"] = "FAILED"
+                scene["errorCode"] = scene.get("errorCode") or "EXECUTION_RECOVERED"
                 scene["failedAt"] = datetime.now(timezone.utc).isoformat()
             scenes[name] = scene
         completed = sum(1 for scene in scenes.values() if scene["status"] == "COMPLETED")

@@ -161,7 +161,9 @@
       generateScene1.hidden = record.job.status !== 'AWAITING_IMAGE_PIPELINE';
       const scenes = record.job.scenes || {};
       const statuses = ['scene1', 'scene2', 'scene3'].map(id =>
-        id + ': ' + (scenes[id]?.status || 'PENDING'));
+        id + ': ' + (scenes[id]?.status || 'PENDING') +
+        (scenes[id]?.status === 'FAILED' && scenes[id]?.errorCode
+          ? ' (' + scenes[id].errorCode + ')' : ''));
       const completed = record.job.completedScenes ?? sceneResults.images.length;
       const failed = record.job.failedScenes ?? 0;
       showStatus('Job ' + currentJobId + '\nOverall: ' + record.job.status +
