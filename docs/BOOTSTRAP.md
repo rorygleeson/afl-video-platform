@@ -34,16 +34,16 @@ After merging the bootstrap PR to `main`, configure repository **Actions variabl
 - `CFN_EXECUTION_ROLE_ARN` — output `CloudFormationExecutionRoleArn`
 - `ARTIFACT_BUCKET` — output `ArtifactBucketName`
 
-The deploy role trusts **only** the `main` branch in this repository. PR validation must not assume this role; deployment runs after merge.
+The deploy role trusts **only** the `main` and `deploy` branches in this repository. PR validation must not assume this role. Production must use separately reviewed permissions.
 
 ## What the bootstrap creates
 
 - An S3 artifact bucket for Lambda ZIPs/CloudFormation deployment packages (private, encrypted and versioned).
-- A GitHub Actions role restricted to this repository's `main` branch via the existing OIDC provider.
+- A GitHub Actions role restricted to this repository's `main` and `deploy` branches via the existing OIDC provider. The deploy branch is used by the existing Kubrick-style `git deploy` flow.
 - A CloudFormation execution role for `afl-app-*` stacks, with IAM role creation limited to `afl-app-*` roles and a mandatory permissions boundary.
 - A managed IAM permissions boundary for application runtime roles.
 
-**Permissions review:** the execution role has broad non-IAM permissions within the development account to enable initial application-stack deployment. It must be narrowed as the app's concrete resource names become known. Keep production in a separate AWS account or with a separately restricted role. Do not run unreviewed workflow changes from `main`.
+**Permissions review:** the execution role has broad non-IAM permissions, including CloudFront, within the development account to enable initial application-stack deployment. It must be narrowed as the app's concrete resource names become known. Keep production in a separate AWS account or with a separately restricted role. Do not run unreviewed workflow changes from `main`.
 
 ## First deployment sequence
 
@@ -61,3 +61,9 @@ The deploy role trusts **only** the `main` branch in this repository. PR validat
 - The artifact bucket has a Retain policy; cleaning it up later is a deliberate manual decision.
 - GitHub Actions cannot modify the bootstrap stack with its application CloudFormation permissions.
 - Do not assume that a successful GitHub workflow proves the application is deployed; subsequent stages have their own tests.
+
+## CloudFront static frontend
+
+Application CloudFormation will create the private frontend S3 bucket, CloudFront distribution, Origin Access Control and bucket policy. The execution role can provision CloudFront resources. The GitHub deployment role can create invalidations against distributions in this account; tighten to the actual distribution ARN when available. No custom domain, ACM certificate or Route 53 configuration is required for the initial test page.
+
+**If this bootstrap stack is already deployed:** use CloudFormation **Update stack** with the amended YAML. Do not create a duplicate stack. Existing named roles and artifact bucket will be updated in place where possible; review the Change Set first.
