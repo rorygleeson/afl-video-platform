@@ -23,7 +23,8 @@ function setup() {
     };
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
-                      'generateScene1', 'status', 'pollStatus', 'key', 'team', 'scenario']) {
+                      'generateScene1', 'status', 'pollStatus', 'key', 'team', 'scenario',
+                      'testGoogle', 'googleStatus']) {
     els[name] = el();
   }
   els.key.value = 'test-api-key';
@@ -44,6 +45,11 @@ function setup() {
   };
   const fetch = async (url, opts = {}) => {
     calls.push({url, opts});
+    if (url.endsWith('/video/auth-check')) return {
+      ok: true, async json() { return {
+        status: 'AUTHENTICATED', videoGenerationEnabled: false,
+      }; },
+    };
     if (url.endsWith('/uploads')) return {
       ok: true, async json() { return {
         uploadKey: 'uploads/aaa.png',
@@ -153,4 +159,13 @@ test('changing team cancels pending polling and hides old paid job action', asyn
   assert.equal(h.timers.size, 0);
   assert.equal(h.els.generateScene1.hidden, true);
   assert.equal(h.els.refresh.hidden, true);
+});
+
+test('Google Cloud auth-check button never invokes paid generation', async () => {
+  const h = setup();
+  await h.els.testGoogle.listeners.click();
+  assert.match(h.els.googleStatus.textContent, /connected successfully/i);
+  assert.equal(h.els.testGoogle.disabled, false);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/auth-check')).length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 0);
 });
