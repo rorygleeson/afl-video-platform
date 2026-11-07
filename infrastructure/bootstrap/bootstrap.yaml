@@ -195,6 +195,12 @@ Resources:
                 Effect: Allow
                 Action: cloudfront:CreateInvalidation
                 Resource: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*'
+              - Sid: UploadStaticFrontend
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::afl-app-dev-frontend-${AWS::AccountId}-${AWS::Region}/*'
               - Sid: ListArtifactBucket
                 Effect: Allow
                 Action: s3:ListBucket
