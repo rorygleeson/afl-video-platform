@@ -36,3 +36,9 @@ If it fails, the page shows an error. Inspect CloudWatch `/aws/lambda/afl-app-de
 ## Next stage (not deployed)
 
 After `AUTHENTICATED` is verified, add one explicitly confirmed, cost-capped Scene 1 Google video submission using the supported Gemini Omni 1.2 Flash Interactions API, asynchronous polling, output storage to private S3, and separate scene status tracking. Validate cost and image identity before increasing concurrency.
+
+## Planned video worker separation (design only)
+
+Preserve the existing working authentication-probe Lambda. The planned **new video worker Lambda** will use a separate least-privilege AWS execution role; this new role must be explicitly permitted by Google WIF's role-restricted principal mapping and impersonation binding. Do not assume that authorising the probe role automatically authorises the new worker role. Verify permissions before deployment. Never create a static Google credential.
+
+The primary storage target is existing private AWS S3 for inputs and output MP4s; prefer supported bounded inline image transfer and streamed/decoded video to S3. **The Vertex/Google Cloud Omni endpoint's exact image/video input-output and asynchronous response contract is a Stage 2 verification gate.** No new GCS bucket is planned unless required by that contract. See [implementation plan](VIDEO_IMPLEMENTATION_PLAN.md). All paid video generation stays off until a separately approved test.
