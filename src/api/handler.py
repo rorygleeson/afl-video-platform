@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timezone
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 LOG = logging.getLogger(__name__)
@@ -18,7 +19,14 @@ UPLOAD_BUCKET = os.environ["UPLOAD_BUCKET"]
 JOBS_TABLE = os.environ["JOBS_TABLE"]
 FRONTEND_ORIGIN = os.environ["FRONTEND_ORIGIN"]
 
-S3 = boto3.client("s3")
+# Presigned browser POSTs must target the bucket's regional endpoint and use
+# Signature Version 4. The default client can generate a global endpoint with
+# legacy signature fields, triggering cross-origin redirects from browsers.
+S3 = boto3.client(
+    "s3",
+    region_name=os.environ["AWS_REGION"],
+    config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
+)
 DDB = boto3.resource("dynamodb").Table(JOBS_TABLE)
 
 MAX_UPLOAD = 10 * 1024 * 1024
