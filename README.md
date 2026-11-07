@@ -10,10 +10,10 @@ Serverless AWS application for personalised AFL-themed scene images, with a futu
 
 The architecture document contains:
 
-- A Mermaid infrastructure/component diagram (CloudFront, S3, API Gateway, Lambda, DynamoDB, Step Functions, Replicate, Secrets Manager, EventBridge).
-- The end-to-end selfie upload / job creation / parallel image generation sequence diagram.
-- API endpoints, DynamoDB state model, retry/idempotency and recovery rules.
-- GitHub Actions OIDC + CloudFormation deployment diagram and an as-built vs future-stage capability matrix.
+- A simple Mermaid AWS component diagram (website, API, processing, storage and Replicate).
+- The step-by-step selfie upload and parallel image generation sequence.
+- Essential API endpoints, job states, retries and failure handling.
+- A short deployment diagram and a clear distinction between deployed services and the future Veo stage.
 
 Additional technical notes: [Parallel scene processing](docs/PARALLEL_SCENES.md) and [the earlier single-scene proof of concept](docs/SCENE1_REPLICATE_PILOT.md).
 
