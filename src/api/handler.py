@@ -196,7 +196,7 @@ def start_images(job_id):
     if not job:
         return response(404, {"error": "Job not found"})
     if job.get("status") != "AWAITING_IMAGE_PIPELINE":
-        return response(200, {"job": public_job(job), "message": "Job already started"})
+        return response(200, {"jobId": job_id, "status": job["status"], "job": public_job(job), "message": "Job already started"})
     try:
         STATES.start_execution(
             stateMachineArn=IMAGE_STATE_MACHINE_ARN,
