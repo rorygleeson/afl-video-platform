@@ -1,1 +1,11 @@
-Create a photorealistic portrait 9:16 Australian rules football video from the provided personalised Scene 3 celebration image. The main player is $playerName, playing for $teamName; guernsey: $guernsey. Preserve the central person's identity and the distinct faces of teammates, the team colours and the night stadium. Starting in the supplied celebration pose, teammates rush in and embrace with realistic rapid movement; the central player throws their arms up, smiles and celebrates naturally as the crowd roars. A moving broadcast camera circles slightly, tracking the player; no slow motion, no face changes, no duplicated people. Audio: sustained crowd excitement and an energetic commentator saying: "$teamName are the premiers! $playerName has delivered the winning kick! $teamName are the AFL Grand Final champions!" Allow the final call to finish clearly within the clip. No on-screen text, subtitles, watermarks or added logos.
+# AFL Grand Final — Scene 3: PREMIERS CELEBRATION
+# Variables: $firstName, $lastName, $fullName, $teamName, $guernsey, $commentary
+# AWS substitutes all variables before the paid API submission.
+
+START FRAME: Use the provided personalised Scene 3 celebration image. The central player is $fullName, playing for $teamName in $guernsey. Preserve the central player's facial identity and the distinct faces of the surrounding teammates. All team guernseys must retain the same selected team design and colours.
+
+MOTION: Portrait 9:16. From the supplied starting pose, teammates rush in and embrace. The central player celebrates the winning goal, throwing arms up and smiling as the stadium erupts. Fast, natural body movement with slight broadcast camera motion; no slow motion, swapped identities, duplicates or uncanny faces. Keep the action readable around the central player.
+
+AUDIO / COMMENTARY: Sustained stadium roar. The commentator enthusiastically says exactly: "$commentary". The full final call must be audible and clearly state that $teamName are the AFL Grand Final champions.
+
+NO TEXT: No subtitles, titles, text overlays, additional logos or watermarks.
