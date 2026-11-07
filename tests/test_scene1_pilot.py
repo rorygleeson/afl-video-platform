@@ -122,5 +122,70 @@ class ParallelSceneTests(unittest.TestCase):
                 self.assertEqual(update.call_args.args[2][":outcome"], expected)
 
 
+    def test_recover_failed_preparation_marks_all_failed(self):
+        job = {"status": "AWAITING_IMAGE_PIPELINE"}
+        with (patch.object(worker, "job_by_id", return_value=job),
+              patch.object(worker.TABLE, "update_item") as update):
+            result = worker.recover("a" * 32)
+        self.assertEqual(result["status"], "FAILED")
+        args = update.call_args.kwargs
+        self.assertEqual(args["ExpressionAttributeValues"][":failed"], 3)
+        self.assertEqual(args["ExpressionAttributeValues"][":completed"], 0)
+        self.assertEqual(
+            {name: scene["status"] for name, scene in
+             args["ExpressionAttributeValues"][":scenes"].items()},
+            {name: "FAILED" for name in worker.VALID_SCENES})
+        self.assertIn("attribute_not_exists", args["ConditionExpression"])
+
+    def test_recover_preserves_completed_images_and_marks_others_failed(self):
+        job = {"status": "GENERATING_IMAGES", "scenes": {
+            "scene1": {"status": "COMPLETED", "resultKey": "results/id/scene1.png"},
+            "scene2": {"status": "GENERATING", "predictionId": "p2"},
+            "scene3": {"status": "PENDING"},
+        }}
+        with (patch.object(worker, "job_by_id", return_value=job),
+              patch.object(worker.TABLE, "update_item") as update):
+            result = worker.recover("a" * 32)
+        self.assertEqual(result, {
+            "status": "PARTIAL_SUCCESS",
+            "completedScenes": 1, "failedScenes": 2})
+        args = update.call_args.kwargs
+        scenes = args["ExpressionAttributeValues"][":scenes"]
+        self.assertEqual(scenes["scene1"]["resultKey"], "results/id/scene1.png")
+        self.assertEqual(scenes["scene1"]["status"], "COMPLETED")
+        self.assertEqual(scenes["scene2"]["status"], "FAILED")
+        self.assertEqual(scenes["scene3"]["status"], "FAILED")
+        self.assertIn("scenes.#scene0.#status", args["ConditionExpression"])
+
+    def test_recover_terminal_job_does_not_overwrite(self):
+        with (patch.object(worker, "job_by_id",
+                           return_value={"status": "COMPLETED"}),
+              patch.object(worker.TABLE, "update_item") as update):
+            self.assertEqual(worker.recover("a" * 32), {"status": "COMPLETED"})
+        update.assert_not_called()
+
+    def test_watchdog_marks_only_stale_jobs_without_replicate_request(self):
+        page = {"Items": [{"jobId": "a" * 32}, {"jobId": "b" * 32}]}
+        with (patch.object(worker.TABLE, "scan", return_value=page) as scan,
+              patch.object(worker, "recover", return_value={"status": "FAILED"}) as recover,
+              patch.object(worker, "request_json") as replicate):
+            output = worker.reconcile_stalled()
+        self.assertEqual(output, {"checked": 2, "recovered": 2})
+        self.assertEqual(recover.call_count, 2)
+        replicate.assert_not_called()
+        self.assertEqual(scan.call_count, 1)
+
+    def test_finalize_only_when_generating(self):
+        job = {"scenes": {
+            name: {"status": "COMPLETED"} for name in worker.VALID_SCENES
+        }}
+        with (patch.object(worker, "job_by_id", return_value=job),
+              patch.object(worker, "update_job") as update):
+            worker.finalize("a" * 32)
+        args = update.call_args.args
+        self.assertEqual(args[4], "#status = :generating")
+        self.assertEqual(args[2][":generating"], "GENERATING_IMAGES")
+
+
 if __name__ == "__main__":
     unittest.main()

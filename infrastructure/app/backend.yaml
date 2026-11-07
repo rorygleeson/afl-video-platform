@@ -272,7 +272,7 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ReplicateSecretName}-*'
               - Sid: UpdateAndReadJobs
                 Effect: Allow
-                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Scan]
                 Resource: !GetAtt JobsTable.Arn
               - Sid: WorkerLogging
                 Effect: Allow
@@ -342,6 +342,10 @@ Resources:
                 op: prepare
                 jobId.$: $.jobId
             ResultPath: $.prepared
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.error
+                Next: RecoverJob
             Next: ParallelScenes
           ParallelScenes:
             Type: Map
@@ -351,6 +355,10 @@ Resources:
               jobId.$: $.jobId
               sceneId.$: $$.Map.Item.Value
             ResultPath: $.sceneResults
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.error
+                Next: RecoverJob
             ItemProcessor:
               ProcessorConfig:
                 Mode: INLINE
@@ -441,9 +449,40 @@ Resources:
               Payload:
                 op: finalize
                 jobId.$: $.jobId
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.error
+                Next: RecoverJob
+            End: true
+          RecoverJob:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke
+            Parameters:
+              FunctionName: ${WorkerArn}
+              Payload:
+                op: recover
+                jobId.$: $.jobId
             End: true
       DefinitionSubstitutions:
         WorkerArn: !GetAtt ImageWorkerLambda.Arn
+  ImageReconcileSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: afl-app-dev-reconcile-images
+      Description: Recover image jobs stuck beyond Step Functions timeout; never retries paid calls.
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+        - Id: ReconcileImageJobs
+          Arn: !GetAtt ImageWorkerLambda.Arn
+          Input: '{"op":"reconcile"}'
+  ImageReconcileInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ImageWorkerLambda
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ImageReconcileSchedule.Arn
   ImageStateMachineLogs:
     Type: AWS::Logs::LogGroup
     Properties:
