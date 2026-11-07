@@ -169,9 +169,19 @@ The one-time bootstrap creates deployment roles, a permissions boundary and the 
 
 Core source files: [frontend](../frontend/index.html), [API Lambda](../src/api/handler.py), [image worker](../src/image_worker/handler.py), [frontend stack](../infrastructure/app/frontend.yaml), [backend stack](../infrastructure/app/backend.yaml), [deploy workflow](../.github/workflows/deploy.yml).
 
-## 6. Next phase — not implemented yet
+## 6. Approved next architecture — not yet deployed (8 November 2026)
 
-**Google Veo video generation** will animate the three personalised still-image starting frames. We will design the scene prompts, clip generation, commentary/audio, video stitching and final playback separately. There is currently **no Veo integration, video stitching, payment system or customer account login**.
+The current image workflow remains unchanged. We will add a separate `afl-app-dev-video` CloudFormation stack containing a **new video Lambda and new Step Functions Standard state machine**. The existing API Gateway/API Lambda will later expose individual paid Generate Video actions, separate from free prompt previews; each action reads the corresponding completed image S3 `resultKey`, adds a fully rendered scene-specific S3 prompt, and invokes **Gemini Omni 1.2 Flash** only after contract verification and explicit approval. This is a **future implementation**, not a deployed video pipeline.
+
+Three independently generated MP4s go to the **existing private uploads/results S3 bucket** under `videos/{jobId}/sceneN.mp4`. A separate FFmpeg assembly Lambda and an explicit **Assemble Final Video** button will produce `videos/{jobId}/final.mp4` only when all three clips are ready. The approximate measured example is 35 MB total; the exact Google output mechanism and size bounds remain to be verified. **No new Google Cloud Storage or AWS bucket is assumed** unless the actual Google API contract demands one. Never expose the private AWS bucket to Google; transfer image bytes and video output via the worker using supported API formats.
+
+Store independent `videos` and `assembly` DynamoDB states, preserving the original `scenes` map. Enforce one active async paid provider operation globally for development, durable submission idempotency and a hard no-resubmit rule for unknown paid submission outcomes. Retain existing free Google auth check, three-image Replicate pipeline and free previews. Future parallel three-video execution is an explicit later enablement, not something automatically switched on.
+
+Full design, endpoint contracts, IAM/storage details, safe change sequence and **required user approval after each stage:** [Video implementation plan](VIDEO_IMPLEMENTATION_PLAN.md).
+
+## 7. Next phase — not implemented yet
+
+**Google Omni Flash video generation** will animate the three personalised still-image starting frames. We will design the scene prompts, clip generation, commentary/audio, video stitching and final playback separately. There is currently **no Veo integration, video stitching, payment system or customer account login**.
 
 **Before a consumer launch**, we also need proper authentication, payments, monitoring/alerts, cost controls, data/privacy policies and more robust reconciliation of uncertain provider submissions.
 
