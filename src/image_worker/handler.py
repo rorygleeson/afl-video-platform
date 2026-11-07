@@ -5,12 +5,15 @@ Submit is never automatically retried: billable API calls have uncertain outcome
 """
 import json
 import logging
+import random
+import math
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 import os
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
 
 import boto3
 from botocore.config import Config
@@ -44,10 +47,44 @@ def get_token():
 
 
 class ReplicateHTTPError(RuntimeError):
-    """A known HTTP rejection, distinct from an uncertain network failure."""
-    def __init__(self, code):
+    """HTTP response confirms a rejection. Preserve safe retry timing metadata."""
+    def __init__(self, code, retry_after=None):
         self.code = code
+        self.retry_after = retry_after
         super().__init__(f"Replicate HTTP {code}")
+
+
+def retry_after_seconds(header, now=None):
+    """Parse Replicate's Retry-After seconds or HTTP-date; None if absent/invalid."""
+    if not header:
+        return None
+    try:
+        seconds = float(header)
+        if math.isfinite(seconds) and seconds >= 0:
+            return seconds
+    except (ValueError, TypeError):
+        pass
+    try:
+        until = parsedate_to_datetime(header)
+        if until.tzinfo is None:
+            until = until.replace(tzinfo=timezone.utc)
+        current = now or datetime.now(timezone.utc)
+        return max(0, (until - current).total_seconds())
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def rate_limit_delay(error, attempt):
+    """Honor Retry-After; otherwise use SkyGrid-style exponential jitter.
+
+    If provider requires >120 seconds, do not violate that retry window: fail
+    without another request instead of sleeping excessively in Lambda.
+    """
+    if error.retry_after is not None:
+        if error.retry_after > 120:
+            return None
+        return max(1, error.retry_after + random.uniform(0, 1))
+    return min(60, 2 ** attempt + random.uniform(0, 2))
 
 
 def request_json(url, token, payload=None):
@@ -64,7 +101,7 @@ def request_json(url, token, payload=None):
             return json.load(resp)
     except urllib.error.HTTPError as exc:
         LOG.error("Replicate HTTP error code=%d", exc.code)
-        raise ReplicateHTTPError(exc.code) from None
+        raise ReplicateHTTPError(exc.code, retry_after_seconds(exc.headers.get("Retry-After"))) from None
 
 
 def job_by_id(job_id):
@@ -184,13 +221,11 @@ def submit(job_id, scene_id):
                   "output_format": "png", "allow_fallback_model": False}
     }
     token = get_token()
-    # Replicate explicitly rejects throttled requests with HTTP 429. Only
-    # this definite rejection is safe to resubmit; timeouts, HTTP 5xx and
-    # connection errors have unknown billing outcomes and are NOT retried.
-    # Different per-scene delays prevent all three branches retrying in lockstep.
-    delays = {"scene1": (3, 9, 19), "scene2": (5, 11, 23),
-              "scene3": (7, 13, 27)}[scene_id]
-    for attempt in range(len(delays) + 1):
+    # SkyGrid uses up to six attempts, Retry-After, exponential backoff and
+    # jitter. We apply those same rules ONLY to definite HTTP 429 rejections.
+    # Never automatically retry a network timeout, HTTP 5xx, or accepted request.
+    max_attempts = 6
+    for attempt in range(max_attempts):
         try:
             result = request_json(MODEL_URL, token, payload)
             break
@@ -200,16 +235,21 @@ def submit(job_id, scene_id):
                              {"errorCode": f"REPLICATE_HTTP_{exc.code}"},
                              expected="SUBMITTING")
                 raise
-            if attempt == len(delays):
+            if attempt == max_attempts - 1:
                 scene_update(job_id, scene_id, "SUBMITTING",
                              {"errorCode": "REPLICATE_RATE_LIMIT"},
                              expected="SUBMITTING")
                 raise
-            LOG.warning("Scene %s was rate limited; retrying rejected request %d",
-                        scene_id, attempt + 1)
-            time.sleep(delays[attempt])
-    
-    prediction_id = result.get("id")
+            delay = rate_limit_delay(exc, attempt)
+            if delay is None:
+                scene_update(job_id, scene_id, "SUBMITTING",
+                             {"errorCode": "REPLICATE_RETRY_AFTER_TOO_LONG"},
+                             expected="SUBMITTING")
+                raise
+            LOG.warning("Scene %s: HTTP 429; waiting %.1fs before retry %d/%d",
+                        scene_id, delay, attempt + 2, max_attempts)
+            time.sleep(delay)
+        prediction_id = result.get("id")
     if not isinstance(prediction_id, str) or not prediction_id:
         raise RuntimeError("Replicate did not return a prediction identifier")
     scene_update(job_id, scene_id, "GENERATING",
