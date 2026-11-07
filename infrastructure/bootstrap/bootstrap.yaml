@@ -156,8 +156,8 @@ Resources:
               StringEquals:
                 'token.actions.githubusercontent.com:aud': sts.amazonaws.com
                 'token.actions.githubusercontent.com:sub':
-                  - !Sub 'repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubBranch}'
-                  - !Sub 'repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/deploy'
+                  - 'repo:rorygleeson@35155069/afl-video-platform@1449076923:ref:refs/heads/main'
+                  - 'repo:rorygleeson@35155069/afl-video-platform@1449076923:ref:refs/heads/deploy'
       Policies:
         - PolicyName: DeployApplicationStacksAndArtifacts
           PolicyDocument:
