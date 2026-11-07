@@ -24,8 +24,8 @@
 <body>
 <main>
   <h1>AFL Video Lab</h1>
-  <p>Stage 1C: upload your selfie, then optionally generate a personalised Scene 1 still image.</p>
-  <p class="note">The API URL is configured automatically. Your API key stays in this tab. Uploading a selfie does not incur an AI generation charge; generating Scene 1 is a separate, explicit action.</p>
+  <p>Upload your selfie, then generate three personalised AFL scene images in parallel.</p>
+  <p class="note">The API URL is configured automatically. Your API key stays in this tab. Uploading a selfie does not incur an AI generation charge; generating three scene images is a separate, explicit action.</p>
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off">
   <button id="testApi" type="button">Test API connection</button>
@@ -47,7 +47,7 @@
   <input id="selfie" type="file" accept="image/jpeg,image/png,image/webp,image/*">
   <img id="preview" alt="Selfie preview" hidden>
   <button id="generate" type="button" disabled>Upload selfie &amp; create test job</button>
-  <button id="generateScene1" type="button" hidden>Generate Scene 1 with Replicate (paid API)</button>
+  <button id="generateScene1" type="button" hidden>Generate 3 reference images with Replicate (paid API)</button>
   <button id="refresh" type="button" hidden>Refresh job status</button>
   <h2>Job status</h2>
   <p id="status" role="status">Loading backend configuration…</p>
@@ -143,14 +143,21 @@
         api('/jobs/' + currentJobId + '/images'),
       ]);
       generateScene1.hidden = record.job.status !== 'AWAITING_IMAGE_PIPELINE';
-      showStatus('Job ' + currentJobId + '\nStatus: ' + record.job.status +
-        '\nReference images: ' + sceneResults.images.length + '/3');
+      const scenes = record.job.scenes || {};
+      const statuses = ['scene1', 'scene2', 'scene3'].map(id =>
+        id + ': ' + (scenes[id]?.status || 'PENDING'));
+      const completed = record.job.completedScenes ?? sceneResults.images.length;
+      const failed = record.job.failedScenes ?? 0;
+      showStatus('Job ' + currentJobId + '\nOverall: ' + record.job.status +
+        '\nCompleted: ' + completed + '/3; failed: ' + failed +
+        '\n' + statuses.join('\n'));
       results.replaceChildren();
       for (const item of sceneResults.images) {
         if (!item.url) continue;
         const img = document.createElement('img');
         img.src = item.url;
-        img.alt = 'Generated reference scene';
+        img.alt = 'Generated ' + item.sceneId;
+        img.title = item.sceneId;
         results.appendChild(img);
       }
     } catch (error) {
@@ -160,16 +167,16 @@
   generateScene1.addEventListener('click', async () => {
     if (!currentJobId) return;
     if (!window.confirm(
-      'Start one paid Replicate image-edit request for Scene 1? ' +
-      'This will use your uploaded selfie and selected team guernsey.'
+      'Start THREE parallel paid Replicate image-edit requests? ' +
+      'Each scene uses your uploaded selfie and selected team guernsey.'
     )) return;
     generateScene1.disabled = true;
     try {
-      setPhase('Submitting paid Scene 1 image edit to Step Functions');
+      setPhase('Submitting three scene image edits to Step Functions');
       const result = await api('/jobs/' + currentJobId + '/generate', {
         method: 'POST',
       });
-      showStatus('Scene 1 generation requested.\nJob: ' + currentJobId +
+      showStatus('Three image generations requested.\nJob: ' + currentJobId +
         '\nStatus: ' + result.status +
         '\nTap Refresh job status to check progress.');
       generateScene1.hidden = true;
@@ -227,7 +234,7 @@
       generateScene1.hidden = false;
       showStatus('Selfie uploaded and job created.\nJob: ' + currentJobId +
         '\nStatus: ' + created.job.status +
-        '\nTap Generate Scene 1 separately to start a paid image edit.');
+        '\nTap Generate 3 reference images to start paid edits.');
     } catch (error) {
       showStatus(describeError(error, currentPhase));
     } finally {
