@@ -46,6 +46,7 @@ sequenceDiagram
     participant S3 as Private S3
     participant DB as DynamoDB
     participant SF as Step Functions
+    participant Worker as Image worker
     participant AI as Replicate
 
     User->>API: Request a selfie upload
@@ -56,20 +57,25 @@ sequenceDiagram
     API-->>User: Return job ID
     User->>API: Confirm Generate 3 Images
     API->>SF: Start job execution
-    SF->>AI: Submit three independent image edits
+    SF->>Worker: Start three parallel scene branches
+    Worker->>AI: Submit image edit for each scene
+    AI-->>Worker: Return prediction IDs
     loop Until each scene finishes
-        SF->>AI: Check prediction status
-        AI-->>SF: Return prediction status
+        SF->>Worker: Check prediction status
+        Worker->>AI: Fetch prediction status
+        AI-->>Worker: Return prediction status
     end
-    SF->>S3: Save completed images
-    SF->>DB: Update scene and overall statuses
+    Worker->>S3: Save each completed image
+    Worker->>DB: Update individual scene statuses
+    SF->>Worker: Finalise overall job
+    Worker->>DB: Save overall job status
     loop Every 5 seconds while active
         User->>API: Read job status and completed images
         API-->>User: Return progress and signed image links
     end
 ```
 
-**Important:** The sequence above is deliberately simplified. Replicate calls, S3 saves and DynamoDB updates are actually performed by the **image worker Lambda**, invoked by Step Functions. The three branches run concurrently using a Step Functions **Map state with maximum concurrency 3**.
+The diagram focuses on the main steps. The three branches run concurrently using a Step Functions **Map state with maximum concurrency 3**. Each scene has its own submit, wait, poll and save actions.
 
 ### The three scenes
 
