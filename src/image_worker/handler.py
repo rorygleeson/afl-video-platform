@@ -249,7 +249,7 @@ def submit(job_id, scene_id):
             LOG.warning("Scene %s: HTTP 429; waiting %.1fs before retry %d/%d",
                         scene_id, delay, attempt + 2, max_attempts)
             time.sleep(delay)
-        prediction_id = result.get("id")
+    prediction_id = result.get("id")
     if not isinstance(prediction_id, str) or not prediction_id:
         raise RuntimeError("Replicate did not return a prediction identifier")
     scene_update(job_id, scene_id, "GENERATING",
