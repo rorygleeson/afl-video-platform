@@ -20,7 +20,8 @@ jobs:
       - name: Verify frontend and Python API
         run: |
           test -s frontend/index.html
-          python3 -m py_compile src/api/handler.py
+          python3 -m py_compile src/api/handler.py src/image_worker/handler.py
+          python3 -m json.tool scenarios/afl-grand-final-winning-kick/v1/config.json > /dev/null
       - name: Test regional SigV4 presigned uploads
         run: |
           python -m pip install --disable-pip-version-check boto3
@@ -90,6 +91,26 @@ jobs:
           aws s3 cp "dist/api-$GITHUB_SHA.zip" \
             "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/api/$GITHUB_SHA.zip" \
             --region ap-southeast-2
+      - name: Verify all three S3 scene masters exist
+        run: |
+          set -euo pipefail
+          for scene in scene1 scene2 scene3; do
+            aws s3api head-object \
+              --region ap-southeast-2 \
+              --bucket afl-video-bootstrap-artifactbucket-xiuriidgyft4 \
+              --key "scenarios/afl-grand-final-winning-kick/v1/${scene}-start.png" > /dev/null
+          done
+      - name: Upload versioned scenario config and image worker
+        run: |
+          aws s3 cp scenarios/afl-grand-final-winning-kick/v1/config.json \
+            s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/scenarios/afl-grand-final-winning-kick/v1/config.json \
+            --content-type application/json --region ap-southeast-2
+          mkdir -p dist/image-worker
+          cp src/image_worker/handler.py dist/image-worker/handler.py
+          (cd dist/image-worker && zip -q ../image-worker-$GITHUB_SHA.zip handler.py)
+          aws s3 cp "dist/image-worker-$GITHUB_SHA.zip" \
+            "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/image-worker/$GITHUB_SHA.zip" \
+            --region ap-southeast-2
       - name: Deploy API and jobs CloudFormation
         run: |
           aws cloudformation deploy \
@@ -99,6 +120,9 @@ jobs:
             --parameter-overrides \
               ArtifactBucketName=afl-video-bootstrap-artifactbucket-xiuriidgyft4 \
               LambdaArtifactKey=api/$GITHUB_SHA.zip \
+              ImageWorkerArtifactKey=image-worker/$GITHUB_SHA.zip \
+              ScenarioAssetsBucket=afl-video-bootstrap-artifactbucket-xiuriidgyft4 \
+              ReplicateSecretName=afl-app/dev/replicate-api-token \
               "FrontendOrigin=${{ steps.outputs.outputs.url }}" \
               PermissionsBoundaryArn=arn:aws:iam::134387458447:policy/afl-video-app-permissions-boundary \
             --capabilities CAPABILITY_NAMED_IAM \
