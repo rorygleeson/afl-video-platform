@@ -24,10 +24,8 @@
 <body>
 <main>
   <h1>AFL Video Lab</h1>
-  <p>Stage 1 reference-image test page. No account, payments or video generation.</p>
-  <p class="note">The static frontend is live, but the API and image-generation pipeline are not deployed yet. Your API key stays in this tab; it is not stored or embedded in the page.</p>
-  <label for="apiUrl">API Gateway base URL</label>
-  <input id="apiUrl" type="url" placeholder="https://...execute-api.ap-southeast-2.amazonaws.com/dev" autocomplete="off">
+  <p>Stage 1 upload and job test page. No payments or video generation yet.</p>
+  <p class="note">The API endpoint is configured automatically during deployment. Your API key stays in this tab and is not stored in the site. This phase tests uploads and job creation; the three-scene image worker comes next.</p>
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off">
   <label for="scenario">Scenario</label>
@@ -47,23 +45,136 @@
   <label for="selfie">Selfie</label>
   <input id="selfie" type="file" accept="image/jpeg,image/png,image/webp,image/*">
   <img id="preview" alt="Selfie preview" hidden>
-  <button id="generate" type="button" disabled>Generate reference images (API pending)</button>
+  <button id="generate" type="button" disabled>Upload selfie &amp; create test job</button>
+  <button id="refresh" type="button" hidden>Refresh job status</button>
   <h2>Job status</h2>
-  <p id="status" role="status">Frontend deployed. Backend is next.</p>
+  <p id="status" role="status">Loading backend configuration…</p>
   <div id="results" aria-label="Reference images"></div>
 </main>
+<script src="./config.js"></script>
 <script>
-  const input=document.getElementById('selfie');
-  const preview=document.getElementById('preview');
-  let previewUrl;
-  input.addEventListener('change',()=>{
-    if(previewUrl) URL.revokeObjectURL(previewUrl);
-    const file=input.files[0];
-    preview.hidden=!file;
-    if(file){previewUrl=URL.createObjectURL(file);preview.src=previewUrl;}
+  const input = document.getElementById('selfie');
+  const preview = document.getElementById('preview');
+  const generate = document.getElementById('generate');
+  const refresh = document.getElementById('refresh');
+  const status = document.getElementById('status');
+  const results = document.getElementById('results');
+  const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
+  let previewUrl, currentJobId;
+
+  status.textContent = apiBaseUrl
+    ? 'Backend ready. Enter the API key and choose a selfie.'
+    : 'Backend configuration missing. Contact the developer.';
+  generate.disabled = !apiBaseUrl;
+
+  input.addEventListener('change', () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    const file = input.files[0];
+    preview.hidden = !file;
+    if (file) {
+      previewUrl = URL.createObjectURL(file);
+      preview.src = previewUrl;
+    }
   });
-  // Backend integration will be enabled after API Gateway and Step Functions are deployed.
-  // API key is deliberately neither persisted nor sent anywhere at this stage.
+
+  async function api(path, options = {}) {
+    const key = document.getElementById('key').value.trim();
+    if (!key) throw new Error('Enter your API key first.');
+    const response = await fetch(apiBaseUrl + path, {
+      ...options,
+      headers: {
+        'x-api-key': key,
+        ...(options.body ? {'Content-Type': 'application/json'} : {}),
+        ...(options.headers || {}),
+      },
+    });
+    let data;
+    try { data = await response.json(); } catch { data = {}; }
+    if (!response.ok) {
+      throw new Error(data.error || data.message ||
+        (response.status === 403 ? 'Invalid API key' : 'API error ' + response.status));
+    }
+    return data;
+  }
+
+  function showStatus(message) {
+    status.textContent = message;
+  }
+
+  async function refreshJob() {
+    if (!currentJobId) return;
+    try {
+      const [record, sceneResults] = await Promise.all([
+        api('/jobs/' + currentJobId),
+        api('/jobs/' + currentJobId + '/images'),
+      ]);
+      showStatus('Job ' + currentJobId + '\nStatus: ' + record.job.status +
+        '\nReference images: ' + sceneResults.images.length + '/3');
+      results.replaceChildren();
+      for (const item of sceneResults.images) {
+        if (!item.url) continue;
+        const img = document.createElement('img');
+        img.src = item.url;
+        img.alt = 'Generated reference scene';
+        results.appendChild(img);
+      }
+    } catch (error) {
+      showStatus('Could not refresh job: ' + error.message);
+    }
+  }
+  refresh.addEventListener('click', refreshJob);
+
+  generate.addEventListener('click', async () => {
+    const file = input.files[0];
+    if (!apiBaseUrl) return;
+    if (!document.getElementById('key').value.trim()) {
+      showStatus('Enter your API key first.');
+      return;
+    }
+    if (!file) { showStatus('Choose a selfie first.'); return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
+        file.size < 1 || file.size > 10 * 1024 * 1024) {
+      showStatus('Choose a JPEG, PNG or WebP image up to 10 MB.');
+      return;
+    }
+    generate.disabled = true;
+    refresh.hidden = true;
+    results.replaceChildren();
+    try {
+      showStatus('Requesting secure upload form…');
+      const signed = await api('/uploads', {
+        method: 'POST',
+        body: JSON.stringify({contentType: file.type, sizeBytes: file.size}),
+      });
+      const form = new FormData();
+      for (const [field, value] of Object.entries(signed.upload.fields)) {
+        form.append(field, value);
+      }
+      form.append('file', file);
+      showStatus('Uploading selfie directly to private S3…');
+      const uploaded = await fetch(signed.upload.url, {method: 'POST', body: form});
+      if (!uploaded.ok) throw new Error('S3 upload failed: ' + uploaded.status);
+      showStatus('Creating job record…');
+      const created = await api('/jobs', {
+        method: 'POST',
+        headers: {'Idempotency-Key': crypto.randomUUID()},
+        body: JSON.stringify({
+          uploadKey: signed.uploadKey,
+          scenarioId: document.getElementById('scenario').value,
+          team: document.getElementById('team').value,
+        }),
+      });
+      currentJobId = created.job.jobId;
+      refresh.hidden = false;
+      showStatus('Selfie uploaded and job created.\nJob: ' + currentJobId +
+        '\nStatus: ' + created.job.status +
+        '\nThe image-generation worker has not been deployed yet.');
+    } catch (error) {
+      showStatus('Error: ' + error.message);
+    } finally {
+      generate.disabled = false;
+    }
+  });
 </script>
 </body>
 </html>
