@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172432">
+  <title>AFL Video Lab — Stage 1</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#172432;background:#f4f6f9}
+    body{max-width:560px;margin:0 auto;padding:24px 16px 50px}
+    main{background:white;border:1px solid #dae0e6;border-radius:14px;padding:24px;box-shadow:0 6px 24px #17243210}
+    h1{margin:0 0 6px;font-size:1.65rem}p{line-height:1.5;color:#4c5a69}
+    label{display:block;margin:16px 0 5px;font-weight:650}
+    input,select,button{box-sizing:border-box;width:100%;min-height:44px;padding:10px;border:1px solid #b8c3ce;border-radius:8px;font:inherit}
+    button{background:#1261a0;color:#fff;font-weight:700;border:0;margin-top:20px;cursor:pointer}
+    button:disabled{background:#9eaab7;cursor:not-allowed}
+    .note{padding:12px;background:#edf5ff;border-radius:8px;font-size:.9rem}
+    #preview{max-width:100%;max-height:240px;margin-top:12px;border-radius:8px}
+    #results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+    #results img{width:100%;border-radius:6px}
+    #status{white-space:pre-wrap;overflow-wrap:anywhere}
+  </style>
+</head>
+<body>
+<main>
+  <h1>AFL Video Lab</h1>
+  <p>Stage 1 reference-image test page. No account, payments or video generation.</p>
+  <p class="note">The static frontend is live, but the API and image-generation pipeline are not deployed yet. Your API key stays in this tab; it is not stored or embedded in the page.</p>
+  <label for="apiUrl">API Gateway base URL</label>
+  <input id="apiUrl" type="url" placeholder="https://...execute-api.ap-southeast-2.amazonaws.com/dev" autocomplete="off">
+  <label for="key">x-api-key</label>
+  <input id="key" type="password" placeholder="Enter API key" autocomplete="off">
+  <label for="scenario">Scenario</label>
+  <select id="scenario"><option value="afl-grand-final-winning-kick">AFL Grand Final — Winning Kick</option></select>
+  <label for="team">Team</label>
+  <select id="team">
+    <option value="carlton">Carlton</option><option value="collingwood">Collingwood</option>
+    <option value="essendon">Essendon</option><option value="geelong">Geelong</option>
+    <option value="richmond">Richmond</option><option value="hawthorn">Hawthorn</option>
+    <option value="western-bulldogs">Western Bulldogs</option><option value="melbourne">Melbourne</option>
+    <option value="st-kilda">St Kilda</option><option value="north-melbourne">North Melbourne</option>
+    <option value="sydney">Sydney</option><option value="brisbane">Brisbane</option>
+    <option value="gold-coast">Gold Coast</option><option value="gws">GWS</option>
+    <option value="adelaide">Adelaide</option><option value="port-adelaide">Port Adelaide</option>
+    <option value="west-coast">West Coast</option><option value="fremantle">Fremantle</option>
+  </select>
+  <label for="selfie">Selfie</label>
+  <input id="selfie" type="file" accept="image/jpeg,image/png,image/webp,image/*">
+  <img id="preview" alt="Selfie preview" hidden>
+  <button id="generate" type="button" disabled>Generate reference images (API pending)</button>
+  <h2>Job status</h2>
+  <p id="status" role="status">Frontend deployed. Backend is next.</p>
+  <div id="results" aria-label="Reference images"></div>
+</main>
+<script>
+  const input=document.getElementById('selfie');
+  const preview=document.getElementById('preview');
+  let previewUrl;
+  input.addEventListener('change',()=>{
+    if(previewUrl) URL.revokeObjectURL(previewUrl);
+    const file=input.files[0];
+    preview.hidden=!file;
+    if(file){previewUrl=URL.createObjectURL(file);preview.src=previewUrl;}
+  });
+  // Backend integration will be enabled after API Gateway and Step Functions are deployed.
+  // API key is deliberately neither persisted nor sent anywhere at this stage.
+</script>
+</body>
+</html>
