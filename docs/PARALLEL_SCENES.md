@@ -12,6 +12,8 @@ A single Step Functions **Standard** execution runs:
 2. `ParallelScenes`: **inline Map, MaxConcurrency 3**, one item per configured scene
 3. Each scene independently **Submit (never automatically retried) → Wait → Poll (read-only retries allowed) → Save**, or **MarkSceneFailed** on any branch error
 4. `Finalize`: inspect all three scene statuses and write COMPLETED, PARTIAL_SUCCESS or FAILED
+5. `RecoverJob`: catch prepare, Map or finalization failures; preserve images already completed, mark unfinished scenes FAILED, and terminalize overall status without another Replicate submission
+6. EventBridge runs an image-job watchdog every 5 minutes; jobs still GENERATING_IMAGES after 45 minutes are recovered without re-billing. It intentionally uses a bounded DynamoDB scan suitable for the dev stage.
 
 DynamoDB job item contains nested `scenes.scene1`, `scenes.scene2`, `scenes.scene3` with status, prediction ID and result key where available. A scene becomes visible on the phone as soon as it is saved. API GET status derives counts from the nested scene records. Partial results are retained even if other scenes fail.
 
