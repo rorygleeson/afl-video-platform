@@ -5,11 +5,19 @@ Parameters:
     Type: String
   LambdaArtifactKey:
     Type: String
+  ImageWorkerArtifactKey:
+    Type: String
+    Description: Immutable S3 object key for Scene 1 worker ZIP.
   FrontendOrigin:
     Type: String
     AllowedPattern: '^https://[a-zA-Z0-9.-]+$'
   PermissionsBoundaryArn:
     Type: String
+  ScenarioAssetsBucket:
+    Type: String
+  ReplicateSecretName:
+    Type: String
+    Default: afl-app/dev/replicate-api-token
 Resources:
   UploadsBucket:
     Type: AWS::S3::Bucket
@@ -37,6 +45,10 @@ Resources:
           - Id: ExpireTestUploads
             Status: Enabled
             Prefix: uploads/
+            ExpirationInDays: 7
+          - Id: ExpireGeneratedTestImages
+            Status: Enabled
+            Prefix: results/
             ExpirationInDays: 7
           - Id: AbortIncompleteMultipart
             Status: Enabled
@@ -81,6 +93,10 @@ Resources:
                 Effect: Allow
                 Action: [s3:PutObject, s3:GetObject]
                 Resource: !Sub '${UploadsBucket.Arn}/uploads/*'
+              - Sid: StartScene1OnExplicitRequest
+                Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref ImageStateMachine
               - Sid: StoreJobs
                 Effect: Allow
                 Action: [dynamodb:PutItem, dynamodb:GetItem]
@@ -106,6 +122,7 @@ Resources:
           UPLOAD_BUCKET: !Ref UploadsBucket
           JOBS_TABLE: !Ref JobsTable
           FRONTEND_ORIGIN: !Ref FrontendOrigin
+          IMAGE_STATE_MACHINE_ARN: !Ref ImageStateMachine
   ApiLogs:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -216,6 +233,182 @@ Resources:
       KeyId: !Ref ApiKey
       KeyType: API_KEY
       UsagePlanId: !Ref ApiUsagePlan
+  ImageWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-image-worker-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PilotImageWorker
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadSourceSelfies
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${UploadsBucket.Arn}/uploads/*'
+              - Sid: WriteResults
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub '${UploadsBucket.Arn}/results/*'
+              - Sid: ReadVersionedScenarioMastersAndConfig
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ScenarioAssetsBucket}/scenarios/afl-grand-final-winning-kick/v1/*'
+              - Sid: ReadReplicateToken
+                Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ReplicateSecretName}-*'
+              - Sid: UpdateAndReadJobs
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !GetAtt JobsTable.Arn
+              - Sid: WorkerLogging
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-image-worker:*'
+  ImageWorkerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: afl-app-dev-image-worker
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      MemorySize: 256
+      Timeout: 90
+      Role: !GetAtt ImageWorkerRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref ImageWorkerArtifactKey
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadsBucket
+          ASSET_BUCKET: !Ref ScenarioAssetsBucket
+          JOBS_TABLE: !Ref JobsTable
+          REPLICATE_SECRET_NAME: !Ref ReplicateSecretName
+          SCENARIO_CONFIG_KEY: scenarios/afl-grand-final-winning-kick/v1/config.json
+  ImageWorkerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/afl-app-dev-image-worker
+      RetentionInDays: 14
+  ImageStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-image-sfn-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeImageWorker
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt ImageWorkerLambda.Arn
+  ImageStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: afl-app-dev-scene1-pilot
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt ImageStateMachineRole.Arn
+      Definition:
+        Comment: One billable Replicate prediction for Scene 1 only. No retries of submission.
+        StartAt: Submit
+        TimeoutSeconds: 1500
+        States:
+          Submit:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke
+            Parameters:
+              FunctionName: ${WorkerArn}
+              Payload:
+                op: submit
+                jobId.$: $.jobId
+            ResultPath: $.submit
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.error
+                Next: MarkFailed
+            Next: WaitForPrediction
+          WaitForPrediction:
+            Type: Wait
+            Seconds: 12
+            Next: Poll
+          Poll:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke
+            Parameters:
+              FunctionName: ${WorkerArn}
+              Payload:
+                op: check
+                jobId.$: $.jobId
+                predictionId.$: $.submit.Payload.predictionId
+            ResultPath: $.poll
+            Retry:
+              - ErrorEquals: [States.TaskFailed]
+                IntervalSeconds: 4
+                MaxAttempts: 2
+                BackoffRate: 2
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.error
+                Next: MarkFailed
+            Next: PredictionStatus
+          PredictionStatus:
+            Type: Choice
+            Choices:
+              - Variable: $.poll.Payload.status
+                StringEquals: succeeded
+                Next: SaveResult
+              - Variable: $.poll.Payload.status
+                StringEquals: failed
+                Next: MarkFailed
+            Default: WaitForPrediction
+          SaveResult:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke
+            Parameters:
+              FunctionName: ${WorkerArn}
+              Payload:
+                op: save
+                jobId.$: $.jobId
+                predictionId.$: $.submit.Payload.predictionId
+                output.$: $.poll.Payload.output
+            ResultPath: $.saved
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.error
+                Next: MarkFailed
+            End: true
+          MarkFailed:
+            Type: Task
+            Resource: arn:aws:states:::lambda:invoke
+            Parameters:
+              FunctionName: ${WorkerArn}
+              Payload:
+                op: failed
+                jobId.$: $.jobId
+            End: true
+      DefinitionSubstitutions:
+        WorkerArn: !GetAtt ImageWorkerLambda.Arn
+  ImageStateMachineLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/vendedlogs/states/afl-app-dev-scene1-pilot
+      RetentionInDays: 14
 Outputs:
   ApiBaseUrl:
     Value: !Sub 'https://${RestApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/dev'
@@ -225,3 +418,5 @@ Outputs:
     Value: !Ref UploadsBucket
   JobsTableName:
     Value: !Ref JobsTable
+  ImageStateMachineArn:
+    Value: !Ref ImageStateMachine
