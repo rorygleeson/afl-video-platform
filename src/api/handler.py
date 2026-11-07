@@ -256,7 +256,11 @@ def google_auth_check():
         })
     result = json.loads(invocation["Payload"].read())
     if result.get("status") != "AUTHENTICATED":
-        return response(502, {"status": "AUTHENTICATION_FAILED", "videoGenerationEnabled": False})
+        return response(502, {
+            "status": "AUTHENTICATION_FAILED",
+            "errorCode": result.get("errorCode", "GOOGLE_AUTH_ERROR"),
+            "videoGenerationEnabled": False,
+        })
     return response(200, {"status": "AUTHENTICATED", "videoGenerationEnabled": False})
 
 

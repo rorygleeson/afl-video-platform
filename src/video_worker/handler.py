@@ -48,23 +48,45 @@ def external_account_info():
     }
 
 
+def safe_error_code(exc):
+    """Categorise Google auth failures without exposing token or response body."""
+    detail = str(exc).lower()
+    if ("iamcredentials.googleapis.com" in detail or
+            "iam.serviceaccounts.getaccesstoken" in detail):
+        if any(x in detail for x in ("disabled", "not been used", "service_disabled", "not enabled")):
+            return "GOOGLE_IAM_CREDENTIALS_API_DISABLED"
+        return "GOOGLE_SERVICE_ACCOUNT_IMPERSONATION_DENIED"
+    if "sts.googleapis.com" in detail:
+        if any(x in detail for x in ("disabled", "not been used", "service_disabled")):
+            return "GOOGLE_STS_API_DISABLED"
+        return "GOOGLE_FEDERATION_STS_REJECTED"
+    if "invalid_grant" in detail or "attribute_condition" in detail:
+        return "GOOGLE_FEDERATION_REJECTED"
+    if "permission_denied" in detail or "permission denied" in detail or "403" in detail:
+        return "GOOGLE_PERMISSION_DENIED"
+    if "timeout" in detail or "timed out" in detail:
+        return "GOOGLE_AUTH_TIMEOUT"
+    if "connection" in detail or "name resolution" in detail:
+        return "GOOGLE_AUTH_NETWORK_ERROR"
+    return "GOOGLE_AUTH_ERROR"
+
+
 def lambda_handler(event, context):
     if event.get("op") != "auth_check":
-        # No paid model operation is implemented. Unknown ops are rejected.
         raise ValueError("Only auth_check is available; video generation disabled")
-
-    creds, _ = load_credentials_from_dict(
-        external_account_info(), scopes=[CLOUD_PLATFORM_SCOPE]
-    )
-    creds.refresh(Request())
-    # Never return or log credentials, tokens, signed STS payloads or selfies.
-    if not creds.valid:
-        raise RuntimeError("Google workload federation did not return valid credentials")
+    try:
+        creds, _ = load_credentials_from_dict(
+            external_account_info(), scopes=[CLOUD_PLATFORM_SCOPE]
+        )
+        creds.refresh(Request())
+        if not creds.valid:
+            raise RuntimeError("Google workload federation did not return valid credentials")
+    except Exception as exc:
+        code = safe_error_code(exc)
+        # Do not print the exception: provider responses might contain private tokens.
+        LOG.warning("Google WIF check failed: code=%s exception_type=%s", code, type(exc).__name__)
+        return {"status": "AUTHENTICATION_FAILED", "errorCode": code,
+                "videoGenerationEnabled": False}
 
     LOG.info("Google workload federation succeeded; no video generation attempted")
-    return {
-        "status": "AUTHENTICATED",
-        "videoGenerationEnabled": False,
-        "projectNumber": PROJECT_NUMBER,
-        "serviceAccount": SERVICE_ACCOUNT,
-    }
+    return {"status": "AUTHENTICATED", "videoGenerationEnabled": False}

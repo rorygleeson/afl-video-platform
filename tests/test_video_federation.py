@@ -78,5 +78,27 @@ class VideoFederationTests(unittest.TestCase):
         self.assertEqual(captured["scopes"], [worker.CLOUD_PLATFORM_SCOPE])
 
 
+    def test_missing_google_iam_credentials_api_has_safe_code(self):
+        def broken(*_args, **_kwargs):
+            raise RuntimeError(
+                "iamcredentials.googleapis.com has not been used in project "
+                "or it is disabled: PRIVATE_RESPONSE_VALUE"
+            )
+        worker = load_worker(broken)
+        result = worker.lambda_handler({"op": "auth_check"}, None)
+        self.assertEqual(result["status"], "AUTHENTICATION_FAILED")
+        self.assertEqual(result["errorCode"], "GOOGLE_IAM_CREDENTIALS_API_DISABLED")
+        self.assertFalse(result["videoGenerationEnabled"])
+        self.assertNotIn("PRIVATE_RESPONSE_VALUE", str(result))
+
+    def test_unknown_google_error_does_not_expose_sensitive_response(self):
+        def broken(*_args, **_kwargs):
+            raise RuntimeError("provider returned secret=not-for-client")
+        worker = load_worker(broken)
+        result = worker.lambda_handler({"op": "auth_check"}, None)
+        self.assertEqual(result["errorCode"], "GOOGLE_AUTH_ERROR")
+        self.assertNotIn("not-for-client", str(result))
+
+
 if __name__ == "__main__":
     unittest.main()

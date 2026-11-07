@@ -201,7 +201,7 @@
     let data;
     try { data = await response.json(); } catch { data = {}; }
     if (!response.ok) {
-      throw new Error(data.error || data.message ||
+      throw new Error(data.errorCode || data.error || data.message ||
         (response.status === 403 ? 'Invalid API key' : 'API error ' + response.status));
     }
     return data;
