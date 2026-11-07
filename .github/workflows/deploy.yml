@@ -30,7 +30,8 @@ jobs:
       - name: Verify frontend and Python API
         run: |
           test -s frontend/index.html
-          python3 -m py_compile src/api/handler.py src/image_worker/handler.py src/video_worker/handler.py
+          python3 -m py_compile src/api/handler.py src/api/video_prompts.py src/image_worker/handler.py src/video_worker/handler.py
+          python3 -m json.tool scenarios/afl-grand-final-winning-kick/v1/video/config.json > /dev/null
           python3 -m json.tool scenarios/afl-grand-final-winning-kick/v1/config.json > /dev/null
       - name: Test browser polling and scene thumbnails
         run: node --test tests/test_frontend_poll.cjs
@@ -98,7 +99,7 @@ jobs:
       - name: Package and upload API Lambda
         run: |
           mkdir -p dist/api
-          cp src/api/handler.py dist/api/handler.py
+          cp src/api/handler.py src/api/video_prompts.py dist/api/
           (cd dist/api && zip -q ../api-$GITHUB_SHA.zip handler.py)
           aws s3 cp "dist/api-$GITHUB_SHA.zip" \
             "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/api/$GITHUB_SHA.zip" \
@@ -123,6 +124,17 @@ jobs:
           aws s3 cp "dist/image-worker-$GITHUB_SHA.zip" \
             "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/image-worker/$GITHUB_SHA.zip" \
             --region ap-southeast-2
+      - name: Publish versioned video prompt configuration and templates to S3
+        run: |
+          set -euo pipefail
+          bucket=afl-video-bootstrap-artifactbucket-xiuriidgyft4
+          prefix=scenarios/afl-grand-final-winning-kick/v1/video
+          aws s3 cp scenarios/afl-grand-final-winning-kick/v1/video/config.json \
+            "s3://$bucket/$prefix/config.json" --content-type application/json --region ap-southeast-2
+          for scene in scene1 scene2 scene3; do
+            aws s3 cp "scenarios/afl-grand-final-winning-kick/v1/video/${scene}-video.txt" \
+              "s3://$bucket/$prefix/${scene}-video.txt" --content-type text/plain --region ap-southeast-2
+          done
       - name: Use Lambda-compatible Python 3.13 for dependency packaging
         uses: actions/setup-python@v5
         with:

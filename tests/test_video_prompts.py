@@ -1,0 +1,62 @@
+"""Offline strict-video-prompt tests; no paid inference or AWS network calls."""
+import importlib.util
+import io
+import json
+import pathlib
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+SCENARIO = ROOT / "scenarios" / "afl-grand-final-winning-kick" / "v1"
+spec = importlib.util.spec_from_file_location("video_prompts", ROOT / "src" / "api" / "video_prompts.py")
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+
+class LocalS3:
+    def get_object(self, Bucket, Key):
+        assert Bucket == "test-scenario-bucket"
+        path = ROOT / Key
+        return {"Body": io.BytesIO(path.read_bytes())}
+
+
+class VideoPromptTests(unittest.TestCase):
+    def test_prompt_substitutions_for_each_scene(self):
+        job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
+        for scene in ("scene1", "scene2", "scene3"):
+            with self.subTest(scene=scene):
+                result = mod.render_scene(LocalS3(), "test-scenario-bucket", job, scene)
+                self.assertIn("Alex Tonelli", result["prompt"])
+                self.assertIn("Geelong Cats", result["prompt"])
+                self.assertIn("navy blue and white horizontal hoops", result["prompt"])
+                self.assertIn(result["commentary"], result["prompt"])
+                self.assertNotIn("$fullName", result["prompt"])
+                self.assertNotIn("$commentary", result["prompt"])
+                self.assertFalse(result["videoGenerationEnabled"])
+                self.assertFalse(result["videoSubmissionAvailable"])
+                self.assertEqual(result["videoConcurrency"], 1)
+                self.assertEqual(result["sceneId"], scene)
+        scene3 = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")
+        self.assertIn("AFL Grand Final champions", scene3["commentary"])
+
+    def test_mandatory_name_and_input_validation(self):
+        for value in ("", "Bob123", "Bob;", "$fullName", "x" * 41):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    mod.validate_name(value, "First name")
+        for value in ("Rory", "O'Brien", "Mary-Jane", "José"):
+            self.assertEqual(mod.validate_name(value, "First name"), value)
+        with self.assertRaises(ValueError):
+            mod.render_scene(LocalS3(), "test-scenario-bucket",
+                             {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"},
+                             "scene4")
+
+    def test_no_paid_video_enabled_in_config(self):
+        cfg = json.loads((SCENARIO / "video" / "config.json").read_text())
+        self.assertIs(cfg["videoGenerationEnabled"], False)
+        self.assertEqual(cfg["videoConcurrency"], 1)
+        self.assertEqual(cfg["maxPaidScenesPerRequest"], 1)
+        self.assertEqual(len(cfg["scenes"]), 3)
+
+
+if __name__ == "__main__":
+    unittest.main()

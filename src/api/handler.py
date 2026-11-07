@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from video_prompts import validate_name, render_scene
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -20,6 +21,7 @@ JOBS_TABLE = os.environ["JOBS_TABLE"]
 FRONTEND_ORIGIN = os.environ["FRONTEND_ORIGIN"]
 IMAGE_STATE_MACHINE_ARN = os.environ["IMAGE_STATE_MACHINE_ARN"]
 VIDEO_WORKER_ARN = os.environ.get("VIDEO_WORKER_ARN")
+SCENARIO_ASSET_BUCKET = os.environ.get("SCENARIO_ASSET_BUCKET")
 
 # Presigned browser POSTs must target the bucket's regional endpoint and use
 # Signature Version 4. The default client can generate a global endpoint with
@@ -117,6 +119,8 @@ def public_job(item):
         "jobId": item["jobId"],
         "scenarioId": item["scenarioId"],
         "team": item["team"],
+        "firstName": item.get("firstName"),
+        "lastName": item.get("lastName"),
         "status": item["status"],
         "createdAt": item["createdAt"],
         "imageCount": sum(1 for scene in item.get("scenes", {}).values() if scene.get("status") == "COMPLETED"),
@@ -140,6 +144,8 @@ def create_job(event):
     data = body_json(event)
     scenario_id = data.get("scenarioId")
     team = data.get("team")
+    first_name = validate_name(data.get("firstName"), "First name")
+    last_name = validate_name(data.get("lastName"), "Surname")
     upload_key = data.get("uploadKey")
     if scenario_id != SCENARIO_ID:
         raise ValueError("Unsupported scenario")
@@ -156,7 +162,8 @@ def create_job(event):
     # Make retries of the same request safe without storing the client's API key.
     fingerprint = hashlib.sha256(
         json.dumps(
-            {"scenarioId": scenario_id, "team": team, "uploadKey": upload_key},
+            {"scenarioId": scenario_id, "team": team, "uploadKey": upload_key,
+             "firstName": first_name, "lastName": last_name},
             sort_keys=True, separators=(",", ":"),
         ).encode()
     ).hexdigest()
@@ -183,6 +190,8 @@ def create_job(event):
         "jobId": job_id,
         "scenarioId": scenario_id,
         "team": team,
+        "firstName": first_name,
+        "lastName": last_name,
         "uploadKey": upload_key,
         "requestFingerprint": fingerprint,
         "status": "AWAITING_IMAGE_PIPELINE",
@@ -236,6 +245,17 @@ def images_for_job(job):
             })
     return response(200, {"jobId": job["jobId"], "status": job["status"],
                           "scenes": public_job(job)["scenes"], "images": images})
+
+
+def preview_video_prompt(job_id, scene_id):
+    """No paid video API call. Resolve exact versioned prompt from private S3."""
+    job = get_job(job_id)
+    if not job:
+        return response(404, {"error": "Job not found"})
+    if not SCENARIO_ASSET_BUCKET:
+        return response(503, {"error": "Prompt assets not configured"})
+    result = render_scene(S3, SCENARIO_ASSET_BUCKET, job, scene_id)
+    return response(200, result)
 
 
 def google_auth_check():
@@ -309,6 +329,9 @@ def lambda_handler(event, context):
             return presign_upload(event)
         if method == "POST" and path == "/jobs":
             return create_job(event)
+        preview_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/video/(scene[123])/preview", path)
+        if method == "GET" and preview_match:
+            return preview_video_prompt(preview_match.group(1), preview_match.group(2))
         generate_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/generate", path)
         if method == "POST" and generate_match:
             return start_images(generate_match.group(1))

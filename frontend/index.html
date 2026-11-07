@@ -46,12 +46,25 @@
     <option value="adelaide">Adelaide</option><option value="port-adelaide">Port Adelaide</option>
     <option value="west-coast">West Coast</option><option value="fremantle">Fremantle</option>
   </select>
+  <label for="firstName">First name (required)</label>
+  <input id="firstName" type="text" maxlength="40" autocomplete="given-name" placeholder="e.g. Alex" required>
+  <label for="lastName">Surname (required)</label>
+  <input id="lastName" type="text" maxlength="40" autocomplete="family-name" placeholder="e.g. Tonelli" required>
   <label for="selfie">Selfie</label>
   <input id="selfie" type="file" accept="image/jpeg,image/png,image/webp,image/*">
   <img id="preview" alt="Selfie preview" hidden>
   <button id="generate" type="button" disabled>Upload selfie &amp; create test job</button>
   <button id="generateScene1" type="button" hidden>Generate 3 reference images with Replicate (paid API)</button>
   <button id="refresh" type="button" hidden>Refresh job status</button>
+  <section id="videoPromptSection" hidden>
+    <h2>Video prompts — free preview</h2>
+    <p class="note">Choose a scene to see its exact personalised prompt and commentary before any paid video generation. These buttons do not call Google video models. Video generation is not implemented yet; concurrency is configured as 1.</p>
+    <button id="videoScene1" type="button">Preview Scene 1 — Run-up</button>
+    <button id="videoScene2" type="button">Preview Scene 2 — Winning kick</button>
+    <button id="videoScene3" type="button">Preview Scene 3 — Celebration</button>
+    <p id="videoPromptStatus" role="status" aria-live="polite"></p>
+    <pre id="videoPromptText" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.9rem"></pre>
+  </section>
   <h2>Job status</h2>
   <p id="status" role="status">Loading backend configuration…</p>
   <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
@@ -70,6 +83,9 @@
   const status = document.getElementById('status');
   const results = document.getElementById('results');
   const pollStatus = document.getElementById('pollStatus');
+  const videoPromptSection = document.getElementById('videoPromptSection');
+  const videoPromptStatus = document.getElementById('videoPromptStatus');
+  const videoPromptText = document.getElementById('videoPromptText');
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
   let previewUrl, currentJobId, currentPhase = 'Initialising';
   const POLL_INTERVAL_MS = 5000;
@@ -168,6 +184,8 @@
       currentJobId = null;
       generateScene1.hidden = true;
       refresh.hidden = true;
+      videoPromptSection.hidden = true;
+      videoPromptText.textContent = '';
       results.replaceChildren();
       showStatus('Selection changed. Upload selfie and create a new job before generating.');
     }
@@ -175,6 +193,8 @@
 
   document.getElementById('team').addEventListener('change', invalidateJobSelection);
   document.getElementById('scenario').addEventListener('change', invalidateJobSelection);
+  document.getElementById('firstName').addEventListener('input', invalidateJobSelection);
+  document.getElementById('lastName').addEventListener('input', invalidateJobSelection);
 
   input.addEventListener('change', () => {
     invalidateJobSelection();
@@ -335,6 +355,29 @@
 
   refresh.addEventListener('click', refreshJob);
 
+  for (const n of [1, 2, 3]) {
+    const button = document.getElementById('videoScene' + n);
+    button.addEventListener('click', async () => {
+      if (!currentJobId) return;
+      const jobToPreview = currentJobId;
+      button.disabled = true;
+      videoPromptStatus.textContent = 'Loading Scene ' + n + ' prompt from private S3…';
+      videoPromptText.textContent = '';
+      try {
+        const data = await api('/jobs/' + jobToPreview + '/video/scene' + n + '/preview');
+        if (jobToPreview !== currentJobId) return;
+        videoPromptStatus.textContent = data.playerName + ' — ' + data.teamName +
+          ' | Scene ' + n + ' | ' + data.durationSeconds + ' seconds | no charge';
+        videoPromptText.textContent = data.prompt;
+      } catch (error) {
+        if (jobToPreview === currentJobId) videoPromptStatus.textContent =
+          'Could not preview Scene ' + n + ': ' + error.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+
   generate.addEventListener('click', async () => {
     const file = input.files[0];
     if (!apiBaseUrl) return;
@@ -343,6 +386,11 @@
       return;
     }
     if (!file) { showStatus('Choose a selfie first.'); return; }
+    const firstName = document.getElementById('firstName').value.trim();
+    const lastName = document.getElementById('lastName').value.trim();
+    if (!firstName || !lastName) {
+      showStatus('Enter both first name and surname before creating a job.'); return;
+    }
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
         file.size < 1 || file.size > 10 * 1024 * 1024) {
       showStatus('Choose a JPEG, PNG or WebP image up to 10 MB.');
@@ -355,6 +403,8 @@
     generateScene1.hidden = true;
     generateScene1.disabled = false;
     refresh.hidden = true;
+    videoPromptSection.hidden = true;
+    videoPromptText.textContent = '';
     results.replaceChildren();
     try {
       setPhase('Requesting upload form from API Gateway');
@@ -378,10 +428,13 @@
           uploadKey: signed.uploadKey,
           scenarioId: document.getElementById('scenario').value,
           team: document.getElementById('team').value,
+          firstName,
+          lastName,
         }),
       });
       currentJobId = created.job.jobId;
       refresh.hidden = false;
+      videoPromptSection.hidden = false;
       generateScene1.hidden = false;
       showStatus('Selfie uploaded and job created.\nJob: ' + currentJobId +
         '\nStatus: ' + created.job.status +

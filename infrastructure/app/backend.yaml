@@ -104,6 +104,10 @@ Resources:
                 Effect: Allow
                 Action: states:StartExecution
                 Resource: !Ref ImageStateMachine
+              - Sid: ReadVersionedVideoPrompts
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ScenarioAssetsBucket}/scenarios/afl-grand-final-winning-kick/v1/*'
               - Sid: TestKeylessGoogleAuth
                 Effect: Allow
                 Action: lambda:InvokeFunction
@@ -135,6 +139,7 @@ Resources:
           FRONTEND_ORIGIN: !Ref FrontendOrigin
           IMAGE_STATE_MACHINE_ARN: !Ref ImageStateMachine
           VIDEO_WORKER_ARN: !GetAtt VideoWorkerLambda.Arn
+          SCENARIO_ASSET_BUCKET: !Ref ScenarioAssetsBucket
   ApiLogs:
     Type: AWS::Logs::LogGroup
     Properties:

@@ -1,0 +1,17 @@
+# AFL Grand Final — Scene 1: PRE-KICK RUN-UP
+# Runtime variables replaced by AWS before sending anything to Google:
+# $firstName = customer's first name
+# $lastName = customer's surname
+# $fullName = first + last, used for commentary
+# $teamName = official display name for selected AFL team
+# $guernsey = selected team's visible guernsey design and colours
+# $commentary = the exact spoken commentary for this scene
+# Never display these placeholder names or any generated text on the video.
+
+START FRAME: Use the already personalised Scene 1 image supplied with this request. The central player is $fullName, playing for $teamName in $guernsey. Preserve the person's exact facial identity, hair, age, body, playing guernsey, ball, pitch, stadium and night lighting. Do not invent a new face or jersey.
+
+MOTION: Portrait 9:16. Beginning in the supplied pose, the player runs forward confidently with the AFL football, gearing up for a game-winning kick. Athletic real-time movement, crisp broadcast camera tracking, no slow motion. The ball stays in the hands throughout Scene 1 — no kick yet. No scene cuts, duplicate footballs, altered player identity or extra people.
+
+AUDIO / COMMENTARY: Loud realistic Grand Final crowd. One excited commentator says exactly: "$commentary". Clear, natural sports cadence; keep names pronounced distinctly. No music requirement.
+
+NO TEXT: No subtitles, on-screen names, new logos, watermarks or titles.
