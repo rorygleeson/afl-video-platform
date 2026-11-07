@@ -285,7 +285,7 @@ Resources:
       Runtime: python3.13
       Handler: handler.lambda_handler
       MemorySize: 256
-      Timeout: 90
+      Timeout: 180
       Role: !GetAtt ImageWorkerRole.Arn
       Code:
         S3Bucket: !Ref ArtifactBucketName
