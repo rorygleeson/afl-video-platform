@@ -203,6 +203,10 @@
       return;
     }
     generate.disabled = true;
+    // Never leave a previous job's paid action available during another upload.
+    currentJobId = null;
+    generateScene1.hidden = true;
+    generateScene1.disabled = false;
     refresh.hidden = true;
     results.replaceChildren();
     try {
@@ -236,6 +240,8 @@
         '\nStatus: ' + created.job.status +
         '\nTap Generate 3 reference images to start paid edits.');
     } catch (error) {
+      generateScene1.hidden = true;
+      refresh.hidden = true;
       showStatus(describeError(error, currentPhase));
     } finally {
       generate.disabled = false;
