@@ -121,7 +121,16 @@ def public_job(item):
         "sceneCount": 3,
         "completedScenes": sum(1 for scene in item.get("scenes", {}).values() if scene.get("status") == "COMPLETED"),
         "failedScenes": sum(1 for scene in item.get("scenes", {}).values() if scene.get("status") == "FAILED"),
-        "scenes": {scene_id: {"status": item.get("scenes", {}).get(scene_id, {}).get("status", "PENDING")} for scene_id in ("scene1", "scene2", "scene3")},
+        "scenes": {
+            scene_id: {
+                "status": item.get("scenes", {}).get(scene_id, {}).get("status", "PENDING"),
+                **({"errorCode": item["scenes"][scene_id]["errorCode"]}
+                   if item.get("scenes", {}).get(scene_id, {}).get("status") == "FAILED"
+                   and item.get("scenes", {}).get(scene_id, {}).get("errorCode")
+                   else {}),
+            }
+            for scene_id in ("scene1", "scene2", "scene3")
+        },
     }
 
 

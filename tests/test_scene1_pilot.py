@@ -187,5 +187,74 @@ class ParallelSceneTests(unittest.TestCase):
         self.assertEqual(args[2][":generating"], "GENERATING_IMAGES")
 
 
+    def test_known_429_rejections_are_retried_without_double_spend(self):
+        job = {"status": "GENERATING_IMAGES", "team": "geelong",
+               "uploadKey": "uploads/" + "b" * 32 + ".png",
+               "scenes": {"scene2": {"status": "PENDING"}}}
+        with (patch.object(worker, "job_by_id", return_value=job),
+              patch.object(worker, "load_scenario", return_value=CONFIG),
+              patch.object(worker.S3, "generate_presigned_url",
+                           return_value="https://s3.example.com/input"),
+              patch.object(worker, "scene_update") as update,
+              patch.object(worker, "get_token", return_value="r8_fake"),
+              patch.object(worker.time, "sleep") as sleep,
+              patch.object(worker, "request_json",
+                           side_effect=[worker.ReplicateHTTPError(429),
+                                        {"id": "pred-scene2"}]) as remote):
+            result = worker.submit("a" * 32, "scene2")
+        self.assertEqual(result["predictionId"], "pred-scene2")
+        self.assertEqual(remote.call_count, 2)
+        sleep.assert_called_once_with(5)
+        self.assertEqual(update.call_count, 2)
+
+    def test_ambiguous_submission_http_500_is_not_retried(self):
+        job = {"status": "GENERATING_IMAGES", "team": "geelong",
+               "uploadKey": "uploads/" + "b" * 32 + ".png",
+               "scenes": {"scene1": {"status": "PENDING"}}}
+        with (patch.object(worker, "job_by_id", return_value=job),
+              patch.object(worker, "load_scenario", return_value=CONFIG),
+              patch.object(worker.S3, "generate_presigned_url",
+                           return_value="https://s3.example.com/input"),
+              patch.object(worker, "scene_update") as update,
+              patch.object(worker, "get_token", return_value="r8_fake"),
+              patch.object(worker.time, "sleep") as sleep,
+              patch.object(worker, "request_json",
+                           side_effect=worker.ReplicateHTTPError(500)) as remote):
+            with self.assertRaises(worker.ReplicateHTTPError):
+                worker.submit("a" * 32, "scene1")
+        self.assertEqual(remote.call_count, 1)
+        sleep.assert_not_called()
+        self.assertEqual(update.call_args.args[3]["errorCode"], "REPLICATE_HTTP_500")
+
+    def test_throttling_exhaustion_records_reason(self):
+        job = {"status": "GENERATING_IMAGES", "team": "geelong",
+               "uploadKey": "uploads/" + "b" * 32 + ".png",
+               "scenes": {"scene3": {"status": "PENDING"}}}
+        with (patch.object(worker, "job_by_id", return_value=job),
+              patch.object(worker, "load_scenario", return_value=CONFIG),
+              patch.object(worker.S3, "generate_presigned_url",
+                           return_value="https://s3.example.com/input"),
+              patch.object(worker, "scene_update") as update,
+              patch.object(worker, "get_token", return_value="r8_fake"),
+              patch.object(worker.time, "sleep") as sleep,
+              patch.object(worker, "request_json",
+                           side_effect=worker.ReplicateHTTPError(429)) as remote):
+            with self.assertRaises(worker.ReplicateHTTPError):
+                worker.submit("a" * 32, "scene3")
+        self.assertEqual(remote.call_count, 4)
+        self.assertEqual([c.args[0] for c in sleep.call_args_list], [7, 13, 27])
+        self.assertEqual(update.call_args.args[3]["errorCode"],
+                         "REPLICATE_RATE_LIMIT")
+
+    def test_failed_scene_records_sanitized_reason(self):
+        job = {"scenes": {"scene2": {
+            "status": "SUBMITTING", "errorCode": "REPLICATE_RATE_LIMIT"}}}
+        with (patch.object(worker, "job_by_id", return_value=job),
+              patch.object(worker, "scene_update") as update):
+            worker.fail_scene("a" * 32, "scene2")
+        self.assertEqual(update.call_args.args[3]["errorCode"],
+                         "REPLICATE_RATE_LIMIT")
+
+
 if __name__ == "__main__":
     unittest.main()
