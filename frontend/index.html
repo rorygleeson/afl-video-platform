@@ -71,7 +71,21 @@
     : 'Backend configuration missing. Contact the developer.';
   generate.disabled = !apiBaseUrl;
 
+  function invalidateJobSelection() {
+    if (currentJobId) {
+      currentJobId = null;
+      generateScene1.hidden = true;
+      refresh.hidden = true;
+      results.replaceChildren();
+      showStatus('Selection changed. Upload selfie and create a new job before generating.');
+    }
+  }
+
+  document.getElementById('team').addEventListener('change', invalidateJobSelection);
+  document.getElementById('scenario').addEventListener('change', invalidateJobSelection);
+
   input.addEventListener('change', () => {
+    invalidateJobSelection();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     const file = input.files[0];
     preview.hidden = !file;
@@ -137,11 +151,13 @@
 
   async function refreshJob() {
     if (!currentJobId) return;
+    const requestedJobId = currentJobId;
     try {
       const [record, sceneResults] = await Promise.all([
-        api('/jobs/' + currentJobId),
-        api('/jobs/' + currentJobId + '/images'),
+        api('/jobs/' + requestedJobId),
+        api('/jobs/' + requestedJobId + '/images'),
       ]);
+      if (requestedJobId !== currentJobId) return;
       generateScene1.hidden = record.job.status !== 'AWAITING_IMAGE_PIPELINE';
       const scenes = record.job.scenes || {};
       const statuses = ['scene1', 'scene2', 'scene3'].map(id =>
