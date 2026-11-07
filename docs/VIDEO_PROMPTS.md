@@ -55,3 +55,9 @@ Before enabling paid requests, implement and test:
 4. An explicit model selection and verified Google API request schema/pricing, followed by one approved paid test.
 
 No payment or video-charge operations are performed by the preview functionality.
+
+## Approved next-stage use (design only; not deployed)
+
+The three S3 templates will be reused verbatim or versioned after review for paid generation; each Generate Video button uses **only the corresponding personalised Replicate image** from the DynamoDB job's `scenes.sceneN.resultKey`, not the selfie or generic master. The paid submission resolves the same validated first/surname, team guernsey and per-scene commentary as today's free preview. Scene durations currently 8/8/10 seconds; validate model support before enabling paid calls. No automatic quality-based reruns.
+
+Three new Generate Video buttons and the eventual Assemble Final Video action are **not deployed**. Cost controls are future enforcement requirements, not current active video limits. See [implementation plan](VIDEO_IMPLEMENTATION_PLAN.md). User approval required between stages.
