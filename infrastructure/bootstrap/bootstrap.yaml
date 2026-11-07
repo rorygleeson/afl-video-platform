@@ -1,0 +1,213 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  One-time bootstrap for afl-video-platform GitHub Actions deployments.
+  Reuses the account's existing GitHub OIDC provider; does not create it.
+Parameters:
+  GitHubOwner:
+    Type: String
+    Default: rorygleeson
+  GitHubRepository:
+    Type: String
+    Default: afl-video-platform
+  GitHubBranch:
+    Type: String
+    Default: main
+  ExistingGitHubOidcProviderArn:
+    Type: String
+    Description: ARN of existing token.actions.githubusercontent.com OIDC provider.
+    AllowedPattern: '^arn:aws(-[a-z]+)?:iam::[0-9]{12}:oidc-provider/token[.]actions[.]githubusercontent[.]com$'
+Resources:
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+  ArtifactBucketTlsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ArtifactBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt ArtifactBucket.Arn
+              - !Sub '${ArtifactBucket.Arn}/*'
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+  AppRolePermissionsBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: afl-video-app-permissions-boundary
+      Description: Application roles may access AWS services but cannot administer IAM.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowNonIamActions
+            Effect: Allow
+            NotAction: 'iam:*'
+            Resource: '*'
+  CloudFormationExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-video-cfn-execution-role
+      Description: CloudFormation execution identity for AFL application stacks only.
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DeployAflApplicationServices
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ApplicationServices
+                Effect: Allow
+                Action:
+                  - 'apigateway:*'
+                  - 'lambda:*'
+                  - 'dynamodb:*'
+                  - 'states:*'
+                  - 'events:*'
+                  - 'logs:*'
+                  - 'cloudwatch:*'
+                  - 's3:*'
+                  - 'secretsmanager:*'
+                Resource: '*'
+              - Sid: CreateBoundedApplicationRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/afl-app-*'
+                Condition:
+                  StringEquals:
+                    'iam:PermissionsBoundary': !Ref AppRolePermissionsBoundary
+              - Sid: ManageApplicationRoles
+                Effect: Allow
+                Action:
+                  - iam:GetRole
+                  - iam:DeleteRole
+                  - iam:UpdateAssumeRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListRolePolicies
+                  - iam:TagRole
+                  - iam:UntagRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/afl-app-*'
+              - Sid: PassApplicationRolesOnlyToServices
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/afl-app-*'
+                Condition:
+                  StringEquals:
+                    'iam:PassedToService':
+                      - lambda.amazonaws.com
+                      - states.amazonaws.com
+                      - events.amazonaws.com
+              - Sid: ReadApplicationBoundary
+                Effect: Allow
+                Action:
+                  - iam:GetPolicy
+                  - iam:GetPolicyVersion
+                Resource: !Ref AppRolePermissionsBoundary
+  GitHubDeploymentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-video-github-deploy-role
+      Description: OIDC role limited to the AFL repository main branch and application stacks.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Ref ExistingGitHubOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                'token.actions.githubusercontent.com:aud': sts.amazonaws.com
+                'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubOwner}/${GitHubRepository}:ref:refs/heads/${GitHubBranch}'
+      Policies:
+        - PolicyName: DeployApplicationStacksAndArtifacts
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ApplicationCloudFormationStacks
+                Effect: Allow
+                Action:
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:GetTemplate
+                  - cloudformation:ValidateTemplate
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:DeleteChangeSet
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/afl-app-*/*'
+                  - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/*/*'
+              - Sid: ValidateTemplate
+                Effect: Allow
+                Action: cloudformation:ValidateTemplate
+                Resource: '*'
+              - Sid: PassOnlyCloudFormationExecutionRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt CloudFormationExecutionRole.Arn
+                Condition:
+                  StringEquals:
+                    'iam:PassedToService': cloudformation.amazonaws.com
+              - Sid: ListArtifactBucket
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt ArtifactBucket.Arn
+              - Sid: UploadAndReadArtifacts
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub '${ArtifactBucket.Arn}/*'
+Outputs:
+  GitHubDeploymentRoleArn:
+    Value: !GetAtt GitHubDeploymentRole.Arn
+    Description: Use as AWS_ROLE_ARN in GitHub Actions.
+  CloudFormationExecutionRoleArn:
+    Value: !GetAtt CloudFormationExecutionRole.Arn
+    Description: Pass as --role-arn during application stack deployments.
+  ArtifactBucketName:
+    Value: !Ref ArtifactBucket
+    Description: Upload Lambda ZIPs and packaged CloudFormation artifacts here.
+  PermissionsBoundaryArn:
+    Value: !Ref AppRolePermissionsBoundary
+    Description: Required boundary for every afl-app-* runtime role.
