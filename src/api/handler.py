@@ -248,11 +248,28 @@ def google_auth_check():
         Payload=json.dumps({"op": "auth_check"}).encode(),
     )
     if invocation.get("FunctionError"):
-        LOG.warning("Google authentication probe failed; inspect video-worker CloudWatch logs")
+        # Lambda may have failed before the worker's safe exception handler ran,
+        # e.g. an import error during cold start. Only expose an allowlisted
+        # runtime error category, not Lambda's raw error message or stack trace.
+        try:
+            failure = json.loads(invocation["Payload"].read())
+        except (ValueError, TypeError):
+            failure = {}
+        runtime_type = failure.get("errorType", "") if isinstance(failure, dict) else ""
+        if runtime_type in {"Runtime.ImportModuleError", "Runtime.UserCodeSyntaxError"}:
+            code = "VIDEO_WORKER_IMPORT_ERROR"
+        elif runtime_type in {"Runtime.ExitError", "Runtime.OutOfMemory", "Runtime.Unknown"}:
+            code = "VIDEO_WORKER_RUNTIME_EXIT"
+        elif runtime_type in {"TaskTimedOut", "TimeoutError"}:
+            code = "VIDEO_WORKER_TIMEOUT"
+        else:
+            code = "VIDEO_WORKER_INVOCATION_ERROR"
+        LOG.warning("Google auth probe runtime failure code=%s type=%s", code, runtime_type[:80])
         return response(502, {
             "status": "AUTHENTICATION_FAILED",
             "videoGenerationEnabled": False,
-            "message": "Check /aws/lambda/afl-app-dev-video-worker logs for the Google API or IAM error",
+            "errorCode": code,
+            "message": "Video worker failed before completing Google authentication",
         })
     result = json.loads(invocation["Payload"].read())
     if result.get("status") != "AUTHENTICATED":
