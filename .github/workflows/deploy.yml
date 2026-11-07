@@ -123,6 +123,10 @@ jobs:
           aws s3 cp "dist/image-worker-$GITHUB_SHA.zip" \
             "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/image-worker/$GITHUB_SHA.zip" \
             --region ap-southeast-2
+      - name: Use Lambda-compatible Python 3.13 for dependency packaging
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Package Google-auth video worker (NO model calls)
         run: |
           mkdir -p dist/video-worker
@@ -134,7 +138,7 @@ jobs:
           GOOGLE_WIF_POOL_ID=afl-video-aws \
           GOOGLE_WIF_PROVIDER_ID=afl-aws-dev \
           GOOGLE_SERVICE_ACCOUNT=afl-video-worker@afl-video-platform.iam.gserviceaccount.com \
-          PYTHONPATH=dist/video-worker python3 -c 'import handler; assert callable(handler.lambda_handler); print("Video worker imports OK")'
+          PYTHONPATH=dist/video-worker python3 -c 'import sys, handler; assert sys.version_info[:2] == (3, 13); assert callable(handler.lambda_handler); print("Python 3.13 video-worker imports OK")'
           (cd dist/video-worker && zip -q -r ../video-worker-$GITHUB_SHA.zip .)
           aws s3 cp "dist/video-worker-$GITHUB_SHA.zip"             "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/video-worker/$GITHUB_SHA.zip"             --region ap-southeast-2
       - name: Deploy API and jobs CloudFormation
