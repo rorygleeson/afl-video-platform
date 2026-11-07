@@ -30,6 +30,8 @@
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off">
   <button id="testApi" type="button">Test API connection</button>
+  <button id="testGoogle" type="button">Test Google Cloud connection (no video charge)</button>
+  <p id="googleStatus" role="status" aria-live="polite"></p>
   <label for="scenario">Scenario</label>
   <select id="scenario"><option value="afl-grand-final-winning-kick">AFL Grand Final — Winning Kick</option></select>
   <label for="team">Team</label>
@@ -61,6 +63,8 @@
   const preview = document.getElementById('preview');
   const generate = document.getElementById('generate');
   const testApi = document.getElementById('testApi');
+  const testGoogle = document.getElementById('testGoogle');
+  const googleStatus = document.getElementById('googleStatus');
   const refresh = document.getElementById('refresh');
   const generateScene1 = document.getElementById('generateScene1');
   const status = document.getElementById('status');
@@ -142,6 +146,21 @@
     ? 'Backend ready. Enter the API key and choose a selfie.'
     : 'Backend configuration missing. Contact the developer.';
   generate.disabled = !apiBaseUrl;
+
+  testGoogle.addEventListener('click', async () => {
+    testGoogle.disabled = true;
+    googleStatus.textContent = 'Checking AWS-to-Google authentication (no video generation)…';
+    try {
+      const result = await api('/video/auth-check');
+      googleStatus.textContent = result.status === 'AUTHENTICATED'
+        ? 'Google Cloud connected successfully. Video generation is disabled.'
+        : 'Google authentication not ready: ' + (result.status || 'unknown status');
+    } catch (error) {
+      googleStatus.textContent = 'Google connection check failed: ' + error.message;
+    } finally {
+      testGoogle.disabled = false;
+    }
+  });
 
   function invalidateJobSelection() {
     if (currentJobId) {
