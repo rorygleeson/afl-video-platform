@@ -56,7 +56,7 @@ def lambda_handler(event, context):
     creds, _ = load_credentials_from_dict(
         external_account_info(), scopes=[CLOUD_PLATFORM_SCOPE]
     )
-    creds.refresh(Request(timeout=15))
+    creds.refresh(Request())
     # Never return or log credentials, tokens, signed STS payloads or selfies.
     if not creds.valid:
         raise RuntimeError("Google workload federation did not return valid credentials")
