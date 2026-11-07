@@ -16,7 +16,7 @@ def load_worker(fake_loader):
     transport = types.ModuleType("google.auth.transport")
     requests = types.ModuleType("google.auth.transport.requests")
     auth.load_credentials_from_dict = fake_loader
-    requests.Request = lambda timeout=15: {"timeout": timeout}
+    requests.Request = lambda: {"transport": "requests"}
     google.auth = auth
     auth.transport = transport
     transport.requests = requests
@@ -74,7 +74,7 @@ class VideoFederationTests(unittest.TestCase):
         self.assertEqual(result["status"], "AUTHENTICATED")
         self.assertFalse(result["videoGenerationEnabled"])
         self.assertNotIn("SECRET_TOKEN", str(result))
-        self.assertEqual(captured["request"]["timeout"], 15)
+        self.assertEqual(captured["request"]["transport"], "requests")
         self.assertEqual(captured["scopes"], [worker.CLOUD_PLATFORM_SCOPE])
 
 
