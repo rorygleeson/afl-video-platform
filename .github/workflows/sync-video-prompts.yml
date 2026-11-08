@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'scenarios/afl-grand-final-winning-kick/v1/video/**'
+      - 'tests/test_video_prompts.py'
       - '.github/workflows/sync-video-prompts.yml'
   workflow_dispatch:
 
