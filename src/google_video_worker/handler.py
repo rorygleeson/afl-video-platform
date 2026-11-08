@@ -267,48 +267,34 @@ def claim(job, scene, request):
         raise ContractError("Unexpected reference image S3 key")
     if item.get("realVideos", {}).get(scene):
         raise ContractError("Video scene already claimed")
-    # Reserve globally against both mock and real workflows. Never auto-expire
-    # the slot while the provider status might still be unknown.
-    SLOTS.put_item(
-        Item={"slotId": SLOT, "owner": request, "jobId": job, "sceneId": scene},
-        ConditionExpression="attribute_not_exists(slotId)",
+    # DynamoDB's per-job/per-scene conditional claim is the only admission
+    # guard. Different customers/scenes must never contend on a global slot.
+    JOBS.update_item(
+        Key={"jobId": job},
+        UpdateExpression="SET realVideos = if_not_exists(realVideos, :empty)",
+        ConditionExpression="attribute_exists(jobId)",
+        ExpressionAttributeValues={":empty": {}},
     )
-    try:
-        JOBS.update_item(
-            Key={"jobId": job},
-            UpdateExpression="SET realVideos = if_not_exists(realVideos, :empty)",
-            ConditionExpression="attribute_exists(jobId)",
-            ExpressionAttributeValues={":empty": {}},
-        )
-        JOBS.update_item(
-            Key={"jobId": job},
-            UpdateExpression="SET realVideos.#scene = :value",
-            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(realVideos.#scene)",
-            ExpressionAttributeNames={"#scene": scene},
-            ExpressionAttributeValues={
-                ":value": {"status": "PREPARED", "requestId": request,
-                           "sourceImageKey": key, "createdAt": datetime.now(timezone.utc).isoformat()}
-            },
-        )
-    except Exception:
-        release(job, scene, request)
-        raise
+    JOBS.update_item(
+        Key={"jobId": job},
+        UpdateExpression="SET realVideos.#scene = :value",
+        ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(realVideos.#scene)",
+        ExpressionAttributeNames={"#scene": scene},
+        ExpressionAttributeValues={
+            ":value": {"status": "PREPARED", "requestId": request,
+                       "sourceImageKey": key, "createdAt": datetime.now(timezone.utc).isoformat()}
+        },
+    )
     return {"status": "PREPARED"}
 
 
 def release(job, scene, request):
-    try:
-        SLOTS.delete_item(
-            Key={"slotId": SLOT},
-            ConditionExpression="#owner = :r AND jobId = :j AND sceneId = :s",
-            ExpressionAttributeNames={"#owner": "owner"},
-            ExpressionAttributeValues={":r": request, ":j": job, ":s": scene},
-        )
-        return {"status": "RELEASED"}
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-            return {"status": "NOT_OWNER"}
-        raise
+    """Compatibility no-op: global concurrency slot is retired.
+
+    The per-scene approval and claim remain permanent to prevent repeat paid
+    submissions, including ambiguous provider outcomes.
+    """
+    return {"status": "RELEASED", "scope": "SCENE_ONLY"}
 
 
 def submit(job, scene, request):
@@ -407,31 +393,8 @@ def poll(job, scene, request):
 def finalize(job, scene, request):
     state = owner_record(job, scene, request).get("status")
     if state not in ("COMPLETED", "FAILED"):
-        raise ContractError("Nonterminal video cannot release admission")
+        raise ContractError("Nonterminal video cannot finalize")
     return release(job, scene, request)
-
-
-def operator_slot_status():
-    """Read-only concurrency ownership check; no Google or billable operations."""
-    record = SLOTS.get_item(Key={"slotId": SLOT}, ConsistentRead=True).get("Item")
-    if not record:
-        return {"status": "FREE"}
-    job_id = record.get("jobId", "")
-    scene = record.get("sceneId", "")
-    owner = record.get("owner", "")
-    info = {}
-    if isinstance(job_id, str) and JOB_RE.fullmatch(job_id):
-        job = get_job(job_id)
-        info = (job.get("realVideos", {}).get(scene, {}) or
-                job.get("videos", {}).get(scene, {}))
-    return {
-        "status": "OCCUPIED",
-        "jobId": job_id, "sceneId": scene, "owner": owner,
-        "videoStatus": info.get("status", "NO_VIDEO_RECORD"),
-        "providerInteractionKnown": bool(info.get("interactionId")),
-        "providerInteractionId": info.get("interactionId", ""),
-        "createdAt": info.get("createdAt", ""),
-    }
 
 
 def lambda_handler(event, context):
@@ -441,8 +404,6 @@ def lambda_handler(event, context):
     if op == "gate":
         require_paid_unlock(event.get("jobId"), event.get("sceneId"))
         return {"status": "ENABLED"}
-    if op == "operator_slot_status":
-        return operator_slot_status()
     if op == "contract_health":
         return {"status": "LOCKED" if PAID_ENABLED != "true" else "CONFIGURED",
                 "model": MODEL, "paidGenerationEnabled": PAID_ENABLED == "true"}
