@@ -701,8 +701,12 @@
       if (!window.confirm('Generate a real ' + duration + '-second video for Scene ' +
                           n + '? This will incur a Google charge. Only this scene will run.')) return;
       videoSubmittedScenes.add(sceneId);
+      // Hide all paid controls until the server confirms which scene owns
+      // the single global generation slot. No other scene is auto-submitted.
+      for (const idx of [1, 2, 3]) {
+        document.getElementById('generateRealScene' + idx).hidden = true;
+      }
       button.disabled = true;
-      button.hidden = true;
       document.getElementById('scene' + n + 'PaidStatus').textContent =
         'Requesting real MP4 — do not submit this scene again.';
       try {
