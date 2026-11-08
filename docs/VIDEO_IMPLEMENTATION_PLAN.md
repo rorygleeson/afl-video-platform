@@ -1,12 +1,12 @@
 # Video generation implementation plan (approved design, not yet deployed)
 
-**Date:** 2026-11-08. **Stage:** 3 — isolated mock-only AWS video stack created; no real model integration, API routes or frontend video controls. **Next gate:** Stage 4 approval for additive API/frontend integration. **Repository:** `main`; CD uses the existing `deploy` marker branch and CloudFormation. No feature branch required.
+**Date:** 2026-11-08. **Stage:** 4 — mock-only scene API routes and frontend controls deployed. **Next gate:** Stage 5 approval for FFmpeg assembly infrastructure. **Repository:** `main`; CD uses the existing `deploy` marker branch and CloudFormation. No feature branch required.
 
 **Stage 2 official API research (8 November 2026):** [Google Omni Stage 2 API contract](GOOGLE_OMNI_STAGE2_API_CONTRACT.md). The model ID, documented JSON contract and S3-only feasibility are confirmed; authenticated model entitlement, quota and actual inline MP4 retrieval are untested.\n\n**Stage 3 implementation:** [video CloudFormation](../infrastructure/app/video.yaml), [mock-only worker](../src/video_mock_worker/handler.py), [offline unit tests](../tests/test_video_mock_stage3.py), [isolated deployment workflow](../.github/workflows/deploy-video.yml). AWS stack `afl-app-dev-video` was created by GitHub Actions; mock-only execution and playback are not yet end-to-end tested.
 
 ## Goal and current reality
 
-Keep the **existing** selfie + team + first/last name -> three parallel Replicate personalised reference images -> private S3 workflow operational and unchanged. Existing Google Workload Identity Federation **auth check** and three **free S3 prompt preview** buttons are deployed. **A separate mock-only video state machine now exists, but no paid video generation, real video storage, FFmpeg assembly or frontend playback has been implemented.**
+Keep the **existing** selfie + team + first/last name -> three parallel Replicate personalised reference images -> private S3 workflow operational and unchanged. Existing Google Workload Identity Federation **auth check** and three **free S3 prompt preview** buttons are deployed. **The mock-only video state machine now has independent API endpoints and three Scene N mock test buttons. No paid video generation, real MP4 storage, FFmpeg assembly or functional video playback has been implemented.**
 
 Add three explicit **Generate Scene N Video** buttons (one per completed image), each using exactly that scene's `scenes.sceneN.resultKey` in the existing DynamoDB item, plus the scene-specific prompt from versioned S3 configuration. Each completion creates an MP4 in AWS S3. When all three complete, expose an **Assemble Final Video** button that invokes FFmpeg in a separate Lambda and stores `final.mp4`. No automatic quality-based reruns or assembly while testing. Later support up to three parallel provider generations and simplified consumer UX. Defer Solution -> Use Case hierarchy and payments.
 
@@ -62,7 +62,7 @@ Preserve existing `status`, `scenes` and image-worker writes. Add independent `v
 
 **Stage 3 — infrastructure:** Created separate `afl-app-dev-video` CloudFormation stack, mock-only worker, Standard Step Functions state machine, IAM roles and a DynamoDB global slot. Existing image resources untouched. Six offline tests pass. Google WIF permissions for a real new role, execution-level smoke testing, and real provider code are deliberately deferred. No paid submissions. **Stage complete; stop for approval before Stage 4.**
 
-**Stage 4 — API and UI:** additive routes, video statuses, three independently enabled buttons, preview preserved, playback, retries/refresh safe. Regression test image flow. Note existing packaging bug: deploy script copies `src/api/video_prompts.py` but zips only `handler.py`; fix and smoke-test import **before** updating existing API Lambda. No paid submits. **Stop for approval.**
+**Stage 4 — API and UI:** Added `POST /jobs/{jobId}/videos/{sceneId}`, `GET /jobs/{jobId}/videos`, `GET /jobs/{jobId}/videos/{sceneId}` to existing API with named single-execution-per-scene mock admission, scene-specific statuses, S3-reference readiness check and dev API-key routing. Added three independent mock Generate Video buttons, status polling, mock-only labels and disabled Assemble Final Video button. Preserved existing prompt previews/image controls. Fixed API ZIP packaging in the isolated Stage 4 deployment flow to include `video_prompts.py`; original broad `deploy.yml` packaging still needs correction before it is next used. No paid submits. **Stage complete; stop for Stage 5 approval.**
 
 **Stage 5 — FFmpeg assembly:** separate assembly worker, endpoint/button gated on three completed MP4s, test with sample MP4s including incompatible media settings; no paid Google calls. **Stop for approval.**
 
@@ -73,3 +73,13 @@ Preserve existing `status`, `scenes` and image-worker writes. Add independent `v
 Run existing Python and browser tests on each stage, add mocks for concurrency, duplicate click, unknown provider outcome, expired image, missing source, oversize output, partial success, cancellation/recovery, AWS S3 upload, signed playback and FFmpeg. Deploy via the current GitHub `main` -> `deploy` marker workflow; confirm CI deploy sequence, changesets and nonreplacement of existing resources. Each stage is reversible without deleting existing images, image state machine or jobs. Do not misstate GitHub merges as AWS deployments; record actual deployed commit and successful Actions run when deploying.
 
 **Decisions deferred:** customer payments/auth, automated visual consistency or regeneration, automated final assembly, cross-solution multi-level hierarchy, increasing to three concurrent Google generations.
+
+## Stage 4 implementation notes — mock-only UI
+
+- Deployed Stage 4 API and UI via the isolated [GitHub Actions workflow](../.github/workflows/deploy-stage4.yml), keeping the existing image worker ZIP parameter and existing Replicate state machine unchanged.
+- Three independent mock buttons only appear on a created job, and become available after their corresponding personalised reference image reaches `COMPLETED`.
+- Each button explicitly confirms a **nonbillable mock** workflow; the existing free Preview Prompt actions are retained.
+- Status API reads `videos.sceneN` independently from image `scenes.sceneN`. Only a genuine `COMPLETED` entry with exact S3 `videos/{jobId}/sceneN.mp4` key may expose playback; `MOCK_COMPLETED` never returns a video URL.
+- `POST` accepts an idempotency key but uses a deterministic Standard Step Functions execution name per job + scene, so duplicate clicks cannot start new mock executions. For production, refine request ownership, retry and unknown-submission reconciliation before enabling paid calls.
+- Global admission lock remains worker-enforced; API checks the slot before starting for friendlier busy feedback. An empty slot before submission is not a guaranteed reservation: the worker remains the source of truth.
+- Assembly is deliberately disabled; Stage 5 will add real FFmpeg assembly and mock/test-compatible sample MP4 integration. The Stage 4 mock worker writes JSON markers, **not** MP4s, so assembly cannot be exercised with these markers.
