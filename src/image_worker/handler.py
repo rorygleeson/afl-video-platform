@@ -135,7 +135,27 @@ def load_scenario():
                 scene.get("operation") != "image_edit" or
                 scene.get("masterKey") != SCENARIO_PREFIX + scene["id"] + "-start.png"):
             raise RuntimeError("Invalid scene model or master image")
+    # Reject missing or malformed prompt data before any billable image submission.
+    validate_prompt_config(config)
     return config
+
+
+def validate_prompt_config(config):
+    shared = config.get("sharedPrompt")
+    if not isinstance(shared, str) or not 100 <= len(shared) <= 8000:
+        raise RuntimeError("Invalid or missing shared Replicate prompt in S3 configuration")
+    for scene in config["scenes"]:
+        instructions = scene.get("promptInstructions")
+        if not isinstance(instructions, str) or not 100 <= len(instructions) <= 5000:
+            raise RuntimeError("Invalid or missing Replicate scene instructions: " + scene["id"])
+
+
+def build_image_prompt(config, scene, team):
+    # All authored prompt wording lives in S3; only safe dynamic composition lives here.
+    validate_prompt_config(config)
+    guernsey = config["teamGuernseys"][team]
+    return (config["sharedPrompt"] + " Selected playing guernsey style: " +
+            guernsey + ". " + scene["promptInstructions"])
 
 
 def prepare(job_id):
@@ -201,27 +221,7 @@ def submit(job_id, scene_id):
     selfie_url = S3.generate_presigned_url(
         "get_object", Params={"Bucket": UPLOAD_BUCKET, "Key": job["uploadKey"]},
         ExpiresIn=1800)
-    prompt = (
-        "Photorealistic cinematic Australian rules football image edit. "
-        "Image 1 is the MASTER COMPOSITION for pose, body, team uniforms and stadium. "
-        "Image 2 is the CUSTOMER SELFIE and the DEFINITIVE, ONLY source of the central "
-        "athlete's facial identity. This is a precise photographic FACE REPLACEMENT, "
-        "NOT generation of a similar-looking footballer. Use the customer's actual "
-        "face from Image 2 as closely as possible: preserve distinctive eye shape "
-        "and spacing, nose, mouth and lips, jawline, cheekbones, facial proportions, "
-        "hairline, hair texture, skin detail and apparent age. Do not beautify, "
-        "age, masculinise, stylise, exaggerate, idealise, reconstruct or invent "
-        "a generic heroic athlete face. Adapt only angle, illumination and a modest "
-        "natural expression as needed to fit the master composition. Prioritise "
-        "selfie facial identity above dramatic expression or exaggerated emotion. "
-        "Keep the master camera perspective, athletic pose, lighting and stadium; "
-        "never copy the selfie background. "
-        "Selected playing guernsey style: " +
-        config["teamGuernseys"][job["team"]] + ". " +
-        scene.get("promptInstructions", "") +
-        " No sponsor marks, licensed logos, misleading text, or watermarks. "
-        "Single high quality vertical sports photograph; not a collage."
-    )
+    prompt = build_image_prompt(config, scene, job["team"])
     payload = {
         "input": {"prompt": prompt, "image_input": [master_url, selfie_url],
                   "aspect_ratio": "9:16", "resolution": "2K",
