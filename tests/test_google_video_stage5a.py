@@ -89,6 +89,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertEqual(result, {
             "status": "AUTHENTICATION_FAILED",
             "errorCode": "GOOGLE_SERVICE_ACCOUNT_IMPERSONATION_DENIED",
+            "exceptionType": "RuntimeError",
         })
         self.assertNotIn("private-token", str(result))
 
