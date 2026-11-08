@@ -203,12 +203,19 @@ def submit(job_id, scene_id):
         ExpiresIn=1800)
     prompt = (
         "Photorealistic cinematic Australian rules football image edit. "
-        "Image 1 is the MASTER COMPOSITION; image 2 is the CUSTOMER SELFIE and is the "
-        "ONLY face identity reference for the central athlete. "
-        "Preserve master camera angle, perspective, lighting, athletic anatomy, "
-        "stadium and natural photographic composition. "
-        "Make central athlete's face distinctly recognisable as the person in image 2, "
-        "with realistic hair, skin and expression. Never copy selfie background. "
+        "Image 1 is the MASTER COMPOSITION for pose, body, team uniforms and stadium. "
+        "Image 2 is the CUSTOMER SELFIE and the DEFINITIVE, ONLY source of the central "
+        "athlete's facial identity. This is a precise photographic FACE REPLACEMENT, "
+        "NOT generation of a similar-looking footballer. Use the customer's actual "
+        "face from Image 2 as closely as possible: preserve distinctive eye shape "
+        "and spacing, nose, mouth and lips, jawline, cheekbones, facial proportions, "
+        "hairline, hair texture, skin detail and apparent age. Do not beautify, "
+        "age, masculinise, stylise, exaggerate, idealise, reconstruct or invent "
+        "a generic heroic athlete face. Adapt only angle, illumination and a modest "
+        "natural expression as needed to fit the master composition. Prioritise "
+        "selfie facial identity above dramatic expression or exaggerated emotion. "
+        "Keep the master camera perspective, athletic pose, lighting and stadium; "
+        "never copy the selfie background. "
         "Selected playing guernsey style: " +
         config["teamGuernseys"][job["team"]] + ". " +
         scene.get("promptInstructions", "") +
