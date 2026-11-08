@@ -67,6 +67,7 @@ jobs:
           print('Google new-worker WIF error code:', data.get('errorCode'))
           print('Safe exception class:', data.get('errorType'))
           print('Sanitized failure flags:', data.get('diagnostics', {}))
+          print('Allowlisted OAuth error categories:', data.get('safeOauthCodes', []))
           assert data.get('status') in ('AUTHENTICATED','AUTHENTICATION_FAILED')
           PY
       - name: Delete one-time WIF probe and its temporary invoke permission
