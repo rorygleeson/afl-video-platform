@@ -100,7 +100,12 @@ jobs:
         run: |
           mkdir -p dist/api
           cp src/api/handler.py src/api/video_prompts.py dist/api/
-          (cd dist/api && zip -q ../api-$GITHUB_SHA.zip handler.py)
+          (cd dist/api && zip -q ../api-$GITHUB_SHA.zip handler.py video_prompts.py)
+          python3 - <<'PY'
+          import zipfile, os
+          with zipfile.ZipFile('dist/api-' + os.environ['GITHUB_SHA'] + '.zip') as archive:
+              assert {'handler.py', 'video_prompts.py'} <= set(archive.namelist())
+          PY
           aws s3 cp "dist/api-$GITHUB_SHA.zip" \
             "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/api/$GITHUB_SHA.zip" \
             --region ap-southeast-2
