@@ -79,9 +79,20 @@ jobs:
           python - <<'PY'
           import json
           meta=json.load(open('/tmp/invoke-meta.json'))
-          if meta.get('FunctionError'):
-              raise SystemExit('New worker IAM / runtime authentication preflight failed; no paid model called')
           response=json.load(open('/tmp/auth-result.json'))
+          if meta.get('FunctionError'):
+              # Print safe diagnostics only: no raw exception, token or traceback.
+              import re
+              err_type=response.get('errorType','UNAVAILABLE')
+              if not isinstance(err_type,str) or not re.fullmatch(r'[A-Za-z0-9_.]{1,100}',err_type):
+                  err_type='UNAVAILABLE'
+              print('New worker Lambda error type:',err_type)
+              msg=response.get('errorMessage','')
+              # Missing Python module is actionable and cannot expose auth credentials.
+              module=re.search(r"No module named ['\\\"]([A-Za-z0-9_.]{1,100})['\\\"]",str(msg))
+              if module:
+                  print('Missing Lambda Python module:',module.group(1))
+              raise SystemExit('Google worker Lambda runtime error; no paid model called')
           print('New worker WIF preflight status:',response.get('status','UNAVAILABLE'))
           if response.get('status')!='AUTHENTICATED' or response.get('paidGenerationEnabled') is not False:
               raise SystemExit('New worker Google IAM binding or WIF access not ready; paid generation remains locked')
