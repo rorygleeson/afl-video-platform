@@ -1,0 +1,130 @@
+name: Deploy all three paid MP4 scene controls (no generation)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-stage5c-paid-scenes.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  enable-paid-scene-controls:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate three-scene contracts and CloudFormation
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'cfn-lint>=1,<2'
+          python -m py_compile src/api/handler.py src/api/video_prompts.py src/google_video_worker/handler.py
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          node --test tests/test_frontend_poll.cjs
+          cfn-lint infrastructure/app/backend.yaml infrastructure/app/google-video.yaml --regions ap-southeast-2
+          python - <<'PY'
+          import json
+          config=json.load(open('scenarios/afl-grand-final-winning-kick/v1/video/config.json'))
+          assert config['videoGenerationEnabled'] is True
+          assert config['videoConcurrency']==1 and config['maxPaidScenesPerRequest']==1
+          assert [(s['id'],s['durationSeconds']) for s in config['scenes']] == [
+              ('scene1',8),('scene2',8),('scene3',10)]
+          print('Paid scene configuration validated. No video submitted.')
+          PY
+      - name: Assume existing GitHub OIDC AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Require existing CloudFormation infrastructure
+        run: |
+          set -euo pipefail
+          for stack in afl-app-dev-backend afl-app-dev-google-video afl-app-dev-frontend; do
+            state=$(aws cloudformation describe-stacks --stack-name "$stack" --query 'Stacks[0].StackStatus' --output text)
+            test "$state" = CREATE_COMPLETE -o "$state" = UPDATE_COMPLETE
+          done
+      - name: Package Python 3.13 native Google adapter
+        run: |
+          set -euo pipefail
+          mkdir -p dist/google-paid
+          python -m pip install --disable-pip-version-check \
+            --platform manylinux2014_x86_64 --python-version 3.13 \
+            --implementation cp --abi cp313 --only-binary=:all: \
+            --target dist/google-paid 'google-auth[requests]>=2.30,<3'
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('dist/google-paid')
+          assert list(p.glob('_cffi_backend*.so'))
+          assert list(p.glob('cryptography/hazmat/bindings/_rust*.so'))
+          PY
+          cp src/google_video_worker/handler.py src/api/video_prompts.py dist/google-paid/
+          (cd dist/google-paid && zip -q -r ../google-paid.zip .)
+          aws s3 cp dist/google-paid.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/google-video/$GITHUB_SHA.zip"
+      - name: Deploy Google worker with per-job approval required
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name afl-app-dev-google-video --output json > /tmp/google-stack.json
+          mapfile -t overrides < <(jq -r '.Stacks[0].Parameters[] | select(.ParameterValue != null) | select(.ParameterKey != "GoogleWorkerArtifactKey") | select(.ParameterKey != "PaidVideoEnabled") | "\(.ParameterKey)=\(.ParameterValue)"' /tmp/google-stack.json)
+          overrides+=("GoogleWorkerArtifactKey=google-video/$GITHUB_SHA.zip" "PaidVideoEnabled=true")
+          aws cloudformation deploy \
+            --stack-name afl-app-dev-google-video \
+            --region ap-southeast-2 \
+            --template-file infrastructure/app/google-video.yaml \
+            --parameter-overrides "${overrides[@]}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role \
+            --no-fail-on-empty-changeset
+          test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-google-video --query 'Stacks[0].Outputs[?OutputKey==\`PaidGenerationMode\`].OutputValue | [0]' --output text)" = ENABLED
+          aws lambda invoke --function-name afl-app-dev-google-omni-worker \
+            --cli-binary-format raw-in-base64-out --payload '{"op":"contract_health"}' \
+            /tmp/health.json > /tmp/health-meta.json
+          python - <<'PY'
+          import json
+          result=json.load(open('/tmp/health.json'))
+          meta=json.load(open('/tmp/health-meta.json'))
+          assert not meta.get('FunctionError'), 'Google worker Lambda failure'
+          assert result.get('status')=='CONFIGURED'
+          assert result.get('model')=='gemini-omni-1.2-flash'
+          print('Google worker configured; NO model generation requested.')
+          PY
+      - name: Publish versioned three-scene generation config to private S3
+        run: |
+          set -euo pipefail
+          bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-google-video \
+            --query 'Stacks[0].Parameters[?ParameterKey==\`ScenarioAssetBucketName\`].ParameterValue | [0]' --output text)
+          test -n "$bucket" && test "$bucket" != None
+          key=scenarios/afl-grand-final-winning-kick/v1/video/config.json
+          aws s3 cp "scenarios/afl-grand-final-winning-kick/v1/video/config.json" "s3://$bucket/$key" --content-type application/json
+          aws s3api head-object --bucket "$bucket" --key "$key" > /dev/null
+      - name: Package current API and deploy paid-approval gateway
+        run: |
+          set -euo pipefail
+          mkdir -p dist/api-paid
+          cp src/api/handler.py src/api/video_prompts.py dist/api-paid/
+          (cd dist/api-paid && zip -q ../api-paid.zip handler.py video_prompts.py)
+          aws s3 cp dist/api-paid.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/api/$GITHUB_SHA.zip"
+          aws cloudformation describe-stacks --stack-name afl-app-dev-backend --output json > /tmp/backend-stack.json
+          mapfile -t overrides < <(jq -r '.Stacks[0].Parameters[] | select(.ParameterValue != null) | select(.ParameterKey != "LambdaArtifactKey") | select(.ParameterKey != "PaidVideoEnabled") | "\(.ParameterKey)=\(.ParameterValue)"' /tmp/backend-stack.json)
+          overrides+=("LambdaArtifactKey=api/$GITHUB_SHA.zip" "PaidVideoEnabled=true")
+          aws cloudformation deploy \
+            --stack-name afl-app-dev-backend \
+            --region ap-southeast-2 \
+            --template-file infrastructure/app/backend.yaml \
+            --parameter-overrides "${overrides[@]}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role \
+            --no-fail-on-empty-changeset
+          test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend --query 'Stacks[0].StackStatus' --output text)" = UPDATE_COMPLETE
+      - name: Publish UI showing independent paid scene buttons
+        run: |
+          set -euo pipefail
+          bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==\`FrontendBucketName\`].OutputValue | [0]' --output text)
+          distribution=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==\`DistributionId\`].OutputValue | [0]' --output text)
+          test -n "$bucket" && test "$bucket" != None
+          test -n "$distribution" && test "$distribution" != None
+          aws s3 cp frontend/index.html "s3://$bucket/index.html" \
+            --content-type 'text/html; charset=utf-8' --cache-control 'max-age=60, must-revalidate'
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /
+          echo 'Three individual paid scene buttons enabled; no paid MP4 has been triggered.'
