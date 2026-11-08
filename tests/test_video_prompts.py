@@ -50,12 +50,15 @@ class VideoPromptTests(unittest.TestCase):
                              {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"},
                              "scene4")
 
-    def test_no_paid_video_enabled_in_config(self):
+    def test_paid_video_requires_explicit_caller_opt_in(self):
         cfg = json.loads((SCENARIO / "video" / "config.json").read_text())
-        self.assertIs(cfg["videoGenerationEnabled"], False)
+        self.assertIs(cfg["videoGenerationEnabled"], True)
         self.assertEqual(cfg["videoConcurrency"], 1)
         self.assertEqual(cfg["maxPaidScenesPerRequest"], 1)
         self.assertEqual(len(cfg["scenes"]), 3)
+        job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
+        self.assertFalse(mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene1")["videoGenerationEnabled"])
+        self.assertTrue(mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene1", allow_paid=True)["videoGenerationEnabled"])
 
 
 if __name__ == "__main__":
