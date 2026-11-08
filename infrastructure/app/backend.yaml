@@ -11,6 +11,9 @@ Parameters:
   VideoWorkerArtifactKey:
     Type: String
     Description: Immutable S3 object key for keyless Google authentication-only worker ZIP.
+  VideoStateMachineArn:
+    Type: String
+    Default: arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-video
   FrontendOrigin:
     Type: String
     AllowedPattern: '^https://[a-zA-Z0-9.-]+$'
@@ -104,6 +107,10 @@ Resources:
                 Effect: Allow
                 Action: states:StartExecution
                 Resource: !Ref ImageStateMachine
+              - Sid: StartExplicitMockVideoScenes
+                Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref VideoStateMachineArn
               - Sid: ReadVersionedVideoPrompts
                 Effect: Allow
                 Action: s3:GetObject
@@ -140,6 +147,8 @@ Resources:
           IMAGE_STATE_MACHINE_ARN: !Ref ImageStateMachine
           VIDEO_WORKER_ARN: !GetAtt VideoWorkerLambda.Arn
           SCENARIO_ASSET_BUCKET: !Ref ScenarioAssetsBucket
+          VIDEO_STATE_MACHINE_ARN: !Ref VideoStateMachineArn
+          VIDEO_MODE: MOCK_ONLY
   ApiLogs:
     Type: AWS::Logs::LogGroup
     Properties:
