@@ -52,7 +52,8 @@
   <p>Upload a photo, create your three reference images, then make each video in order.</p>
   <p class="poll-status">Each paid generation requires your confirmation. Nothing starts automatically.</p>
   <label for="key">x-api-key</label>
-  <input id="key" type="password" placeholder="Enter API key" autocomplete="off">
+  <input id="key" type="password" placeholder="Enter API key" autocomplete="off" aria-describedby="apiConnectionStatus">
+  <p id="apiConnectionStatus" class="poll-status" role="status" aria-live="polite">API access is checked automatically before uploading.</p>
   <button id="testApi" type="button" hidden aria-hidden="true" tabindex="-1">Test API connection</button>
   <button id="testGoogle" type="button" hidden aria-hidden="true" tabindex="-1">Test Google Cloud connection</button>
   <p id="googleStatus" role="status" aria-live="polite" hidden></p>
@@ -150,6 +151,7 @@
   const preview = document.getElementById('preview');
   const generate = document.getElementById('generate');
   const testApi = document.getElementById('testApi');
+  const apiConnectionStatus = document.getElementById('apiConnectionStatus');
   const testGoogle = document.getElementById('testGoogle');
   const googleStatus = document.getElementById('googleStatus');
   const refresh = document.getElementById('refresh');
@@ -484,8 +486,14 @@
     let data;
     try { data = await response.json(); } catch { data = {}; }
     if (!response.ok) {
+      // API Gateway returns {"message":"Forbidden"} for a missing/invalid
+      // usage-plan key, and the generic text previously hid the real cause.
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('API Gateway refused access (' + response.status +
+          '). Check the x-api-key above. If it is correct, the API Gateway key or usage-plan configuration needs repair. No upload or paid generation was started.');
+      }
       throw new Error(data.errorCode || data.error || data.message ||
-        (response.status === 403 ? 'Invalid API key' : 'API error ' + response.status));
+        'API error ' + response.status);
     }
     return data;
   }
@@ -508,6 +516,12 @@
       : error.message;
     return 'Failed during: ' + phase + '\n' + detail;
   }
+
+  // No test button is needed: validate access automatically on each upload,
+  // before making any changes to an existing job or uploading the selfie.
+  document.getElementById('key').addEventListener('input', () => {
+    apiConnectionStatus.textContent = 'API access will be checked when you upload.';
+  });
 
   testApi.addEventListener('click', async () => {
     testApi.disabled = true;
@@ -804,18 +818,13 @@
       return;
     }
     generate.disabled = true;
-    // Never leave a previous job's paid action available during another upload.
-    stopPolling();
-    resetVideoUi();
-    currentJobId = null;
-    syncJobIdPanel();
-    generateScene1.hidden = true;
-    generateScene1.disabled = false;
-    refresh.hidden = true;
-    videoPromptSection.hidden = true;
-    videoPromptText.textContent = '';
-    results.replaceChildren();
     try {
+      // Verify the same API key and gateway URL before requesting a signed
+      // upload. A 403 is handled here without clearing or replacing a job.
+      setPhase('Connecting to API Gateway');
+      apiConnectionStatus.textContent = 'Checking API access…';
+      await api('/scenarios');
+      apiConnectionStatus.textContent = 'API connected.';
       setPhase('Requesting upload form from API Gateway');
       const signed = await api('/uploads', {
         method: 'POST',
@@ -841,8 +850,14 @@
           lastName,
         }),
       });
+      // Switch jobs only after upload AND job creation have succeeded.
+      // Failed authentication/network/S3 requests leave the old job intact.
+      stopPolling();
+      resetVideoUi();
       currentJobId = created.job.jobId;
       syncJobIdPanel();
+      generateScene1.disabled = false;
+      results.replaceChildren();
       generate.hidden = true;
       window.sessionStorage?.setItem('aflLastJobId', currentJobId);
       resumeLast.hidden = true;
@@ -854,9 +869,14 @@
         '\nStatus: ' + created.job.status +
         '\nTap Generate 3 reference images to start paid edits.');
     } catch (error) {
-      generateScene1.hidden = true;
-      refresh.hidden = true;
-      generate.hidden = false;
+      apiConnectionStatus.textContent = /API Gateway refused access/.test(error.message)
+        ? 'API access denied. Check x-api-key — no selfie upload or paid request was made.'
+        : 'API connection or upload failed. Your existing job has not been replaced.';
+      // Keep any previously selected/resumed job and its video state.
+      if (!currentJobId) {
+        generateScene1.hidden = true;
+        generate.hidden = false;
+      }
       showStatus(describeError(error, currentPhase));
     } finally {
       generate.disabled = false;
