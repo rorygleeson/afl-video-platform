@@ -11,6 +11,7 @@ new vm.Script(script, {filename: 'frontend/index.html'});
 
 function setup() {
   let statusPolls = 0;
+  const mockStatuses = {scene1: 'NOT_REQUESTED', scene2: 'NOT_REQUESTED', scene3: 'NOT_REQUESTED'};
   const calls = [];
   const timers = new Map();
   let timerId = 0;
@@ -19,6 +20,11 @@ function setup() {
     return {
       hidden: false, disabled: false, value: '', textContent: '', dataset: {},
       listeners: {},
+      children: [],
+      appendChild(child) { this.children.push(child); },
+      querySelector(tag) { return this.children.find(c => c.tagName === tag) || null; },
+      querySelectorAll(tag) { return this.children.filter(c => c.tagName === tag); },
+      replaceChildren(...children) { this.children = [...children]; },
       addEventListener(name, fn) { this.listeners[name] = fn; },
     };
   }
@@ -30,9 +36,10 @@ function setup() {
                       'videoTestSection','videoTestMessage','assembleFinal',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
-                      'videoPlayer1','videoPlayer2','videoPlayer3']) {
+                      'videoPlayer1','videoPlayer2','videoPlayer3',
+                      'videoPanel1','videoPanel2','videoPanel3']) {
     els[name] = el();
-    els[name].replaceChildren = function() {};
+    // Keep the basic DOM simulation intact for the new reference image cards.
   }
   els.assembleFinal.disabled = true;
   els.key.value = 'test-api-key';
@@ -43,15 +50,21 @@ function setup() {
   els.selfie.files = [{name: 'selfie.png', type: 'image/png', size: 1200}];
   els.results = el();
   els.results.children = [];
-  els.results.replaceChildren = function() { this.children = []; };
-  els.results.appendChild = function(child) { this.children.push(child); };
-  els.results.querySelectorAll = function() { return this.children; };
+  function imageCount() { return els.results.children.flatMap(c => c.children || []).filter(c => c.tagName === 'img').length; }
   const doc = {
     hidden: false,
     listeners: {},
     addEventListener(name, fn) { this.listeners[name] = fn; },
-    getElementById(name) { return els[name]; },
-    createElement(tag) { assert.equal(tag, 'img'); return el(); },
+    getElementById(name) {
+      if (els[name]) return els[name];
+      for (const card of els.results.children) {
+        if (card.id === name) return card;
+        const child = (card.children || []).find(c => c.id === name);
+        if (child) return child;
+      }
+      return null;
+    },
+    createElement(tag) { const node = el(); node.tagName = tag; return node; },
   };
   const fetch = async (url, opts = {}) => {
     calls.push({url, opts});
@@ -84,8 +97,8 @@ function setup() {
     };
     if (url.endsWith('/videos')) return {
       ok: true, async json() { return {videoGenerationMode: 'MOCK_ONLY', videos: {
-        scene1: {status: 'NOT_REQUESTED'}, scene2: {status: 'NOT_REQUESTED'},
-        scene3: {status: 'NOT_REQUESTED'},
+        scene1: {status: mockStatuses.scene1}, scene2: {status: mockStatuses.scene2},
+        scene3: {status: mockStatuses.scene3},
       }}; },
     };
     if (/\/videos\/scene[123]$/.test(url) && opts.method === 'POST') return {
@@ -141,7 +154,7 @@ function setup() {
     await flush();
     return scheduled.delay;
   }
-  return {els, doc, calls, timers, flush, nextTimer, sessionStorage, getPolls: () => statusPolls};
+  return {els, doc, calls, timers, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses};
 }
 
 test('auto polls every 5 seconds, adds each image once and stops when complete', async () => {
@@ -151,14 +164,14 @@ test('auto polls every 5 seconds, adds each image once and stops when complete',
   await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.getPolls(), 1);
-  assert.equal(h.els.results.children.length, 1);
+  assert.equal(h.imageCount(), 1);
   assert.equal(h.timers.size, 1);
   assert.equal(await h.nextTimer(), 5000);
   assert.equal(h.getPolls(), 2);
-  assert.equal(h.els.results.children.length, 2);
+  assert.equal(h.imageCount(), 2);
   assert.equal(await h.nextTimer(), 5000);
   assert.equal(h.getPolls(), 3);
-  assert.equal(h.els.results.children.length, 3);
+  assert.equal(h.imageCount(), 3);
   assert.equal(h.timers.size, 0, 'Completed job must stop polling');
   assert.equal(h.els.pollStatus.hidden, true);
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1,
@@ -212,12 +225,12 @@ test('separate free video preview buttons substitute name/team without paid API 
   await h.nextTimer();
   await h.nextTimer();
   assert.equal(h.els.videoPromptSection.hidden, false);
-  for (const n of [1,2,3]) {
-    await h.els['videoScene' + n].listeners.click();
-    assert.match(h.els.videoPromptText.textContent, /Alex Tonelli/);
-    assert.match(h.els.videoPromptText.textContent, /Geelong Cats/);
-  }
-  assert.equal(h.calls.filter(c => c.url.includes('/video/scene') && c.url.endsWith('/preview')).length, 3);
+  await h.els.videoScene1.listeners.click();
+  assert.match(h.els.videoPromptText.textContent, /Alex Tonelli/);
+  assert.match(h.els.videoPromptText.textContent, /Geelong Cats/);
+  assert.match(h.els.videoPromptText.textContent, /SCENE 1/);
+  assert.equal(h.els.videoScene2.hidden, true, 'scene 2 is locked before mock 1 completes');
+  assert.equal(h.calls.filter(c => c.url.includes('/video/scene') && c.url.endsWith('/preview')).length, 1);
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1,
     'Only the separately confirmed reference-image generation request may have occurred');
   assert.equal(h.calls.filter(c => /\/videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0,
@@ -262,18 +275,29 @@ test('three mock scene controls remain separate and never request paid video', a
   await h.nextTimer();
   assert.equal(h.els.videoTestSection.hidden,false);
   assert.equal(h.els.videoPromptSection.hidden,false);
-  assert.equal(h.els.generateVideo1.disabled,false);
-  assert.equal(h.els.generateVideo2.disabled,false);
-  assert.equal(h.els.generateVideo3.disabled,false);
+  assert.equal(h.els.videoPanel1.hidden,false);
+  assert.equal(h.els.videoPanel2.hidden,true);
+  assert.equal(h.els.videoPanel3.hidden,true);
+  assert.equal(h.els.generateVideo1.hidden,true, 'mock button hidden until prompt preview');
+  await h.els.videoScene1.listeners.click();
+  assert.equal(h.els.generateVideo1.hidden,false);
   await h.els.generateVideo1.listeners.click();
   await h.flush();
   const submitted=h.calls.filter(c=>/\/videos\/scene[123]$/.test(c.url)&&c.opts.method==='POST');
   assert.equal(submitted.length,1);
   assert.match(submitted[0].url,/videos\/scene1$/);
   assert.equal(h.els.assembleFinal.disabled,true);
+  assert.equal(h.els.assembleFinal.hidden,true);
+  h.mockStatuses.scene1 = 'MOCK_COMPLETED';
+  // Poll the status endpoint and unlock scene 2 only after scene 1 mock completes.
+  h.doc.listeners.visibilitychange();
+  await h.flush();
+  assert.equal(h.els.videoPanel2.hidden,false);
+  assert.equal(h.els.videoPanel3.hidden,true);
+  assert.match(h.els.videoStatus1.textContent,/No MP4 was generated/);
 });
 
-test('job status and image thumbnails appear directly below job actions, before any video controls', () => {
+test('reference image progress stays above scene video controls', () => {
   const order = ['id="resumeLast"', 'id="jobProgressSection"', 'id="status"',
                  'id="results"', 'id="videoPromptSection"', 'id="videoTestSection"'];
   let previous = -1;
