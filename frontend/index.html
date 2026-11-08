@@ -115,7 +115,7 @@
         <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
         <pre id="videoPromptText1" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
       </details>
-      <p id="videoStatus1" class="video-state" role="status" hidden>Real video not generated.</p>
+      <p id="videoStatus1" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer1"></div>
       <details id="videoDebugDetails1" class="video-debug">
         <summary>Scene 1 status &amp; debug information</summary>
@@ -327,11 +327,20 @@
           'Status checks are read-only. No paid retries.',
         ];
         document.getElementById('videoDebugText' + n).textContent = lines.join('\n');
+        const debugDetails = document.getElementById('videoDebugDetails' + n);
+        // Automatically show diagnostics for submissions that have been
+        // started or need reconciliation, including when resuming a job.
+        // Never auto-close a panel the user explicitly expanded.
+        if (real.mode === 'REAL' && real.status !== 'COMPLETED' &&
+            real.status !== 'FAILED' && real.status !== 'NOT_REQUESTED') {
+          debugDetails.open = true;
+        }
       }
       for (const n of [1, 2, 3]) {
         const item = data.videos?.['scene' + n] || {};
         const player = document.getElementById('videoPlayer' + n);
         const state = document.getElementById('videoStatus' + n);
+        state.hidden = false;
         if (item.status === 'COMPLETED' && item.url && !item.mock) {
           state.textContent = 'Real MP4 completed.';
           // Polling regenerates short-lived S3 URLs. Do not replace a playing
@@ -366,7 +375,7 @@
         }, POLL_INTERVAL_MS);
       }
       if (realStates.some(st => st.mode === 'REAL' &&
-          ['COMPLETED', 'FAILED'].includes(st.status))) {
+          ['COMPLETED', 'FAILED', 'REVIEW_REQUIRED'].includes(st.status))) {
         videoTestMessage.textContent = 'Video status updated — see each scene above.';
       }
     } catch (error) {
@@ -456,7 +465,7 @@
     try {
       const result = await api('/video/paid-google-auth-check');
       googleStatus.textContent = result.status === 'AUTHENTICATED'
-        ? 'Google Cloud connected successfully. Video generation is disabled.'
+        ? 'Google Cloud connected successfully (real video worker). No paid video started.'
         : 'Google authentication not ready: ' + (result.status || 'unknown status');
     } catch (error) {
       googleStatus.textContent = 'Google connection check failed: ' + error.message;
