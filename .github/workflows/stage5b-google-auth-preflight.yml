@@ -106,6 +106,10 @@ jobs:
                   print('Missing Lambda Python module:',module.group(1))
               raise SystemExit('Google worker Lambda runtime error; no paid model called')
           print('New worker WIF preflight status:',response.get('status','UNAVAILABLE'))
+          import re
+          code=response.get('errorCode','')
+          if isinstance(code,str) and re.fullmatch(r'GOOGLE_[A-Z_]{3,80}',code):
+              print('Safe Google authentication error code:', code)
           if response.get('status')!='AUTHENTICATED' or response.get('paidGenerationEnabled') is not False:
               raise SystemExit('New worker Google IAM binding or WIF access not ready; paid generation remains locked')
           print('Google WIF authenticated successfully. Paid generation remains disabled.')
