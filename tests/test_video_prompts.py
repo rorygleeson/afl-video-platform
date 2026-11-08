@@ -36,7 +36,19 @@ class VideoPromptTests(unittest.TestCase):
                 self.assertNotIn("videoConcurrency", result)
                 self.assertEqual(result["sceneId"], scene)
         scene3 = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")
-        self.assertIn("AFL Grand Final champions", scene3["commentary"])
+        self.assertEqual(scene3["commentary"], "Tonelli wins it for Geelong Cats! They\u0027re the premiers!")
+        expected = {
+            "scene1": ("Tonelli has it! Ten seconds to go!", 8),
+            "scene2": ("He goes for goal! What a kick! He\u0027s scored!", 8),
+            "scene3": ("Tonelli wins it for Geelong Cats! They\u0027re the premiers!", 10),
+        }
+        for scene_id, (commentary, duration) in expected.items():
+            with self.subTest(scene_id=scene_id):
+                result = mod.render_scene(LocalS3(), "test-scenario-bucket", job, scene_id)
+                self.assertEqual(result["commentary"], commentary)
+                self.assertEqual(result["durationSeconds"], duration)
+                self.assertIn(commentary, result["prompt"])
+                self.assertIn("ESSENDON" if scene_id != "scene1" else "Essendon", result["prompt"])
 
     def test_mandatory_name_and_input_validation(self):
         for value in ("", "Bob123", "Bob;", "$fullName", "x" * 41):
