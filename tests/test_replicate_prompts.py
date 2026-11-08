@@ -46,8 +46,8 @@ class ReplicatePromptTests(unittest.TestCase):
                 if scene["id"] in ("scene1", "scene2"):
                     self.assertIn("essendon", text)
                 else:
-                    self.assertIn("do not introduce opposition players", text)
-        self.assertIn("natural excited smile or slightly open mouth",
+                    self.assertIn("no opposition players", text)
+        self.assertIn("natural happy smile or slightly open triumphant mouth",
                       self.config["scenes"][2]["promptInstructions"])
 
     def test_missing_or_invalid_prompt_fails_before_generation(self):
