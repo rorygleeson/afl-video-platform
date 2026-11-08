@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Stage 5A isolated Google Omni adapter. Paid generation HARD DISABLED.
+Parameters:
+  ArtifactBucketName:
+    Type: String
+  GoogleWorkerArtifactKey:
+    Type: String
+  PermissionsBoundaryArn:
+    Type: String
+  UploadsBucketName:
+    Type: String
+    Default: afl-app-dev-uploads-134387458447-ap-southeast-2
+  JobsTableName:
+    Type: String
+    Default: afl-app-dev-jobs
+  AdmissionTableName:
+    Type: String
+    Default: afl-app-dev-video-admission
+  ScenarioAssetBucketName:
+    Type: String
+    Default: afl-video-bootstrap-artifactbucket-xiuriidgyft4
+Resources:
+  GoogleWorkerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-google-omni-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: GoogleOmniAdapterPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReferenceImagesReadOnly
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/results/*'
+              - Sid: PrivateVideoOutputOnly
+                Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/videos/*'
+              - Sid: ReadPrivateVersionedPrompts
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ScenarioAssetBucketName}/scenarios/afl-grand-final-winning-kick/v1/*'
+              - Sid: JobState
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${JobsTableName}'
+              - Sid: SingleGlobalAdmissionSlot
+                Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:DeleteItem]
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AdmissionTableName}'
+              - Sid: RestrictedLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-google-omni-worker:*'
+  GoogleWorkerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: afl-app-dev-google-omni-worker
+      Description: Stage 5A Google Omni adapter; paid model disabled by runtime and scene config.
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      Role: !GetAtt GoogleWorkerRole.Arn
+      MemorySize: 1024
+      EphemeralStorage:
+        Size: 512
+      Timeout: 180
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref GoogleWorkerArtifactKey
+      Environment:
+        Variables:
+          PAID_GENERATION_ENABLED: 'false'
+          GOOGLE_VIDEO_MODEL: UNCONFIGURED
+          GOOGLE_PROJECT_ID: afl-video-platform
+          GOOGLE_PROJECT_NUMBER: '345956846110'
+          GOOGLE_WIF_POOL_ID: afl-video-aws
+          GOOGLE_WIF_PROVIDER_ID: afl-aws-dev
+          GOOGLE_SERVICE_ACCOUNT: afl-video-worker@afl-video-platform.iam.gserviceaccount.com
+          UPLOAD_BUCKET: !Ref UploadsBucketName
+          JOBS_TABLE: !Ref JobsTableName
+          ADMISSION_TABLE: !Ref AdmissionTableName
+          SCENARIO_ASSET_BUCKET: !Ref ScenarioAssetBucketName
+  GoogleWorkerLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/afl-app-dev-google-omni-worker
+      RetentionInDays: 14
+  GoogleStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-google-omni-sfn-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeOnlyGoogleVideoWorker
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt GoogleWorkerLambda.Arn
+  GoogleStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: afl-app-dev-google-omni
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt GoogleStateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment":"Stage 5A installed but hard-disabled. No Retry on paid submit or polling.",
+          "StartAt":"PaidGate",
+          "TimeoutSeconds":3600,
+          "States":{
+            "PaidGate":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"gate"}},"ResultPath":"$.gate","Next":"Claim"},
+            "Claim":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"claim","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.claim","Next":"Submit"},
+            "Submit":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"submit","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.submit","Next":"WaitForVideo"},
+            "WaitForVideo":{"Type":"Wait","Seconds":20,"Next":"PollVideo"},
+            "PollVideo":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"poll","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.polled","Next":"InspectVideo"},
+            "InspectVideo":{"Type":"Choice","Choices":[{"Variable":"$.polled.Payload.status","StringEquals":"WAITING","Next":"WaitForVideo"},{"Variable":"$.polled.Payload.status","StringEquals":"COMPLETED","Next":"Finalize"},{"Variable":"$.polled.Payload.status","StringEquals":"FAILED","Next":"Finalize"}],"Default":"UnexpectedStatus"},
+            "Finalize":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"finalize","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"End":true},
+            "UnexpectedStatus":{"Type":"Fail","Error":"UnexpectedGoogleStatus","Cause":"Manual reconciliation is required. Do not resubmit."}
+          }
+        }
+Outputs:
+  GoogleWorkerArn:
+    Value: !GetAtt GoogleWorkerLambda.Arn
+  GoogleStateMachineArn:
+    Value: !Ref GoogleStateMachine
+  PaidGenerationMode:
+    Value: DISABLED
