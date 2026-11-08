@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Disposable, one-shot MOCK-only live AWS integration test. Never touches paid providers.
+Parameters:
+  ArtifactBucketName:
+    Type: String
+  SmokeRunnerArtifactKey:
+    Type: String
+  PermissionsBoundaryArn:
+    Type: String
+  VideoStateMachineArn:
+    Type: String
+  UploadsBucketName:
+    Type: String
+    Default: afl-app-dev-uploads-134387458447-ap-southeast-2
+  JobsTableName:
+    Type: String
+    Default: afl-app-dev-jobs
+  AdmissionTableName:
+    Type: String
+    Default: afl-app-dev-video-admission
+Resources:
+  SmokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-video-smoke-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RestrictedSmokeOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: TestFixtureReadWrite
+                Effect: Allow
+                Action: [s3:PutObject, s3:GetObject, s3:DeleteObject]
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/results/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/scene1.png'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/video-mock/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee/*'
+              - Sid: OneTestJobOnly
+                Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:DeleteItem]
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${JobsTableName}'
+                Condition:
+                  ForAllValues:StringEquals:
+                    dynamodb:LeadingKeys: [eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee]
+              - Sid: GlobalAdmissionSlot
+                Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:GetItem, dynamodb:DeleteItem]
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${AdmissionTableName}'
+                Condition:
+                  ForAllValues:StringEquals:
+                    dynamodb:LeadingKeys: [GLOBAL_VIDEO_SLOT_0]
+              - Sid: StartMockWorkflow
+                Effect: Allow
+                Action: states:StartExecution
+                Resource: !Ref VideoStateMachineArn
+              - Sid: InspectAndStopOwnMockExecutions
+                Effect: Allow
+                Action: [states:DescribeExecution, states:StopExecution]
+                Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:afl-app-dev-video:smoke-*'
+              - Sid: WriteLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-video-smoke:*'
+  SmokeLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: afl-app-dev-video-smoke
+      Description: Runs one disposable Stage 3 live AWS smoke test; no Google/Replicate.
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      Timeout: 240
+      MemorySize: 256
+      Role: !GetAtt SmokeRole.Arn
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref SmokeRunnerArtifactKey
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadsBucketName
+          JOBS_TABLE: !Ref JobsTableName
+          ADMISSION_TABLE: !Ref AdmissionTableName
+          VIDEO_STATE_MACHINE_ARN: !Ref VideoStateMachineArn
+  SmokeLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/afl-app-dev-video-smoke
+      RetentionInDays: 7
+  RunIntegrationTest:
+    Type: Custom::AFLMockSmoke
+    Properties:
+      ServiceToken: !GetAtt SmokeLambda.Arn
+      # Run only at initial creation; stack will be deleted after reporting results.
+      Version: 1
+Outputs:
+  Results:
+    Value: !GetAtt RunIntegrationTest.VideoStatus
+  BlockedExecution:
+    Value: !GetAtt RunIntegrationTest.BlockedExecution
+  SuccessfulExecution:
+    Value: !GetAtt RunIntegrationTest.SuccessfulExecution
+  SlotReleased:
+    Value: !GetAtt RunIntegrationTest.AdmissionSlotReleased
