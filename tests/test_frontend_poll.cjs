@@ -29,7 +29,7 @@ function setup(options = {}) {
     };
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
-                      'generateScene1', 'resumeLast', 'resumeJobId', 'resumeById', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
+                      'generateScene1', 'resumeLast', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
                       'testGoogle', 'googleStatus', 'firstName', 'lastName',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
@@ -169,7 +169,7 @@ function setup(options = {}) {
   };
   const ctx = {
     document: doc,
-    window: {AFL_CONFIG: {apiBaseUrl: 'https://api.example.com'}, confirm: () => true, sessionStorage, localStorage: sessionStorage},
+    window: {AFL_CONFIG: {apiBaseUrl: 'https://api.example.com'}, confirm: () => true, sessionStorage},
     fetch, Set, URL: {createObjectURL() { return 'blob:test'; }, revokeObjectURL() {}},
     FormData: class { append() {} },
     crypto: {randomUUID() { return 'test-idempotency-key'; }},
