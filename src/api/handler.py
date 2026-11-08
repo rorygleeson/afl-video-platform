@@ -268,6 +268,26 @@ def video_scene_public(job, scene_id):
         result["mock"] = True
     if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED"):
         result["errorCode"] = item["errorCode"]
+    if (real or approval) and status not in ("COMPLETED", "FAILED") and GOOGLE_STATE_MACHINE_ARN:
+        # Read-only reconciliation of Step Functions failures. Never issue a new
+        # paid request or infer that a failed workflow was not charged.
+        execution_name = (approval.get("executionName") or
+                          "real-" + job["jobId"] + "-" + scene_id)
+        arn = (GOOGLE_STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:", 1)
+               + ":" + execution_name)
+        try:
+            execution = STATES.describe_execution(executionArn=arn)
+            if execution.get("status") in ("FAILED", "TIMED_OUT", "ABORTED"):
+                result["status"] = "REVIEW_REQUIRED"
+                result["errorCode"] = "WORKFLOW_" + execution["status"]
+            elif execution.get("status") == "RUNNING":
+                result["workflowStatus"] = "RUNNING"
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code")
+            if code != "ExecutionDoesNotExist":
+                LOG.warning("Could not read real scene workflow status: %s", str(code)[:60])
+                result["workflowStatus"] = "UNKNOWN"
+
     # Future real-provider stage may record MP4 metadata, but NEVER expose mock JSON as video.
     if status == "COMPLETED" and item.get("resultKey"):
         key = item["resultKey"]
