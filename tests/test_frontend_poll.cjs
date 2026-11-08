@@ -218,7 +218,10 @@ test('separate free video preview buttons substitute name/team without paid API 
     assert.match(h.els.videoPromptText.textContent, /Geelong Cats/);
   }
   assert.equal(h.calls.filter(c => c.url.includes('/video/scene') && c.url.endsWith('/preview')).length, 3);
-  assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 0);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1,
+    'Only the separately confirmed reference-image generation request may have occurred');
+  assert.equal(h.calls.filter(c => /\/videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0,
+    'Previewing prompts must not start mock or paid video');
   const request = h.calls.find(c => c.url.endsWith('/jobs') && c.opts.method === 'POST');
   assert.equal(JSON.parse(request.opts.body).firstName, 'Alex');
   assert.equal(JSON.parse(request.opts.body).lastName, 'Tonelli');
