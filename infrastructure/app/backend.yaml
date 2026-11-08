@@ -146,7 +146,7 @@ Resources:
                 Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-google-omni'
               - Sid: InspectGoogleVideoExecutionStatusOnly
                 Effect: Allow
-                Action: states:DescribeExecution
+                Action: [states:DescribeExecution, states:GetExecutionHistory]
                 Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:afl-app-dev-google-omni:real-*'
               - Sid: StoreJobs
                 Effect: Allow
