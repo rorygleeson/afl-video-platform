@@ -4,7 +4,6 @@
   "version": "v1",
   "videoGenerationEnabled": true,
   "model": "gemini-omni-1.2-flash",
-  "videoConcurrency": 1,
   "requireExplicitPaidAction": true,
   "scenes": [
     {
@@ -27,7 +26,7 @@
     }
   ],
   "maxPaidScenesPerRequest": 1,
-  "notes": "Paid video available only after explicit per-scene consent, conditional DynamoDB reservation and global concurrency slot; no implicit generation.",
+  "notes": "Paid video requires explicit per-scene consent and a conditional per-job DynamoDB approval; no global concurrency slot or implicit generation.",
   "requiredVariables": [
     "firstName",
     "lastName",
