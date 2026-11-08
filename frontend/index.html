@@ -25,6 +25,13 @@
     .video-scene video{width:100%;max-height:330px;border-radius:8px;margin-top:10px}
     .video-state{font-size:.9rem;color:#465569;white-space:pre-wrap}
     .mock-note{background:#fff4d9;border-radius:8px;padding:10px;font-size:.9rem}
+    [hidden]{display:none!important}
+    .reference-card{min-width:0;border:1px solid #d4dce5;border-radius:9px;padding:6px}
+    .reference-card strong{display:block;font-size:.8rem}
+    .reference-card p{font-size:.75rem;margin:4px 0}
+    .reference-card img{display:block;width:100%;height:auto;aspect-ratio:9/16;object-fit:cover}
+    .video-scene .video-state{margin:8px 0}
+    .step-heading{font-weight:700;margin-top:10px}
   </style>
 </head>
 <body>
@@ -63,42 +70,49 @@
   <button id="refresh" type="button" hidden>Refresh job status</button>
   <button id="resumeLast" type="button" hidden>Resume Last Job (no AI charge)</button>
   <section id="jobProgressSection">
-    <h2>Job status</h2>
+    <h2>Reference image progress</h2>
     <p id="status" role="status">Loading backend configuration…</p>
     <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
     <div id="results" aria-label="Reference images"></div>
   </section>
   <section id="videoPromptSection" hidden>
     <h2>Video prompts — free preview</h2>
-    <p class="note">Choose a scene to see its exact personalised prompt and commentary before any paid video generation. These buttons do not call Google video models. Real Google video generation remains disabled. Stage 4 supports free mock scene runs; concurrency is 1.</p>
-    <button id="videoScene1" type="button">Preview Scene 1 — Run-up</button>
-    <button id="videoScene2" type="button">Preview Scene 2 — Winning kick</button>
-    <button id="videoScene3" type="button">Preview Scene 3 — Celebration</button>
-    <p id="videoPromptStatus" role="status" aria-live="polite"></p>
-    <pre id="videoPromptText" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.9rem"></pre>
+    <p class="note">Preview Scene 1 before running its free mock test. Scene 2 unlocks after the Scene 1 mock completes; Scene 3 follows Scene 2. No real video or MP4 is generated at this stage.</p>
+    <p>All three reference images are complete. Preview and mock-test each scene in sequence below.</p>
+    <p id="videoPromptStatus" hidden></p>
+    <pre id="videoPromptText" hidden></pre>
   </section>
   <section id="videoTestSection" hidden>
-    <h2>Scene video tests — MOCK ONLY</h2>
-    <p class="mock-note">These buttons run the actual AWS video workflow, but <strong>do not call Google or create MP4s</strong>. Each requires its matching completed reference image. Only one mock scene can run at a time. A playable video will appear here only after real video generation is implemented and approved.</p>
+    <h2>Free scene workflow tests — no MP4s</h2>
+    <p class="mock-note">Mock-only AWS workflow checks. No Google model calls, no playable video. Scene tests unlock one at a time.</p>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 — Run-up</strong>
-      <button type="button" id="generateVideo1" disabled>Run Scene 1 mock video workflow</button>
+      <button id="videoScene1" type="button">Preview Scene 1 prompt</button>
+      <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
+      <pre id="videoPromptText1" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      <button type="button" id="generateVideo1" disabled hidden>Run Scene 1 mock video workflow</button>
       <p id="videoStatus1" class="video-state" role="status">Generate reference image 1 first.</p>
       <div id="videoPlayer1"></div>
     </div>
-    <div class="video-scene" id="videoPanel2">
+    <div class="video-scene" id="videoPanel2" hidden>
       <strong>Scene 2 — Winning kick</strong>
-      <button type="button" id="generateVideo2" disabled>Run Scene 2 mock video workflow</button>
+      <button id="videoScene2" type="button">Preview Scene 2 prompt</button>
+      <p id="videoPromptStatus2" class="video-state" role="status" aria-live="polite"></p>
+      <pre id="videoPromptText2" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      <button type="button" id="generateVideo2" disabled hidden>Run Scene 2 mock video workflow</button>
       <p id="videoStatus2" class="video-state" role="status">Generate reference image 2 first.</p>
       <div id="videoPlayer2"></div>
     </div>
-    <div class="video-scene" id="videoPanel3">
+    <div class="video-scene" id="videoPanel3" hidden>
       <strong>Scene 3 — Celebration</strong>
-      <button type="button" id="generateVideo3" disabled>Run Scene 3 mock video workflow</button>
+      <button id="videoScene3" type="button">Preview Scene 3 prompt</button>
+      <p id="videoPromptStatus3" class="video-state" role="status" aria-live="polite"></p>
+      <pre id="videoPromptText3" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      <button type="button" id="generateVideo3" disabled hidden>Run Scene 3 mock video workflow</button>
       <p id="videoStatus3" class="video-state" role="status">Generate reference image 3 first.</p>
       <div id="videoPlayer3"></div>
     </div>
-    <button id="assembleFinal" type="button" disabled>Assemble Final Video (Stage 5 — not yet available)</button>
+    <button id="assembleFinal" type="button" disabled hidden>Assemble Final Video</button>
     <p id="videoTestMessage" class="poll-status" role="status" aria-live="polite"></p>
   </section>
 </main>
@@ -138,6 +152,18 @@
   let lastImageScenes = {};
   const videoPending = new Set();
   const pendingStarted = new Map();
+  const previewedScenes = new Set();
+  const mockCompletedScenes = new Set();
+  const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
+  const MOCK_ACTIVE = new Set(['MOCK_CLAIMED','MOCK_GENERATING','MOCK_REQUESTED']);
+  function formatMockStatus(state, item) {
+    if (state === 'NOT_REQUESTED') return 'Ready to test (free mock; no MP4).';
+    if (state === 'MOCK_COMPLETED') return 'Mock test completed. No MP4 was generated.';
+    if (state === 'MOCK_FAILED') return 'Mock test failed' + (item.errorCode ? ': ' + item.errorCode : '.') ;
+    if (MOCK_ACTIVE.has(state)) return 'Mock test running — no Google video charges.';
+    if (state === 'COMPLETED' && item.url && !item.mock) return 'Real MP4 available.';
+    return state.replaceAll('_', ' ').toLowerCase();
+  }
 
   function clearPollTimer() {
     if (pollTimer !== null) {
@@ -163,18 +189,32 @@
   function resetVideoUi() {
     stopVideoPoll();
     lastImageScenes = {};
+    mockCompletedScenes.clear();
+    videoPromptSection.hidden = true;
     videoTestSection.hidden = true;
+    document.getElementById('videoScene2').hidden = true;
+    document.getElementById('videoScene3').hidden = true;
+    document.getElementById('videoPanel2').hidden = true;
+    document.getElementById('videoPanel3').hidden = true;
+    document.getElementById('videoScene1').hidden = false;
+    document.getElementById('videoPanel1').hidden = false;
+    previewedScenes.clear();
+    for (const n of [1, 2, 3]) {
+      document.getElementById('videoPromptStatus' + n).textContent = '';
+      document.getElementById('videoPromptText' + n).textContent = '';
+    }
     document.getElementById('assembleFinal').disabled = true;
     videoTestMessage.textContent = '';
     for (const n of [1, 2, 3]) {
       document.getElementById('generateVideo' + n).disabled = true;
+      document.getElementById('generateVideo' + n).hidden = true;
       document.getElementById('videoStatus' + n).textContent = 'Generate reference image ' + n + ' first.';
       document.getElementById('videoPlayer' + n).replaceChildren();
     }
   }
 
   async function refreshVideos() {
-    if (!currentJobId || videoBusy || document.hidden) return;
+    if (!currentJobId || videoBusy || document.hidden || videoTestSection.hidden) return;
     videoBusy = true;
     const jobId = currentJobId;
     try {
@@ -182,6 +222,15 @@
       if (jobId !== currentJobId) return;
       let active = false;
       let admissionWarning = '';
+      mockCompletedScenes.clear();
+      for (const n of [1,2,3]) {
+        if (data.videos?.['scene' + n]?.status === 'MOCK_COMPLETED') mockCompletedScenes.add('scene' + n);
+      }
+      for (const n of [1,2,3]) {
+        const unlocked = n === 1 || mockCompletedScenes.has('scene' + (n - 1));
+        document.getElementById('videoPanel' + n).hidden = !unlocked;
+        document.getElementById('videoScene' + n).hidden = !unlocked;
+      }
       for (const n of [1, 2, 3]) {
         const sceneId = 'scene' + n;
         const item = data.videos?.[sceneId] || {};
@@ -197,11 +246,14 @@
           pendingStarted.delete(sceneId);
           admissionWarning = 'Scene ' + n + ' did not claim the slot. You may retry this mock scene.';
         }
-        button.disabled = !imageReady || state !== 'NOT_REQUESTED' || videoPending.has(sceneId);
+        button.hidden = !previewedScenes.has(sceneId) || state !== 'NOT_REQUESTED';
+        button.disabled = !imageReady || state !== 'NOT_REQUESTED' || videoPending.size > 0 || videoPending.has(sceneId);
         if (state === 'NOT_REQUESTED') {
-          statusText.textContent = imageReady ? 'Ready for mock workflow (no charge).' : 'Waiting for reference image.';
+          statusText.textContent = imageReady
+            ? (previewedScenes.has(sceneId) ? 'Ready to run free mock test.' : 'Preview this scene’s prompt first.')
+            : 'Waiting for reference image.';
         } else {
-          statusText.textContent = state + (item.mock ? ' — mock only, no MP4 created' : '');
+          statusText.textContent = formatMockStatus(state, item);
         }
         if (item.url && state === 'COMPLETED') {
           if (player.dataset.url !== item.url) {
@@ -225,8 +277,7 @@
         }
       }
       videoTestMessage.textContent = admissionWarning || (active
-        ? 'Checking mock video statuses automatically…'
-        : 'Mock workflow ready. No Google video calls enabled.');
+        ? 'Checking running mock tests…' : '');
       if (active && !document.hidden) {
         if (videoTimer !== null) clearTimeout(videoTimer);
         videoTimer = setTimeout(() => { videoTimer = null; void refreshVideos(); }, 3500);
@@ -426,7 +477,7 @@
       // Keep all video controls and previews hidden until the full set of
       // three personalised reference images has completed successfully.
       const referenceImagesReady = ['scene1', 'scene2', 'scene3']
-        .every(id => scenes[id]?.status === 'COMPLETED');
+        .every(id => scenes[id]?.status === 'COMPLETED' && (sceneResults.images || []).some(image => image.sceneId === id && image.url));
       videoPromptSection.hidden = !referenceImagesReady;
       videoTestSection.hidden = !referenceImagesReady;
       if (!referenceImagesReady) {
@@ -434,29 +485,40 @@
         videoPromptText.textContent = '';
         videoPromptStatus.textContent = '';
       }
-      const statuses = ['scene1', 'scene2', 'scene3'].map(id =>
-        id + ': ' + (scenes[id]?.status || 'PENDING') +
-        (scenes[id]?.status === 'FAILED' && scenes[id]?.errorCode
-          ? ' (' + scenes[id].errorCode + ')' : ''));
       const completed = record.job.completedScenes ?? sceneResults.images.length;
       const failed = record.job.failedScenes ?? 0;
-      showStatus('Job ' + currentJobId + '\nOverall: ' + record.job.status +
-        '\nCompleted: ' + completed + '/3; failed: ' + failed +
-        '\n' + statuses.join('\n'));
-
-      // Only append new scenes. Existing thumbnails must not flicker or
-      // reload with a new presigned URL every five seconds.
-      const existing = new Set(
-        [...results.querySelectorAll('img[data-scene-id]')].map(img => img.dataset.sceneId)
-      );
-      for (const item of sceneResults.images) {
-        if (!item.url || existing.has(item.sceneId)) continue;
-        const img = document.createElement('img');
-        img.src = item.url;
-        img.dataset.sceneId = item.sceneId;
-        img.alt = 'Generated ' + item.sceneId;
-        img.title = item.sceneId;
-        results.appendChild(img);
+      showStatus('Reference images: ' + completed + '/3 completed' +
+        (failed ? '; ' + failed + ' failed' : '') + '. ' +
+        (referenceImagesReady ? 'You can now test the first scene.' : 'Video testing stays hidden until all three are ready.'));
+      // Image cards keep their own status and retain thumbnails during polling.
+      // Never reuse the image-job COMPLETED value to describe video generation.
+      for (const n of [1,2,3]) {
+        const id = 'scene' + n;
+        let card = document.getElementById('imageCard' + n);
+        if (!card) {
+          card = document.createElement('div');
+          card.id = 'imageCard' + n;
+          card.className = 'reference-card';
+          const heading = document.createElement('strong');
+          heading.textContent = 'Scene ' + n + ' — ' + SCENE_LABELS[n-1];
+          card.appendChild(heading);
+          const progress = document.createElement('p');
+          progress.id = 'imageState' + n;
+          card.appendChild(progress);
+          results.appendChild(card);
+        }
+        card.querySelector('p').textContent = 'Reference image: ' +
+          (scenes[id]?.status === 'COMPLETED' ? 'Completed' :
+           scenes[id]?.status === 'FAILED' ? 'Failed — ' + (scenes[id].errorCode || 'retry required') :
+           scenes[id]?.status === 'GENERATING' ? 'Generating…' : 'Waiting');
+        const image = (sceneResults.images || []).find(item => item.sceneId === id && item.url);
+        if (image && !card.querySelector('img')) {
+          const img = document.createElement('img');
+          img.src = image.url;
+          img.dataset.sceneId = id;
+          img.alt = 'Reference image for scene ' + n;
+          card.appendChild(img);
+        }
       }
       if (referenceImagesReady) void refreshVideos();
       if (TERMINAL_STATUSES.has(record.job.status)) {
@@ -578,16 +640,28 @@
       const jobToPreview = currentJobId;
       button.disabled = true;
       videoPromptStatus.textContent = 'Loading Scene ' + n + ' prompt from private S3…';
+      document.getElementById('videoPromptStatus' + n).textContent = 'Loading personalised prompt…';
+      document.getElementById('videoPromptText' + n).textContent = '';
       videoPromptText.textContent = '';
       try {
         const data = await api('/jobs/' + jobToPreview + '/video/scene' + n + '/preview');
         if (jobToPreview !== currentJobId) return;
         videoPromptStatus.textContent = data.playerName + ' — ' + data.teamName +
           ' | Scene ' + n + ' | ' + data.durationSeconds + ' seconds | no charge';
-        videoPromptText.textContent = data.prompt;
+        videoPromptText.textContent = 'SCENE ' + n + ' — ' + SCENE_LABELS[n-1] + '\\n\\n' + data.prompt;
+        document.getElementById('videoPromptStatus' + n).textContent =
+          data.playerName + ' — ' + data.teamName + ' | ' + data.durationSeconds + ' seconds';
+        document.getElementById('videoPromptText' + n).textContent = data.prompt;
+        previewedScenes.add('scene' + n);
+        if (document.getElementById('videoStatus' + n).textContent.includes('Preview')) {
+          document.getElementById('videoStatus' + n).textContent = 'Ready to run free mock test.';
+        }
+        document.getElementById('generateVideo' + n).hidden = false;
       } catch (error) {
-        if (jobToPreview === currentJobId) videoPromptStatus.textContent =
-          'Could not preview Scene ' + n + ': ' + error.message;
+        if (jobToPreview === currentJobId) {
+          videoPromptStatus.textContent = 'Could not preview Scene ' + n + ': ' + error.message;
+          document.getElementById('videoPromptStatus' + n).textContent = videoPromptStatus.textContent;
+        }
       } finally {
         button.disabled = false;
       }

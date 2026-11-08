@@ -45,8 +45,8 @@ class VideoStage4ApiTests(unittest.TestCase):
             "team": "geelong", "createdAt": "2026-11-08T00:00:00Z",
             "scenes": {
                 "scene1": {"status": "COMPLETED", "resultKey": f"results/{self.jobid}/scene1.png"},
-                "scene2": {"status": "PENDING"},
-                "scene3": {"status": "PENDING"},
+                "scene2": {"status": "COMPLETED", "resultKey": f"results/{self.jobid}/scene2.png"},
+                "scene3": {"status": "COMPLETED", "resultKey": f"results/{self.jobid}/scene3.png"},
             },
         }
         self.ddb.get_item.return_value = {"Item": self.job}
@@ -70,8 +70,16 @@ class VideoStage4ApiTests(unittest.TestCase):
         self.assertNotIn("google", str(self.states.start_execution.call_args).lower())
 
     def test_no_image_no_workflow(self):
+        self.job["scenes"]["scene2"] = {"status": "PENDING"}
         code, data = self.invoke("POST", f"/jobs/{self.jobid}/videos/scene2")
         self.assertEqual(code, 409)
+        self.states.start_execution.assert_not_called()
+
+    def test_scene1_rejects_if_other_reference_images_are_missing(self):
+        self.job["scenes"]["scene3"] = {"status": "PENDING"}
+        code, data = self.invoke("POST", f"/jobs/{self.jobid}/videos/scene1")
+        self.assertEqual(code, 409)
+        self.assertIn("all three", data["error"])
         self.states.start_execution.assert_not_called()
 
     def test_global_busy_rejects_without_execution(self):
