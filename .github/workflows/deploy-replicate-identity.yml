@@ -1,0 +1,88 @@
+name: Deploy Replicate face-fidelity prompt (no paid generation)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/image_worker/handler.py'
+      - 'scenarios/afl-grand-final-winning-kick/v1/config.json'
+      - '.github/workflows/deploy-replicate-identity.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-image-prompt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate existing image worker contract and stronger face prompt
+        run: |
+          set -euo pipefail
+          python -m py_compile src/image_worker/handler.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          source=Path('src/image_worker/handler.py').read_text()
+          cfg=json.loads(Path('scenarios/afl-grand-final-winning-kick/v1/config.json').read_text())
+          assert 'DEFINITIVE, ONLY source' in source
+          assert 'precise photographic FACE REPLACEMENT' in source
+          assert 'image_input": [master_url, selfie_url]' in source
+          assert '"aspect_ratio": "9:16", "resolution": "2K"' in source
+          assert [x['id'] for x in cfg['scenes']] == ['scene1','scene2','scene3']
+          assert all(x['model']=='google/nano-banana-pro' for x in cfg['scenes'])
+          assert 'natural happy smile or slightly open mouth' in cfg['scenes'][2]['promptInstructions']
+          print('Only Replicate identity prompting modified; no paid generation requested.')
+          PY
+
+      - name: Assume existing GitHub AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+
+      - name: Package Replicate image worker and deploy its existing CloudFormation resource
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name afl-app-dev-backend --output json > /tmp/afl-backend-stack.json
+          artifact_bucket=$(jq -r '.Stacks[0].Parameters[] | select(.ParameterKey=="ArtifactBucketName") | .ParameterValue' /tmp/afl-backend-stack.json)
+          asset_bucket=$(jq -r '.Stacks[0].Parameters[] | select(.ParameterKey=="ScenarioAssetsBucket") | .ParameterValue' /tmp/afl-backend-stack.json)
+          test -n "$artifact_bucket" && test "$artifact_bucket" != null
+          test -n "$asset_bucket" && test "$asset_bucket" != null
+          mkdir -p dist
+          (cd src/image_worker && zip -q ../../dist/replicate-image-worker.zip handler.py)
+          worker_key="image-worker/identity-$GITHUB_SHA.zip"
+          aws s3 cp dist/replicate-image-worker.zip "s3://$artifact_bucket/$worker_key"
+          mapfile -t overrides < <(jq -r '.Stacks[0].Parameters[] | select(.ParameterValue != null) | select(.ParameterKey != "ImageWorkerArtifactKey") | "\(.ParameterKey)=\(.ParameterValue)"' /tmp/afl-backend-stack.json)
+          overrides+=("ImageWorkerArtifactKey=$worker_key")
+          aws cloudformation deploy \
+            --stack-name afl-app-dev-backend \
+            --region ap-southeast-2 \
+            --template-file infrastructure/app/backend.yaml \
+            --parameter-overrides "${overrides[@]}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role \
+            --no-fail-on-empty-changeset
+          actual_key=$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend \
+            --query 'Stacks[0].Parameters[?ParameterKey==`ImageWorkerArtifactKey`].ParameterValue | [0]' --output text)
+          test "$actual_key" = "$worker_key"
+          echo "Verified image worker artifact: $worker_key"
+
+      - name: Publish and byte-verify Scene 3 image instructions in scenario S3 config
+        run: |
+          set -euo pipefail
+          asset_bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend \
+            --query 'Stacks[0].Parameters[?ParameterKey==`ScenarioAssetsBucket`].ParameterValue | [0]' --output text)
+          test -n "$asset_bucket" && test "$asset_bucket" != None
+          key=scenarios/afl-grand-final-winning-kick/v1/config.json
+          aws s3 cp "$key" "s3://$asset_bucket/$key" --content-type application/json
+          aws s3api get-object --bucket "$asset_bucket" --key "$key" /tmp/afl-image-config-verify.json > /dev/null
+          cmp "$key" /tmp/afl-image-config-verify.json
+          echo "Verified Replicate scenario config in S3; no image/video generation was triggered."
