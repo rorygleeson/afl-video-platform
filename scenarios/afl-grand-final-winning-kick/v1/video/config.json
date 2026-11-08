@@ -2,8 +2,8 @@
   "schemaVersion": 1,
   "scenarioId": "afl-grand-final-winning-kick",
   "version": "v1",
-  "videoGenerationEnabled": false,
-  "model": "UNCONFIGURED",
+  "videoGenerationEnabled": true,
+  "model": "gemini-omni-1.2-flash",
   "videoConcurrency": 1,
   "requireExplicitPaidAction": true,
   "scenes": [
@@ -27,7 +27,7 @@
     }
   ],
   "maxPaidScenesPerRequest": 1,
-  "notes": "These are versioned prompts and non-billable preview config only. No paid video endpoint exists yet.",
+  "notes": "Paid video available only after explicit per-scene consent, conditional DynamoDB reservation and global concurrency slot; no implicit generation.",
   "requiredVariables": [
     "firstName",
     "lastName",
