@@ -131,7 +131,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
                 "type": "video", "mime_type": "video/mp4",
                 "data": base64.b64encode(movie).decode()}]}
         ]})
-        result = w.poll(**self.event)
+        result = w.poll(self.event['jobId'], self.event['sceneId'], self.event['requestId'])
         self.assertEqual(result["status"], "COMPLETED")
         self.assertNotIn("data", result)
         self.assertNotIn("video", result)
