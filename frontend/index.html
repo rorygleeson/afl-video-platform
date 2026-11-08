@@ -204,6 +204,7 @@
   let videoRefreshRequested = false;
   let realVideoTracking = false;
   const videoSubmittedScenes = new Set();
+  const videoSubmissionLog = new Map();
   let lastImageScenes = {};
   let preflightCheckedJobId = null;
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
@@ -253,6 +254,7 @@
     videoRefreshRequested = false;
     realVideoTracking = false;
     videoSubmittedScenes.clear();
+    videoSubmissionLog.clear();
     preflightCheckedJobId = null;
     lastImageScenes = {};
     videoPromptSection.hidden = true;
@@ -302,8 +304,11 @@
         const id = 'scene' + n;
         const real = data.videos?.[id] || {};
         const authorised = approvals[id] === true;
+        const pendingAttempt = videoSubmissionLog.get(id);
         document.getElementById('scene' + n + 'PaidStatus').textContent =
-          real.mode === 'REAL'
+          real.mode !== 'REAL' && pendingAttempt
+            ? pendingAttempt.status
+            : real.mode === 'REAL'
             ? (real.status === 'REVIEW_REQUIRED'
                 ? 'Generation needs review' +
                   (real.failureCode ? ' (' + real.failureCode.replaceAll('_', ' ') + ')' : '') +
@@ -326,13 +331,19 @@
           'Last checked: ' + new Date().toLocaleTimeString(),
           'Status checks are read-only. No paid retries.',
         ];
+        if (pendingAttempt && real.mode !== 'REAL') {
+          lines.push('— Paid submission attempt —');
+          lines.push(...pendingAttempt.events);
+          lines.push('Waiting for backend confirmation. No automatic retry.');
+        }
         document.getElementById('videoDebugText' + n).textContent = lines.join('\n');
         const debugDetails = document.getElementById('videoDebugDetails' + n);
         // Automatically show diagnostics for submissions that have been
         // started or need reconciliation, including when resuming a job.
         // Never auto-close a panel the user explicitly expanded.
-        if (real.mode === 'REAL' && real.status !== 'COMPLETED' &&
-            real.status !== 'FAILED' && real.status !== 'NOT_REQUESTED') {
+        if ((pendingAttempt && real.mode !== 'REAL') ||
+            (real.mode === 'REAL' && real.status !== 'COMPLETED' &&
+            real.status !== 'FAILED' && real.status !== 'NOT_REQUESTED')) {
           debugDetails.open = true;
         }
       }
@@ -780,6 +791,10 @@
       if (!window.confirm('Generate a real ' + duration + '-second video for Scene ' +
                           n + '? This will incur a Google charge. Only this scene will run.')) return;
       videoSubmittedScenes.add(sceneId);
+      const submission = {status: 'Submitting paid request…',
+        events: ['Confirmed by user: ' + new Date().toLocaleTimeString(),
+                 'POST /jobs/' + jobId + '/real-videos/' + sceneId + ' started']};
+      videoSubmissionLog.set(sceneId, submission);
       document.getElementById('videoDebugDetails' + n).open = true;
       document.getElementById('videoDebugText' + n).textContent =
         'Job: ' + jobId + '\nScene: ' + sceneId +
@@ -799,14 +814,20 @@
           body: JSON.stringify({confirmPaidScene: sceneId}),
         });
         if (jobId !== currentJobId) return;
-        document.getElementById('scene' + n + 'PaidStatus').textContent =
-          'Request accepted (' + result.status + '). Checking video progress…';
+        submission.status = 'Paid request accepted (' + result.status + '). Checking AWS status…';
+        submission.events.push('API response: ' + (result.status || 'ACCEPTED') +
+                               ' at ' + new Date().toLocaleTimeString());
+        document.getElementById('scene' + n + 'PaidStatus').textContent = submission.status;
+        document.getElementById('videoDebugText' + n).textContent = submission.events.join('\n');
         realVideoTracking = true;
         void refreshVideos();
       } catch (error) {
         if (jobId === currentJobId) {
-          document.getElementById('scene' + n + 'PaidStatus').textContent =
-            'Submission outcome: ' + error.message + ' — check job status before trying again.';
+          submission.status = 'Paid request error: ' + error.message + ' Do not retry until checked.';
+          submission.events.push('API error: ' + error.message);
+          submission.events.push('Result may be uncertain; paid request will NOT be retried.');
+          document.getElementById('scene' + n + 'PaidStatus').textContent = submission.status;
+          document.getElementById('videoDebugText' + n).textContent = submission.events.join('\n');
           void refreshVideos();
         }
         // Fail closed: do not automatically re-enable after any uncertain request.
