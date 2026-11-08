@@ -130,15 +130,27 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         w.SLOTS.put_item.assert_not_called()
         w.JOBS.update_item.assert_not_called()
 
-    def test_preflight_refuses_unlocked_environment_or_other_scene(self):
+    def test_preflight_scene2_and_scene3_free_even_in_paid_mode(self):
         w = self.worker
-        with self.assertRaises(w.ContractError):
-            w.lambda_handler({"op": "scene_preflight", "jobId": "a" * 32,
-                              "sceneId": "scene2", "requestId": "freepreflight"}, None)
+        job = "a" * 32
+        for scene, duration in (("scene2", 8), ("scene3", 10)):
+            w.JOBS.get_item.return_value = {"Item": {"jobId": job,
+                "scenes": {scene: {"status": "COMPLETED", "resultKey": f"results/{job}/{scene}.png"}}}}
+            w.S3.get_object.return_value = {"ContentType": "image/png",
+                "Body": __import__("io").BytesIO(b"image")}
+            with patch.object(w, "render_scene", return_value={
+                "durationSeconds": duration, "videoGenerationEnabled": False, "prompt": "Prompt"
+            }), patch.object(w, "google_json") as paid:
+                result = w.scene_preflight(job, scene)
+            self.assertEqual(result["durationSeconds"], duration)
+            paid.assert_not_called()
         w.PAID_ENABLED = "true"
-        with self.assertRaisesRegex(PermissionError, "PREFLIGHT_REQUIRES_HARD_DISABLED"):
-            w.lambda_handler({"op": "scene_preflight", "jobId": "a" * 32,
-                              "sceneId": "scene1", "requestId": "freepreflight"}, None)
+        w.MODEL = "gemini-omni-1.2-flash"
+        with patch.object(w, "render_scene", return_value={
+            "durationSeconds": 10, "videoGenerationEnabled": False, "prompt": "Prompt"
+        }), patch.object(w, "google_json") as paid:
+            self.assertTrue(w.scene_preflight(job, "scene3")["modelConfigured"])
+        paid.assert_not_called()
 
     def test_preflight_missing_or_expired_image_fails_closed(self):
         w = self.worker
@@ -155,16 +167,22 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         paid.assert_not_called()
         w.SLOTS.put_item.assert_not_called()
 
-    def test_paid_gate_blocks_any_job_not_explicitly_allowlisted(self):
+    def test_paid_gate_requires_dynamic_job_scene_approval(self):
         w = self.worker
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
-        w.APPROVED_JOB_ID = self.event["jobId"]
-        self.assertEqual(w.lambda_handler({"op": "gate", "jobId": self.event["jobId"],
-                                          "sceneId": "scene1"}, None)["status"], "ENABLED")
-        for job, scene in (("b" * 32, "scene1"), (self.event["jobId"], "scene2")):
-            with self.subTest(job=job, scene=scene), self.assertRaises(PermissionError):
-                w.lambda_handler({"op": "gate", "jobId": job, "sceneId": scene}, None)
+        job = self.event["jobId"]
+        w.JOBS.get_item.return_value = {"Item": {"paidVideoApprovals": {
+            "scene1": {"status": "REQUESTED", "executionName": "real-" + job + "-scene1"},
+            "scene2": {"status": "REQUESTED", "executionName": "real-" + job + "-scene2"},
+        }}}
+        for scene in ("scene1", "scene2"):
+            self.assertEqual(w.lambda_handler({"op": "gate", "jobId": job,
+                                               "sceneId": scene}, None)["status"], "ENABLED")
+        with self.assertRaises(PermissionError):
+            w.lambda_handler({"op": "gate", "jobId": job, "sceneId": "scene3"}, None)
+        with self.assertRaises(PermissionError):
+            w.lambda_handler({"op": "gate", "jobId": "b"*32, "sceneId": "scene1"}, None)
         w.JOBS.update_item.assert_not_called()
         w.SLOTS.put_item.assert_not_called()
 
@@ -214,8 +232,8 @@ class GoogleVideoAdapterTests(unittest.TestCase):
 
     def test_unknown_submission_never_has_retry_in_workflow(self):
         template = (ROOT / "infrastructure" / "app" / "google-video.yaml").read_text()
-        self.assertIn("PAID_GENERATION_ENABLED: 'false'", template)
-        self.assertIn("GOOGLE_VIDEO_MODEL: UNCONFIGURED", template)
+        self.assertIn("PAID_GENERATION_ENABLED: !If", template)
+        self.assertIn("GOOGLE_VIDEO_MODEL: !If", template)
         self.assertIn('"StartAt":"PaidGate"', template)
         self.assertNotIn('"Retry"', template)
         self.assertNotIn("AWS::ApiGateway::", template)
@@ -226,8 +244,8 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         movie = b"\x00\x00\x00\x18ftypisom" + b"z" * 200
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
-        w.APPROVED_JOB_ID = self.event["jobId"]
-        w.JOBS.get_item.return_value = {"Item": {"realVideos": {"scene1": {
+
+        w.JOBS.get_item.return_value = {"Item": {"paidVideoApprovals": {"scene1": {"status": "REQUESTED", "executionName": "real-" + self.event["jobId"] + "-scene1"}}, "realVideos": {"scene1": {
             "status": "PROCESSING", "requestId": self.event["requestId"],
             "interactionId": "interact-12345"
         }}}}
