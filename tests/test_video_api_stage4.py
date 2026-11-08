@@ -62,9 +62,9 @@ class VideoStage4ApiTests(unittest.TestCase):
 
     def test_real_scene1_is_hard_locked_and_never_starts_sfn(self):
         self.api.REAL_VIDEO_MODE = "DISABLED"
-        reply = self.invoke("POST", "/jobs/" + self.jobid + "/real-videos/scene1")
-        self.assertEqual(reply["statusCode"], 503)
-        self.assertEqual(json.loads(reply["body"])["status"], "PAID_GENERATION_DISABLED")
+        status, body = self.invoke("POST", "/jobs/" + self.jobid + "/real-videos/scene1")
+        self.assertEqual(status, 503)
+        self.assertEqual(body["status"], "PAID_GENERATION_DISABLED")
         self.states.start_execution.assert_not_called()
 
     def test_mock_results_cannot_masquerade_as_real_mp4(self):
