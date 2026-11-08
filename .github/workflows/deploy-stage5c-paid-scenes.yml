@@ -110,6 +110,22 @@ jobs:
               raise SystemExit('Google WIF is not ready; fail deployment before enabling new API')
           print('Google WIF authenticated. No paid model request was made.')
           PY
+      - name: Diagnose existing global video slot (read-only, no charges)
+        run: |
+          set -euo pipefail
+          aws lambda invoke --function-name afl-app-dev-google-omni-worker \
+            --cli-binary-format raw-in-base64-out --payload '{"op":"operator_slot_status"}' \
+            /tmp/slot.json > /tmp/slot-meta.json
+          python - <<'PY'
+          import json
+          result=json.load(open('/tmp/slot.json'))
+          meta=json.load(open('/tmp/slot-meta.json'))
+          if meta.get('FunctionError'):
+              print('Slot inspection failed (Lambda error). No lock changed.')
+              raise SystemExit(1)
+          print('SLOT_INSPECTION_RESULT:',json.dumps(result,sort_keys=True))
+          print('No Step Functions or Google API operations were initiated.')
+          PY
       - name: Publish versioned three-scene generation config to private S3
         run: |
           set -euo pipefail
