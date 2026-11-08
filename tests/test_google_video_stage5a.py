@@ -102,12 +102,14 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertEqual(result["exceptionType"],"RuntimeError")
         self.assertNotIn("TOP_SECRET",str(result))
 
-    def test_new_worker_auth_preflight_refuses_unlocked_environment(self):
+    def test_auth_probe_stays_non_billable_even_if_paid_mode_enabled(self):
         w = self.worker
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
-        with self.assertRaisesRegex(PermissionError, "PREFLIGHT_REQUIRES_HARD_DISABLED_VIDEO"):
-            w.lambda_handler({"op": "auth_check"}, None)
+        with patch.object(w, "credentials", return_value="test-token"), patch.object(w, "google_json") as paid:
+            result = w.lambda_handler({"op": "auth_check"}, None)
+        self.assertEqual(result["status"], "AUTHENTICATED")
+        paid.assert_not_called()
 
     def test_free_scene1_preflight_checks_s3_and_never_calls_google(self):
         w = self.worker
@@ -146,6 +148,8 @@ class GoogleVideoAdapterTests(unittest.TestCase):
             paid.assert_not_called()
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
+        w.S3.get_object.return_value = {"ContentType": "image/png",
+            "Body": __import__("io").BytesIO(b"image")}
         with patch.object(w, "render_scene", return_value={
             "durationSeconds": 10, "videoGenerationEnabled": False, "prompt": "Prompt"
         }), patch.object(w, "google_json") as paid:
