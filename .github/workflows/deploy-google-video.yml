@@ -1,12 +1,7 @@
 name: Deploy Stage 5A hard-disabled Google Omni adapter
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/deploy-google-video.yml'
-      - 'infrastructure/app/google-video.yaml'
-      - 'src/google_video_worker/**'
-      - 'tests/test_google_video_stage5a.py'
+  # The Stage 5A adapter stack already exists; this deployment is create-only.
+  # Never auto-run on new worker changes or the job deliberately fails.
   workflow_dispatch:
 permissions:
   contents: read
