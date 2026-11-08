@@ -261,7 +261,7 @@ Resources:
       FunctionName: !Ref ApiLambda
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${RestApi}/*/*/*'
-  ApiDeployment:
+  ApiDeploymentRecovery20261108:
     Type: AWS::ApiGateway::Deployment
     DependsOn: [ProxyAny, ProxyOptions]
     Properties:
@@ -274,7 +274,7 @@ Resources:
       Enabled: true
   ApiUsagePlan:
     Type: AWS::ApiGateway::UsagePlan
-    DependsOn: ApiDeployment
+    DependsOn: ApiDeploymentRecovery20261108
     Properties:
       UsagePlanName: afl-app-dev-test-plan
       ApiStages:
