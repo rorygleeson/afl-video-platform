@@ -187,6 +187,35 @@ def image_payload(blob, content_type, prompt, duration):
     }
 
 
+def scene_preflight(job, scene):
+    """Free read-only contract check; NEVER calls Google Interactions or modifies job state."""
+    if PAID_ENABLED != "false" or MODEL != "UNCONFIGURED":
+        raise PermissionError("PREFLIGHT_REQUIRES_HARD_DISABLED_VIDEO")
+    if scene != "scene1":
+        raise ContractError("Only Scene 1 is authorised for preflight")
+    item = get_job(job)
+    ref = item.get("scenes", {}).get(scene, {})
+    key = ref.get("resultKey", "")
+    if ref.get("status") != "COMPLETED" or not isinstance(key, str):
+        raise ContractError("Scene 1 reference image not completed")
+    if not re.fullmatch(r"results/" + re.escape(job) + r"/scene1\.(png|jpg|jpeg|webp)", key):
+        raise ContractError("Unexpected Scene 1 image key")
+    config = render_scene(S3, PROMPT_BUCKET, item, scene)
+    if config["durationSeconds"] != 8 or config["videoGenerationEnabled"] is not False:
+        raise ContractError("Unexpected locked Scene 1 configuration")
+    # Validate actual current S3 object. Expired 7-day images must fail closed.
+    response = S3.get_object(Bucket=BUCKET, Key=key)
+    raw = response["Body"].read(MAX_IMAGE_BYTES + 1)
+    req = image_payload(raw, response.get("ContentType", ""), config["prompt"], 8)
+    assert req["background"] is True and req["response_format"][0]["duration"] == "8s"
+    # Return only metadata, never the image, prompt, PII, auth token or encoded payload.
+    return {"status": "READY", "sceneId": scene, "durationSeconds": 8,
+            "imageBytes": len(raw), "imageSha256": hashlib.sha256(raw).hexdigest(),
+            "promptBytes": len(config["prompt"].encode("utf-8")),
+            "modelConfigured": False, "paidGenerationEnabled": False,
+            "googleSubmissionMade": False}
+
+
 def get_job(job):
     item = JOBS.get_item(Key={"jobId": job}, ConsistentRead=True).get("Item")
     if not item:
@@ -377,6 +406,9 @@ def lambda_handler(event, context):
     if op == "contract_health":
         return {"status": "LOCKED" if PAID_ENABLED != "true" else "CONFIGURED",
                 "model": MODEL, "paidGenerationEnabled": PAID_ENABLED == "true"}
+    if op == "scene_preflight":
+        job, scene, _ = validate(event)
+        return scene_preflight(job, scene)
     if op == "auth_check":
         # Non-billable diagnostic; the new worker role must successfully
         # exchange its AWS identity for the configured Google service account.
