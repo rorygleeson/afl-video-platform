@@ -20,7 +20,7 @@ jobs:
       - name: Create temporary scoped logs-reader IAM policy via CloudFormation
         run: |
           set -euo pipefail
-          aws cloudformation deploy --stack-name afl-google-preflight-temp-log-reader --template-file infrastructure/app/google-preflight-temporary-logs.yaml --capabilities CAPABILITY_NAMED_IAM --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role
+          aws cloudformation deploy --stack-name afl-app-dev-google-preflight-log-reader --template-file infrastructure/app/google-preflight-temporary-logs.yaml --capabilities CAPABILITY_NAMED_IAM --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role
       - name: Read only diagnostic messages from the two probe Lambdas
         run: |
           set -euo pipefail
@@ -40,6 +40,6 @@ jobs:
         if: always()
         run: |
           set +e
-          aws cloudformation delete-stack --stack-name afl-google-preflight-temp-log-reader
-          aws cloudformation wait stack-delete-complete --stack-name afl-google-preflight-temp-log-reader
-          aws cloudformation describe-stacks --stack-name afl-google-preflight-temp-log-reader >/dev/null 2>&1 && exit 1 || exit 0
+          aws cloudformation delete-stack --stack-name afl-app-dev-google-preflight-log-reader
+          aws cloudformation wait stack-delete-complete --stack-name afl-app-dev-google-preflight-log-reader
+          aws cloudformation describe-stacks --stack-name afl-app-dev-google-preflight-log-reader >/dev/null 2>&1 && exit 1 || exit 0
