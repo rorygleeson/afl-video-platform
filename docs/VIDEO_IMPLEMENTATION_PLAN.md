@@ -1,3 +1,30 @@
+# Stage 5A — Google Omni adapter (paid generation locked)
+
+**Implemented 8 November 2026.** This stage prepares the real video integration **without making any paid generation calls**. Stage 5B (first paid Scene 1) is a separate approval gate.
+
+## Exact delivery
+
+- New isolated CloudFormation stack: `infrastructure/app/google-video.yaml`, stack `afl-app-dev-google-video`. It does not alter the working image or mock-video stacks.
+- Separate Google Omni worker: `src/google_video_worker/handler.py`, with S3-only reference-image input, personalised versioned S3 prompt, asynchronous Google Interactions POST and GET, inline bounded MP4 parsing and private S3 output `videos/{jobId}/sceneN.mp4`.
+- Separate Standard Step Functions state machine: `afl-app-dev-google-omni`; begins with an explicit paid gate, then claim, submit, wait, poll and finalise. **No automatic retries on ambiguous provider operations.** The global DynamoDB slot is shared with mock workflows. An unknown submission or interrupted execution leaves the slot locked until operator reconciliation rather than risking a double charge.
+- Google WIF credential exchange follows existing project/pool/provider; the **new AWS IAM role has not yet been granted Google service-account impersonation**. Existing auth-probe role remains untouched.
+- The adapter and its Step Functions are *not* connected to API Gateway or to the frontend; existing buttons remain mock-only.
+- Hard-disabled by deployed Lambda environment `PAID_GENERATION_ENABLED=false` and `GOOGLE_VIDEO_MODEL=UNCONFIGURED`; the current S3 scenario configuration and prompt renderer independently reject video generation. An operator cannot start a paid request simply by using the current frontend or starting the new state machine.
+- Offline contract tests: `tests/test_google_video_stage5a.py`; separate create-only GitHub Actions workflow `.github/workflows/deploy-google-video.yml`.
+
+## Before separately approving a single paid Scene 1 test (Stage 5B)
+
+1. Add the new AWS role `afl-app-dev-google-omni-role` as an authorised principal in the **existing** Google service-account WIF impersonation binding. Do not recreate the pool/provider or grant broad user IAM.
+2. Verify Google project model entitlement, budget cap and per-model quotas; the earlier auth probe does not prove model access. Verify complete inline image + async inline MP4 contract in the actual Google project. Current Google docs explicitly support the component fields, but the combined request remains untested.
+3. Add a **separate**, explicit paid Scene 1 control/API route with per-click confirmation and strict idempotency; never silently repurpose a mock button. Update scenario config and renderer only under that approval.
+4. Plan a safe transition of `videos.scene1.status=MOCK_COMPLETED` to an approved paid attempt without deleting/replaying the original mock execution. Currently the real adapter's claim rejects any existing video state; this protects existing mock records by design.
+5. Verify fail-closed recovery for unknown Google submission, failed parsing, oversize output and workflow timeout. The adapter does not yet include production-level manual reconciliation and should not be enabled without it.
+6. Confirm model response structure, interaction ID and output MIME/content against the first authorised provider response. Don't declare real MP4 playback proven before that.
+
+Google official docs: https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/video/generate-videos-from-an-image and https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/models/interactions-api .
+
+---
+
 # Video generation implementation plan (approved design, not yet deployed)
 
 **Date:** 2026-11-08. **Stage:** 4 — mock-only scene API routes and frontend controls deployed. **Next gate:** Stage 5 approval for FFmpeg assembly infrastructure. **Repository:** `main`; CD uses the existing `deploy` marker branch and CloudFormation. No feature branch required.
