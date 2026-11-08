@@ -1,0 +1,81 @@
+name: Deploy Stage 4 mock video API and frontend
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-stage4.yml'
+      - 'src/api/**'
+      - 'frontend/index.html'
+      - 'infrastructure/app/backend.yaml'
+      - 'tests/test_frontend_poll.cjs'
+      - 'tests/test_video_api_stage4.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  stage4-api-frontend-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate backend and browser regression tests
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'cfn-lint>=1,<2' 'boto3>=1.35,<2'
+          cfn-lint infrastructure/app/backend.yaml --regions ap-southeast-2
+          python -m py_compile src/api/handler.py src/api/video_prompts.py
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          node --test tests/test_frontend_poll.cjs
+      - name: Assume existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Verify isolated mock video workflow already exists
+        run: |
+          set -euo pipefail
+          test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-video --query 'Stacks[0].StackStatus' --output text)" = CREATE_COMPLETE
+          test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend --query 'Stacks[0].StackStatus' --output text)" = UPDATE_COMPLETE -o "$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend --query 'Stacks[0].StackStatus' --output text)" = CREATE_COMPLETE
+      - name: Package API including video_prompts (fix missing import in old ZIP)
+        run: |
+          set -euo pipefail
+          mkdir -p dist/api
+          cp src/api/handler.py src/api/video_prompts.py dist/api/
+          (cd dist/api && zip -q ../api-stage4.zip handler.py video_prompts.py)
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('dist/api-stage4.zip') as z:
+              assert {'handler.py','video_prompts.py'} <= set(z.namelist())
+          PY
+          aws s3 cp dist/api-stage4.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/api/$GITHUB_SHA.zip" --region ap-southeast-2
+      - name: Update only API Lambda and additive IAM configuration
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name afl-app-dev-backend --output json > /tmp/afl-existing-stack.json
+          # Explicitly retain all current parameters, especially immutable image-worker ZIP.
+          mapfile -t overrides < <(jq -r '.Stacks[0].Parameters[] | select(.ParameterValue != null) | select(.ParameterKey != "LambdaArtifactKey") | select(.ParameterKey != "VideoStateMachineArn") | select(.ParameterKey != "VideoAdmissionTableName") | "\(.ParameterKey)=\(.ParameterValue)"' /tmp/afl-existing-stack.json)
+          overrides+=("LambdaArtifactKey=api/$GITHUB_SHA.zip")
+          overrides+=("VideoStateMachineArn=arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-video")
+          overrides+=("VideoAdmissionTableName=afl-app-dev-video-admission")
+          aws cloudformation deploy \
+            --region ap-southeast-2 \
+            --stack-name afl-app-dev-backend \
+            --template-file infrastructure/app/backend.yaml \
+            --parameter-overrides "${overrides[@]}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role \
+            --no-fail-on-empty-changeset
+          test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend --query 'Stacks[0].StackStatus' --output text)" = UPDATE_COMPLETE
+      - name: Publish Stage 4 UI only after backend update succeeds
+        run: |
+          set -euo pipefail
+          bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue | [0]' --output text)
+          distribution=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue | [0]' --output text)
+          test -n "$bucket" && test "$bucket" != None
+          test -n "$distribution" && test "$distribution" != None
+          aws s3 cp frontend/index.html "s3://$bucket/index.html" --content-type 'text/html; charset=utf-8' --cache-control 'max-age=60, must-revalidate' --region ap-southeast-2
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /
+          echo "Stage 4 API and frontend deployed in MOCK_ONLY mode; no paid model calls."
