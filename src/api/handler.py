@@ -22,6 +22,8 @@ FRONTEND_ORIGIN = os.environ["FRONTEND_ORIGIN"]
 IMAGE_STATE_MACHINE_ARN = os.environ["IMAGE_STATE_MACHINE_ARN"]
 VIDEO_WORKER_ARN = os.environ.get("VIDEO_WORKER_ARN")
 GOOGLE_WORKER_ARN = os.environ.get("GOOGLE_WORKER_ARN")
+GOOGLE_STATE_MACHINE_ARN = os.environ.get("GOOGLE_STATE_MACHINE_ARN")
+REAL_VIDEO_MODE = os.environ.get("REAL_VIDEO_MODE", "DISABLED")
 SCENARIO_ASSET_BUCKET = os.environ.get("SCENARIO_ASSET_BUCKET")
 VIDEO_STATE_MACHINE_ARN = os.environ.get("VIDEO_STATE_MACHINE_ARN")
 VIDEO_MODE = os.environ.get("VIDEO_MODE", "DISABLED")
@@ -256,10 +258,11 @@ def images_for_job(job):
 
 def video_scene_public(job, scene_id):
     """Mock states never pretend to contain playable MP4s."""
-    item = job.get("videos", {}).get(scene_id, {})
+    real = job.get("realVideos", {}).get(scene_id, {})
+    item = real or job.get("videos", {}).get(scene_id, {})
     status = item.get("status", "NOT_REQUESTED")
     result = {"sceneId": scene_id, "status": status,
-              "mode": "MOCK_ONLY" if VIDEO_MODE == "MOCK_ONLY" else "DISABLED"}
+              "mode": "REAL" if real else ("MOCK_ONLY" if VIDEO_MODE == "MOCK_ONLY" else "DISABLED")}
     if status in ("MOCK_CLAIMED", "MOCK_GENERATING", "MOCK_COMPLETED", "MOCK_FAILED"):
         result["mock"] = True
     if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED"):
@@ -347,6 +350,50 @@ def preview_video_prompt(job_id, scene_id):
     return response(200, result)
 
 
+def start_real_scene1(job_id, event):
+    """Single explicit future real Scene 1 entry point. Hard-disabled in AWS."""
+    # Gate before *any* mutation, lock acquisition, or Step Functions invocation.
+    if REAL_VIDEO_MODE != "APPROVED_SCENE1" or not GOOGLE_STATE_MACHINE_ARN:
+        return response(503, {"status": "PAID_GENERATION_DISABLED",
+                              "paidGenerationEnabled": False})
+    headers = {str(k).lower(): str(v) for k, v in (event.get("headers") or {}).items()}
+    key = headers.get("idempotency-key", "")
+    if not IDEMPOTENCY_RE.fullmatch(key):
+        return response(400, {"error": "Idempotency-Key required (12-128 characters)"})
+    item = get_job(job_id)
+    if not item:
+        return response(404, {"error": "Job not found"})
+    if item.get("realVideos", {}).get("scene1"):
+        return response(409, {"error": "A real Scene 1 attempt already exists; reconcile before retry"})
+    if any(item.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
+           or not item.get("scenes", {}).get(scene, {}).get("resultKey")
+           for scene in VIDEO_SCENES):
+        return response(409, {"error": "All three reference images must be complete"})
+    source = item["scenes"]["scene1"]["resultKey"]
+    if not re.fullmatch(r"results/" + re.escape(job_id) + r"/scene1\\.(png|jpg|jpeg|webp)", source):
+        return response(409, {"error": "Invalid Scene 1 reference image key"})
+    try:
+        S3.head_object(Bucket=UPLOAD_BUCKET, Key=source)
+    except ClientError:
+        return response(409, {"error": "Scene 1 reference image missing or expired"})
+    if ADMISSION and ADMISSION.get_item(Key={"slotId": "GLOBAL_VIDEO_SLOT_0"},
+                                        ConsistentRead=True).get("Item"):
+        return response(409, {"error": "Another video attempt owns the single global slot"})
+    # One execution per job/scene regardless of browser idempotency key.
+    # Worker claim + DynamoDB global slot are final concurrency backstops.
+    name = "real-" + job_id + "-scene1"
+    try:
+        STATES.start_execution(
+            stateMachineArn=GOOGLE_STATE_MACHINE_ARN,
+            name=name, input=json.dumps({"jobId": job_id, "sceneId": "scene1"},
+                                        separators=(",", ":")),
+        )
+    except STATES.exceptions.ExecutionAlreadyExists:
+        return response(409, {"error": "Scene 1 execution already exists; no retry started"})
+    return response(202, {"status": "REAL_SCENE1_REQUESTED", "sceneId": "scene1",
+                          "jobId": job_id})
+
+
 def scene1_preflight(job_id):
     """Read-only validation of Scene 1 S3 image and Google payload."""
     if not GOOGLE_WORKER_ARN:
@@ -424,6 +471,9 @@ def lambda_handler(event, context):
     method = (event.get("httpMethod") or "").upper()
     path = event.get("path") or ""
     try:
+        real_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/scene1", path)
+        if method == "POST" and real_match:
+            return start_real_scene1(real_match.group(1), event)
         preflight_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/video/scene1/preflight", path)
         if method == "GET" and preflight_match:
             return scene1_preflight(preflight_match.group(1))
