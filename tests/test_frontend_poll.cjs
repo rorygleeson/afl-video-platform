@@ -485,14 +485,14 @@ test('paid POST outcome survives stale MOCK_ONLY status polling', async () => {
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   await h.els.generateRealScene1.listeners.click();
   await h.flush();
-  assert.match(h.els.videoDebugText1.textContent,/POST \\/jobs\\//);
+  assert.match(h.els.videoDebugText1.textContent,/POST \/jobs\//);
   assert.match(h.els.videoDebugText1.textContent,/API response: REAL_VIDEO_REQUESTED/);
   await h.els.refresh.listeners.click();
   await h.flush();
   assert.match(h.els.videoDebugText1.textContent,/API response: REAL_VIDEO_REQUESTED/,
      'Stale read-only status must not erase paid submission diagnostic');
   assert.equal(h.els.generateRealScene1.hidden,true);
-  assert.equal(h.calls.filter(c=>/\\/real-videos\\/scene1$/.test(c.url)).length,1);
+  assert.equal(h.calls.filter(c=>/\/real-videos\/scene1$/.test(c.url)).length,1);
 });
 
 test('read-only workflow review status does not re-open a paid button', async () => {
