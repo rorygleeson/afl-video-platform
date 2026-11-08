@@ -65,6 +65,8 @@ jobs:
               raise SystemExit('Runtime error occurred before a usable auth result')
           print('Google new-worker WIF status:', data.get('status'))
           print('Google new-worker WIF error code:', data.get('errorCode'))
+          print('Safe exception class:', data.get('errorType'))
+          print('Sanitized failure flags:', data.get('diagnostics', {}))
           assert data.get('status') in ('AUTHENTICATED','AUTHENTICATION_FAILED')
           PY
       - name: Delete one-time WIF probe and its temporary invoke permission
