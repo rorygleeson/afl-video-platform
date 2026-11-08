@@ -21,6 +21,7 @@ JOBS_TABLE = os.environ["JOBS_TABLE"]
 FRONTEND_ORIGIN = os.environ["FRONTEND_ORIGIN"]
 IMAGE_STATE_MACHINE_ARN = os.environ["IMAGE_STATE_MACHINE_ARN"]
 VIDEO_WORKER_ARN = os.environ.get("VIDEO_WORKER_ARN")
+GOOGLE_WORKER_ARN = os.environ.get("GOOGLE_WORKER_ARN")
 SCENARIO_ASSET_BUCKET = os.environ.get("SCENARIO_ASSET_BUCKET")
 VIDEO_STATE_MACHINE_ARN = os.environ.get("VIDEO_STATE_MACHINE_ARN")
 VIDEO_MODE = os.environ.get("VIDEO_MODE", "DISABLED")
@@ -346,6 +347,28 @@ def preview_video_prompt(job_id, scene_id):
     return response(200, result)
 
 
+def scene1_preflight(job_id):
+    """Read-only validation of Scene 1 S3 image and Google payload."""
+    if not GOOGLE_WORKER_ARN:
+        return response(503, {"status": "NOT_CONFIGURED", "paidGenerationEnabled": False})
+    if not get_job(job_id):
+        return response(404, {"error": "Job not found"})
+    result = LAMBDA.invoke(
+        FunctionName=GOOGLE_WORKER_ARN,
+        InvocationType="RequestResponse",
+        Payload=json.dumps({"op": "scene_preflight", "jobId": job_id,
+                            "sceneId": "scene1", "requestId": "freepreflight"}).encode(),
+    )
+    if result.get("FunctionError"):
+        return response(409, {"status": "PREFLIGHT_FAILED",
+                              "error": "Scene 1 image or prompt validation failed",
+                              "paidGenerationEnabled": False})
+    data = json.loads(result["Payload"].read())
+    if data.get("status") != "READY" or data.get("googleSubmissionMade") is not False:
+        return response(502, {"status": "PREFLIGHT_FAILED", "paidGenerationEnabled": False})
+    return response(200, data)
+
+
 def google_auth_check():
     """Keyless Google authentication test; never starts a model job."""
     if not VIDEO_WORKER_ARN:
@@ -401,6 +424,9 @@ def lambda_handler(event, context):
     method = (event.get("httpMethod") or "").upper()
     path = event.get("path") or ""
     try:
+        preflight_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/video/scene1/preflight", path)
+        if method == "GET" and preflight_match:
+            return scene1_preflight(preflight_match.group(1))
         if method == "GET" and path == "/video/auth-check":
             return google_auth_check()
         if method == "GET" and path == "/scenarios":
