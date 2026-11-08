@@ -113,15 +113,26 @@ jobs:
               raise SystemExit('Google WIF is not ready; fail deployment before enabling new API')
           print('Google WIF authenticated. No paid model request was made.')
           PY
-      - name: Publish versioned three-scene generation config to private S3
+      - name: Publish and verify all four S3 video prompt assets (no paid calls)
         run: |
           set -euo pipefail
           bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-google-video \
             --query 'Stacks[0].Parameters[?ParameterKey==`ScenarioAssetBucketName`].ParameterValue | [0]' --output text)
           test -n "$bucket" && test "$bucket" != None
-          key=scenarios/afl-grand-final-winning-kick/v1/video/config.json
-          aws s3 cp "scenarios/afl-grand-final-winning-kick/v1/video/config.json" "s3://$bucket/$key" --content-type application/json
-          aws s3api head-object --bucket "$bucket" --key "$key" > /dev/null
+          prefix=scenarios/afl-grand-final-winning-kick/v1/video
+          for file in config.json scene1-video.txt scene2-video.txt scene3-video.txt; do
+            local_path="$prefix/$file"
+            key="$prefix/$file"
+            case "$file" in
+              config.json) content_type=application/json ;;
+              *) content_type='text/plain; charset=utf-8' ;;
+            esac
+            aws s3 cp "$local_path" "s3://$bucket/$key" --content-type "$content_type"
+            aws s3api head-object --bucket "$bucket" --key "$key" > /dev/null
+            aws s3api get-object --bucket "$bucket" --key "$key" "/tmp/afl-verified-$file" > /dev/null
+            cmp "$local_path" "/tmp/afl-verified-$file"
+            echo "Verified S3 content: $key"
+          done
       - name: Package current API and deploy paid-approval gateway
         run: |
           set -euo pipefail
