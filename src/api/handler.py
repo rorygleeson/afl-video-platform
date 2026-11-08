@@ -284,7 +284,8 @@ def video_status(job_id, scene_id=None):
         return response(200, {"jobId": job_id, "video": video_scene_public(job, scene_id)})
     return response(200, {"jobId": job_id, "videoGenerationMode": VIDEO_MODE,
                           "realVideoMode": REAL_VIDEO_MODE,
-                          "scene1PaidApproved": REAL_VIDEO_MODE == "APPROVED_SCENE1" and not job.get("paidVideoApproval") and not job.get("realVideos", {}).get("scene1"),
+                          "scene1PaidApproved": REAL_VIDEO_MODE == "ENABLED",
+                          "paidScenes": {scene: REAL_VIDEO_MODE == "ENABLED" and not job.get("paidVideoApprovals", {}).get(scene) and not job.get("realVideos", {}).get(scene) for scene in VIDEO_SCENES},
                           "videos": {scene: video_scene_public(job, scene) for scene in VIDEO_SCENES},
                           "assembly": {"status": "NOT_IMPLEMENTED", "enabled": False}})
 
@@ -352,70 +353,69 @@ def preview_video_prompt(job_id, scene_id):
     return response(200, result)
 
 
-def start_real_scene1(job_id, event):
-    """A user-confirmed, single-billable-attempt request for this dynamic job."""
-    if REAL_VIDEO_MODE != "APPROVED_SCENE1" or not GOOGLE_STATE_MACHINE_ARN:
+def start_real_scene(job_id, scene_id, event):
+    """Explicit, atomic, one-attempt-per-scene paid submission for this job."""
+    if REAL_VIDEO_MODE != "ENABLED" or not GOOGLE_STATE_MACHINE_ARN:
         return response(503, {"status": "PAID_GENERATION_DISABLED"})
+    if scene_id not in VIDEO_SCENES:
+        return response(404, {"error": "Unknown scene"})
     data = body_json(event)
-    # API Gateway key is required on the proxy route. Never infer paid consent
-    # from polling, a free preflight, or possession of the job ID.
-    if data != {"confirmPaidScene1": True}:
-        return response(400, {"error": "Explicit paid Scene 1 consent required"})
+    if data != {"confirmPaidScene": scene_id}:
+        return response(400, {"error": "Explicit confirmation for this paid scene required"})
     headers = {str(k).lower(): str(v) for k, v in (event.get("headers") or {}).items()}
     token = headers.get("idempotency-key", "")
     if not IDEMPOTENCY_RE.fullmatch(token):
         return response(400, {"error": "Idempotency-Key required (12-128 characters)"})
-    item = get_job(job_id)
-    if not item:
+    job = get_job(job_id)
+    if not job:
         return response(404, {"error": "Job not found"})
-    if item.get("paidVideoApproval") or item.get("realVideos", {}).get("scene1"):
-        return response(409, {"error": "A paid Scene 1 attempt already exists; check its status, do not retry"})
-    if any(item.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
-           or not item.get("scenes", {}).get(scene, {}).get("resultKey")
+    if job.get("paidVideoApprovals", {}).get(scene_id) or job.get("realVideos", {}).get(scene_id):
+        return response(409, {"error": "This scene already has a paid request; check status, do not retry"})
+    if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
+           or not job.get("scenes", {}).get(scene, {}).get("resultKey")
            for scene in VIDEO_SCENES):
         return response(409, {"error": "All three reference images must be complete"})
-    source = item["scenes"]["scene1"]["resultKey"]
-    if not re.fullmatch(r"results/" + re.escape(job_id) + r"/scene1\.(png|jpg|jpeg|webp)", source):
+    source = job["scenes"][scene_id]["resultKey"]
+    if not re.fullmatch(r"results/" + re.escape(job_id) + "/" + scene_id + r"\.(png|jpg|jpeg|webp)", source):
         return response(409, {"error": "Unexpected reference image key"})
     try:
         S3.head_object(Bucket=UPLOAD_BUCKET, Key=source)
     except ClientError:
-        return response(409, {"error": "Scene 1 reference image missing or expired"})
+        return response(409, {"error": "Reference image missing or expired"})
     if ADMISSION and ADMISSION.get_item(Key={"slotId": "GLOBAL_VIDEO_SLOT_0"},
                                         ConsistentRead=True).get("Item"):
-        return response(409, {"error": "Another scene owns the video generation slot"})
-    execution_name = "real-" + job_id + "-scene1"
-    # Conditional, permanent one-attempt approval. If the handoff is uncertain,
-    # leave approval in place and reconcile; NEVER open a second paid attempt.
+        return response(409, {"error": "Another paid or mock scene owns the only concurrency slot"})
+    name = "real-" + job_id + "-" + scene_id
+    # Reserve the scene atomically BEFORE starting the workflow. An ambiguous
+    # Step Functions response never authorises a second chargeable attempt.
     try:
         DDB.update_item(
             Key={"jobId": job_id},
-            UpdateExpression="SET paidVideoApproval = :approval",
-            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(paidVideoApproval) AND attribute_not_exists(realVideos.scene1)",
+            UpdateExpression="SET paidVideoApprovals.#scene = :approval",
+            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(paidVideoApprovals.#scene) AND attribute_not_exists(realVideos.#scene)",
+            ExpressionAttributeNames={"#scene": scene_id},
             ExpressionAttributeValues={":approval": {
-                "sceneId": "scene1", "executionName": execution_name,
-                "status": "REQUESTED", "createdAt": datetime.now(timezone.utc).isoformat(),
+                "status": "REQUESTED", "executionName": name,
+                "createdAt": datetime.now(timezone.utc).isoformat(),
                 "requestFingerprint": hashlib.sha256(token.encode()).hexdigest(),
             }},
         )
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-            return response(409, {"error": "Paid Scene 1 already approved; no duplicate submission allowed"})
+            return response(409, {"error": "This scene already has a paid request"})
         raise
     try:
         STATES.start_execution(
-            stateMachineArn=GOOGLE_STATE_MACHINE_ARN,
-            name=execution_name,
-            input=json.dumps({"jobId": job_id, "sceneId": "scene1"}, separators=(",", ":")),
+            stateMachineArn=GOOGLE_STATE_MACHINE_ARN, name=name,
+            input=json.dumps({"jobId": job_id, "sceneId": scene_id}, separators=(",", ":")),
         )
     except STATES.exceptions.ExecutionAlreadyExists:
-        return response(202, {"status": "ALREADY_REQUESTED", "jobId": job_id, "sceneId": "scene1"})
+        return response(202, {"status": "ALREADY_REQUESTED", "sceneId": scene_id})
     except Exception:
-        # Approval stays locked because the Step Functions outcome is uncertain.
-        LOG.exception("Scene 1 paid handoff uncertain; do not resubmit")
+        LOG.exception("Paid workflow handoff uncertain for scene %s", scene_id)
         return response(503, {"status": "SUBMISSION_STATUS_UNKNOWN",
-                              "error": "Request must be reconciled before further generation"})
-    return response(202, {"status": "REAL_SCENE1_REQUESTED", "jobId": job_id, "sceneId": "scene1"})
+                              "error": "Please check status; do not retry this scene"})
+    return response(202, {"status": "REAL_VIDEO_REQUESTED", "sceneId": scene_id})
 
 
 
@@ -496,9 +496,9 @@ def lambda_handler(event, context):
     method = (event.get("httpMethod") or "").upper()
     path = event.get("path") or ""
     try:
-        real_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/scene1", path)
+        real_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/(scene[123])", path)
         if method == "POST" and real_match:
-            return start_real_scene1(real_match.group(1), event)
+            return start_real_scene(real_match.group(1), real_match.group(2), event)
         preflight_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/video/scene1/preflight", path)
         if method == "GET" and preflight_match:
             return scene1_preflight(preflight_match.group(1))
