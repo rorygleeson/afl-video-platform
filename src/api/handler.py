@@ -256,6 +256,43 @@ def images_for_job(job):
                           "scenes": public_job(job)["scenes"], "images": images})
 
 
+def safe_execution_failure_code(execution_arn):
+    """Inspect existing SFN execution events, never start/retry an execution.
+
+    Provider response bodies can contain sensitive information. Only return an
+    allowlisted HTTP status code or a generic worker/orchestration category.
+    """
+    try:
+        history = STATES.get_execution_history(
+            executionArn=execution_arn, maxResults=30,
+            reverseOrder=True, includeExecutionData=False)
+        for event in history.get("events", []):
+            detail = (event.get("taskFailedEventDetails") or
+                      event.get("lambdaFunctionFailedEventDetails") or
+                      event.get("executionFailedEventDetails") or {})
+            if not detail:
+                continue
+            cause = str(detail.get("cause", ""))[:16000]
+            http = re.search(r"Google (?:POST|GET) HTTP (400|401|403|404|409|429|500|502|503|504)", cause)
+            if http:
+                return "GOOGLE_HTTP_" + http.group(1)
+            if "UNKNOWN_SUBMISSION_REQUIRES_MANUAL_RECONCILIATION" in cause:
+                return "GOOGLE_SUBMISSION_UNCONFIRMED"
+            if "PRE_SUBMISSION_VALIDATION_FAILED" in cause:
+                return "PRE_SUBMISSION_VALIDATION_FAILED"
+            if "SCENARIO_VIDEO_GENERATION_DISABLED" in cause:
+                return "SCENARIO_VIDEO_DISABLED"
+            if "Runtime.ImportModuleError" in cause:
+                return "WORKER_IMPORT_FAILED"
+            if "TaskTimedOut" in cause or "timed out" in cause.lower():
+                return "WORKER_TIMEOUT"
+            return "WORKER_FAILED"
+    except ClientError as exc:
+        LOG.warning("Could not inspect video failure history: %s",
+                    exc.response.get("Error", {}).get("Code", "UNKNOWN")[:60])
+    return "FAILURE_DETAILS_UNAVAILABLE"
+
+
 def video_scene_public(job, scene_id):
     """Mock states never pretend to contain playable MP4s."""
     real = job.get("realVideos", {}).get(scene_id, {})
@@ -280,6 +317,7 @@ def video_scene_public(job, scene_id):
             if execution.get("status") in ("FAILED", "TIMED_OUT", "ABORTED"):
                 result["status"] = "REVIEW_REQUIRED"
                 result["errorCode"] = "WORKFLOW_" + execution["status"]
+                result["failureCode"] = safe_execution_failure_code(arn)
             elif execution.get("status") == "RUNNING":
                 result["workflowStatus"] = "RUNNING"
         except ClientError as exc:
