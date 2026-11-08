@@ -272,7 +272,9 @@
         const authorised = approvals[id] === true;
         document.getElementById('scene' + n + 'PaidStatus').textContent =
           real.mode === 'REAL'
-            ? 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase()
+            ? (real.status === 'REVIEW_REQUIRED'
+                ? 'Manual review required — generation status uncertain. Do not retry.'
+                : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
             : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
         document.getElementById('generateRealScene' + n).hidden =
           !authorised || videoSubmittedScenes.has(id) || real.mode === 'REAL';
@@ -283,7 +285,9 @@
         const state = document.getElementById('videoStatus' + n);
         if (item.status === 'COMPLETED' && item.url && !item.mock) {
           state.textContent = 'Real MP4 completed.';
-          if (player.dataset.url !== item.url) {
+          // Polling regenerates short-lived S3 URLs. Do not replace a playing
+          // video every five seconds while another scene is generating.
+          if (!player.querySelector('video')) {
             const video = document.createElement('video');
             video.controls = true;
             video.preload = 'metadata';
@@ -302,7 +306,7 @@
       }
       const realStates = [1, 2, 3].map(n => data.videos?.['scene' + n] || {});
       realVideoTracking = realStates.some(st => st.mode === 'REAL' &&
-        !['COMPLETED', 'FAILED', 'CANCELLED'].includes(st.status));
+        !['COMPLETED', 'FAILED', 'CANCELLED', 'REVIEW_REQUIRED'].includes(st.status));
       // Poll only while a real submission is potentially active. Never POST from polling.
       stopVideoPoll();
       if (realVideoTracking && !document.hidden && jobId === currentJobId) {
@@ -316,7 +320,18 @@
         videoTestMessage.textContent = 'Video status updated — see each scene above.';
       }
     } catch (error) {
-      if (jobId === currentJobId) videoTestMessage.textContent = 'Video status unavailable: ' + error.message;
+      if (jobId === currentJobId) {
+        videoTestMessage.textContent = 'Video status unavailable: ' + error.message +
+          '. Retrying status only; no paid request will be repeated.';
+        // Status GET is safe. Never retry a paid POST.
+        stopVideoPoll();
+        if (!document.hidden) {
+          videoTimer = setTimeout(() => {
+            videoTimer = null;
+            void refreshVideos();
+          }, POLL_ERROR_BACKOFF_MS);
+        }
+      }
     } finally {
       videoBusy = false;
     }
