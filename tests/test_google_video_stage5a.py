@@ -190,6 +190,26 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         w.JOBS.update_item.assert_not_called()
         w.SLOTS.put_item.assert_not_called()
 
+    def test_paid_claim_ignores_legacy_global_slot_but_prevents_duplicate_scene(self):
+        w = self.worker
+        w.PAID_ENABLED = "true"
+        w.MODEL = "gemini-omni-1.2-flash"
+        job, request = self.event["jobId"], self.event["requestId"]
+        w.JOBS.get_item.return_value = {"Item": {
+            "paidVideoApprovals": {"scene1": {
+                "status": "REQUESTED", "executionName": "real-" + job + "-scene1"}},
+            "scenes": {"scene1": {"status": "COMPLETED",
+                                 "resultKey": "results/" + job + "/scene1.png"}},
+            "realVideos": {}}}
+        self.assertEqual(w.claim(job, "scene1", request)["status"], "PREPARED")
+        w.SLOTS.get_item.assert_not_called()
+        w.SLOTS.put_item.assert_not_called()
+        w.SLOTS.delete_item.assert_not_called()
+        writes = w.JOBS.update_item.call_args_list
+        self.assertEqual(len(writes), 2)
+        self.assertIn("attribute_not_exists(realVideos.#scene)",
+                      writes[1].kwargs["ConditionExpression"])
+
     def test_unbillable_validation_failure_marks_failed_and_releases_slot(self):
         w = self.worker
         w.PAID_ENABLED = "true"
