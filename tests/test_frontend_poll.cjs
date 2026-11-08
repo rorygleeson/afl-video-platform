@@ -30,6 +30,7 @@ function setup() {
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'resumeLast', 'status', 'pollStatus', 'key', 'team', 'scenario',
+                      'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
                       'testGoogle', 'googleStatus', 'firstName', 'lastName',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
                       'videoPromptStatus1','videoPromptStatus2','videoPromptStatus3',
@@ -48,6 +49,7 @@ function setup() {
   els.assembleFinal.disabled = true;
   els.assembleFinal.hidden = true; // Matches the HTML hidden attribute.
   els.generateRealScene1.hidden = true;
+  els.jobIdPanel.hidden = true;
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
   els.firstName.value = 'Alex';
@@ -356,4 +358,26 @@ test('real Scene 1 paid button remains hidden and never starts without approval'
   await h.els.scene1Preflight.listeners.click();
   assert.equal(h.els.generateRealScene1.hidden, true);
   assert.equal(h.calls.filter(c => c.url.endsWith('/real-videos/scene1')).length, 0);
+});
+
+test('job ID remains visible after creation and can be recovered when resuming', async () => {
+  const h = setup();
+  assert.equal(h.els.jobIdPanel.hidden, true);
+  await h.els.generate.listeners.click();
+  assert.equal(h.els.jobIdPanel.hidden, false);
+  assert.equal(h.els.currentJobIdText.textContent, 'a'.repeat(32));
+  assert.equal(h.sessionStorage.getItem('aflLastJobId'), 'a'.repeat(32));
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  assert.equal(h.els.currentJobIdText.textContent, 'a'.repeat(32));
+  assert.equal(h.els.jobIdPanel.hidden, false);
+});
+
+test('changing selections hides stale job ID', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  assert.equal(h.els.jobIdPanel.hidden, false);
+  h.els.team.listeners.change();
+  assert.equal(h.els.jobIdPanel.hidden, true);
+  assert.equal(h.els.currentJobIdText.textContent, '');
 });
