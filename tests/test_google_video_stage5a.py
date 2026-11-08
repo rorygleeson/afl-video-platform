@@ -190,6 +190,32 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         w.JOBS.update_item.assert_not_called()
         w.SLOTS.put_item.assert_not_called()
 
+    def test_unbillable_validation_failure_marks_failed_and_releases_slot(self):
+        w = self.worker
+        w.PAID_ENABLED = "true"
+        w.MODEL = "gemini-omni-1.2-flash"
+        job = self.event["jobId"]
+        request = self.event["requestId"]
+        w.JOBS.get_item.return_value = {"Item": {
+            "paidVideoApprovals": {"scene1": {
+                "status": "REQUESTED", "executionName": "real-" + job + "-scene1"
+            }},
+            "realVideos": {"scene1": {
+                "status": "PREPARED", "requestId": request, "sourceImageKey": "missing"
+            }},
+        }}
+        with patch.object(w, "render_scene", side_effect=ValueError("missing prompt")), \\
+             patch.object(w, "transition") as transition, \\
+             patch.object(w, "release") as release, \\
+             patch.object(w, "google_json") as billable:
+            with self.assertRaises(ValueError):
+                w.submit(job, "scene1", request)
+        transition.assert_called_once_with(
+            job, "scene1", request, "PREPARED", "FAILED",
+            {"errorCode": "PRE_SUBMISSION_VALIDATION_FAILED"})
+        release.assert_called_once_with(job, "scene1", request)
+        billable.assert_not_called()
+
     def test_inline_image_to_video_request_has_exact_fields(self):
         w = self.worker
         result = w.image_payload(b"png-data", "image/png", "Alex kicks the ball", 8)
