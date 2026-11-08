@@ -1,0 +1,35 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Direct no-model-call WIF diagnostic. NO CloudFormation custom resources.
+Parameters:
+  ArtifactBucketName:
+    Type: String
+  PreflightArtifactKey:
+    Type: String
+Resources:
+  WifDirectLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: afl-app-dev-google-wif-direct-probe
+      Handler: direct.lambda_handler
+      Runtime: python3.13
+      Timeout: 45
+      MemorySize: 256
+      Role: arn:aws:iam::134387458447:role/afl-app-dev-google-omni-role
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref PreflightArtifactKey
+      Environment:
+        Variables:
+          GOOGLE_PROJECT_NUMBER: '345956846110'
+          GOOGLE_WIF_POOL_ID: afl-video-aws
+          GOOGLE_WIF_PROVIDER_ID: afl-aws-dev
+          GOOGLE_SERVICE_ACCOUNT: afl-video-worker@afl-video-platform.iam.gserviceaccount.com
+  GitHubInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WifDirectLambda
+      Principal: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+Outputs:
+  FunctionArn:
+    Value: !GetAtt WifDirectLambda.Arn
