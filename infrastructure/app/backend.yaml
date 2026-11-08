@@ -130,6 +130,10 @@ Resources:
                 Effect: Allow
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt VideoWorkerLambda.Arn
+              - Sid: FreeScene1PreflightOnGoogleWorkerOnly
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-google-omni-worker'
               - Sid: StoreJobs
                 Effect: Allow
                 Action: [dynamodb:PutItem, dynamodb:GetItem]
@@ -157,6 +161,7 @@ Resources:
           FRONTEND_ORIGIN: !Ref FrontendOrigin
           IMAGE_STATE_MACHINE_ARN: !Ref ImageStateMachine
           VIDEO_WORKER_ARN: !GetAtt VideoWorkerLambda.Arn
+          GOOGLE_WORKER_ARN: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-google-omni-worker'
           SCENARIO_ASSET_BUCKET: !Ref ScenarioAssetsBucket
           VIDEO_STATE_MACHINE_ARN: !Ref VideoStateMachineArn
           VIDEO_ADMISSION_TABLE: !Ref VideoAdmissionTableName
