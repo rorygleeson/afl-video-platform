@@ -80,6 +80,7 @@ Resources:
         Variables:
           PAID_GENERATION_ENABLED: 'false'
           GOOGLE_VIDEO_MODEL: UNCONFIGURED
+          APPROVED_VIDEO_JOB_ID: ''
           GOOGLE_PROJECT_ID: afl-video-platform
           GOOGLE_PROJECT_NUMBER: '345956846110'
           GOOGLE_WIF_POOL_ID: afl-video-aws
@@ -132,7 +133,7 @@ Resources:
           "StartAt":"PaidGate",
           "TimeoutSeconds":3600,
           "States":{
-            "PaidGate":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"gate"}},"ResultPath":"$.gate","Next":"Claim"},
+            "PaidGate":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"gate","jobId.$":"$.jobId","sceneId.$":"$.sceneId"}},"ResultPath":"$.gate","Next":"Claim"},
             "Claim":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"claim","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.claim","Next":"Submit"},
             "Submit":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"submit","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.submit","Next":"WaitForVideo"},
             "WaitForVideo":{"Type":"Wait","Seconds":20,"Next":"PollVideo"},
