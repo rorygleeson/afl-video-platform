@@ -27,6 +27,12 @@ Parameters:
   ReplicateSecretName:
     Type: String
     Default: afl-app/dev/replicate-api-token
+  PaidVideoEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['false', 'true']
+Conditions:
+  PaidVideoOn: !Equals [!Ref PaidVideoEnabled, 'true']
 Resources:
   UploadsBucket:
     Type: AWS::S3::Bucket
@@ -167,8 +173,7 @@ Resources:
           VIDEO_WORKER_ARN: !GetAtt VideoWorkerLambda.Arn
           GOOGLE_WORKER_ARN: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-google-omni-worker'
           GOOGLE_STATE_MACHINE_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-google-omni'
-          REAL_VIDEO_MODE: DISABLED
-          APPROVED_VIDEO_JOB_ID: ''
+          REAL_VIDEO_MODE: !If [PaidVideoOn, ENABLED, DISABLED]
           SCENARIO_ASSET_BUCKET: !Ref ScenarioAssetsBucket
           VIDEO_STATE_MACHINE_ARN: !Ref VideoStateMachineArn
           VIDEO_ADMISSION_TABLE: !Ref VideoAdmissionTableName
