@@ -105,7 +105,7 @@
       <button id="scene1Preflight" type="button">Recheck readiness (free)</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite">Scene 1 check runs automatically when reference images are ready.</p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
-      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid)</button>
+      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 8 seconds)</button>
       <button id="videoScene1" type="button" class="quiet-button">View exact video prompt</button>
       <details id="videoPromptDetails1" class="scene-prompt" hidden>
         <summary>Video prompt and commentary</summary>
@@ -117,6 +117,8 @@
     </div>
     <div class="video-scene" id="videoPanel2">
       <strong>Scene 2 — Winning kick</strong>
+      <button id="generateRealScene2" type="button" hidden>Generate Scene 2 MP4 (paid, 8 seconds)</button>
+      <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <button id="videoScene2" type="button">Preview Scene 2 prompt (free)</button>
       <details id="videoPromptDetails2" class="scene-prompt" hidden>
         <summary>Scene 2 prompt — show/hide</summary>
@@ -128,6 +130,8 @@
     </div>
     <div class="video-scene" id="videoPanel3">
       <strong>Scene 3 — Celebration</strong>
+      <button id="generateRealScene3" type="button" hidden>Generate Scene 3 MP4 (paid, 10 seconds)</button>
+      <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <button id="videoScene3" type="button">Preview Scene 3 prompt (free)</button>
       <details id="videoPromptDetails3" class="scene-prompt" hidden>
         <summary>Scene 3 prompt — show/hide</summary>
@@ -179,6 +183,7 @@
   let videoTimer = null;
   let videoBusy = false;
   let realVideoTracking = false;
+  const videoSubmittedScenes = new Set();
   let lastImageScenes = {};
   let preflightCheckedJobId = null;
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
@@ -226,6 +231,7 @@
   function resetVideoUi() {
     stopVideoPoll();
     realVideoTracking = false;
+    videoSubmittedScenes.clear();
     preflightCheckedJobId = null;
     lastImageScenes = {};
     videoPromptSection.hidden = true;
@@ -233,7 +239,10 @@
     videoTestMessage.textContent = '';
     document.getElementById('scene1PreflightStatus').textContent = 'Scene 1 check runs automatically when reference images are ready.';
     document.getElementById('scene1PaidStatus').textContent = 'MP4 generation: locked (not charged)';
-    document.getElementById('generateRealScene1').hidden = true;
+    for (const n of [1, 2, 3]) {
+      document.getElementById('generateRealScene' + n).hidden = true;
+      document.getElementById('scene' + n + 'PaidStatus').textContent = 'MP4 generation: locked (not charged)';
+    }
     videoPromptStatus.textContent = '';
     videoPromptText.textContent = '';
     for (const n of [1, 2, 3]) {
@@ -256,14 +265,18 @@
       // Read-only: never call POST /videos/sceneN, which remains a mock-only API.
       const data = await api('/jobs/' + jobId + '/videos');
       if (jobId !== currentJobId) return;
-      const realScene = data.videos?.scene1 || {};
-      document.getElementById('scene1PaidStatus').textContent =
-        data.scene1PaidApproved === true
-          ? 'MP4 generation: approved for this job (paid)'
-          : 'MP4 generation: locked (not charged)';
-      document.getElementById('generateRealScene1').hidden = !(
-        data.scene1PaidApproved === true && !realVideoTracking &&
-        realScene.mode !== 'REAL' && realScene.status !== 'COMPLETED');
+      const approvals = data.paidScenes || {};
+      for (const n of [1, 2, 3]) {
+        const id = 'scene' + n;
+        const real = data.videos?.[id] || {};
+        const authorised = approvals[id] === true;
+        document.getElementById('scene' + n + 'PaidStatus').textContent =
+          real.mode === 'REAL'
+            ? 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase()
+            : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
+        document.getElementById('generateRealScene' + n).hidden =
+          !authorised || videoSubmittedScenes.has(id) || real.mode === 'REAL';
+      }
       for (const n of [1, 2, 3]) {
         const item = data.videos?.['scene' + n] || {};
         const player = document.getElementById('videoPlayer' + n);
@@ -287,10 +300,9 @@
           delete player.dataset.url;
         }
       }
-      const state = data.videos?.scene1 || {};
-      if (state.mode === 'REAL') {
-        realVideoTracking = !['COMPLETED', 'FAILED'].includes(state.status);
-      }
+      const realStates = [1, 2, 3].map(n => data.videos?.['scene' + n] || {});
+      realVideoTracking = realStates.some(st => st.mode === 'REAL' &&
+        !['COMPLETED', 'FAILED', 'CANCELLED'].includes(st.status));
       // Poll only while a real submission is potentially active. Never POST from polling.
       stopVideoPoll();
       if (realVideoTracking && !document.hidden && jobId === currentJobId) {
@@ -299,8 +311,9 @@
           void refreshVideos();
         }, POLL_INTERVAL_MS);
       }
-      if (state.mode === 'REAL' && ['COMPLETED', 'FAILED'].includes(state.status)) {
-        videoTestMessage.textContent = 'Scene 1: ' + state.status + '.';
+      if (realStates.some(st => st.mode === 'REAL' &&
+          ['COMPLETED', 'FAILED'].includes(st.status))) {
+        videoTestMessage.textContent = 'Video status updated — see each scene above.';
       }
     } catch (error) {
       if (jobId === currentJobId) videoTestMessage.textContent = 'Video status unavailable: ' + error.message;
@@ -662,32 +675,44 @@
     });
   }
 
-  document.getElementById('generateRealScene1').addEventListener('click', async () => {
-    if (!currentJobId || videoTestSection.hidden) return;
-    const jobId = currentJobId;
-    const button = document.getElementById('generateRealScene1');
-    // An explicit human confirmation is required even after server-side approval.
-    if (!window.confirm('This will request one real 8-second Scene 1 video and incur a Google charge. Continue?')) return;
-    button.disabled = true;
-    button.hidden = true;
-    realVideoTracking = true;
-    videoTestMessage.textContent = 'Submitting approved Scene 1 request…';
-    try {
-      const request = await api('/jobs/' + jobId + '/real-videos/scene1', {
-        method: 'POST',
-        headers: {'Idempotency-Key': crypto.randomUUID()},
-      });
-      if (jobId !== currentJobId) return;
-      videoTestMessage.textContent = 'Real Scene 1 request accepted (' + request.status +
-        '). No other video scenes were requested.';
-      void refreshVideos();
-    } catch (error) {
-      if (jobId === currentJobId) videoTestMessage.textContent = 'Real Scene 1 not started: ' + error.message;
-      // Do not automatically retry an uncertain request or show the button again.
-    } finally {
-      button.disabled = false;
-    }
-  });
+  for (const n of [1, 2, 3]) {
+    const sceneId = 'scene' + n;
+    const duration = n === 3 ? 10 : 8;
+    const button = document.getElementById('generateRealScene' + n);
+    button.addEventListener('click', async () => {
+      if (!currentJobId || videoTestSection.hidden || button.hidden ||
+          videoSubmittedScenes.has(sceneId)) return;
+      const jobId = currentJobId;
+      if (!window.confirm('Generate a real ' + duration + '-second video for Scene ' +
+                          n + '? This will incur a Google charge. Only this scene will run.')) return;
+      videoSubmittedScenes.add(sceneId);
+      button.disabled = true;
+      button.hidden = true;
+      document.getElementById('scene' + n + 'PaidStatus').textContent =
+        'Requesting real MP4 — do not submit this scene again.';
+      try {
+        const result = await api('/jobs/' + jobId + '/real-videos/' + sceneId, {
+          method: 'POST',
+          headers: {'Idempotency-Key': crypto.randomUUID()},
+          body: JSON.stringify({confirmPaidScene: sceneId}),
+        });
+        if (jobId !== currentJobId) return;
+        document.getElementById('scene' + n + 'PaidStatus').textContent =
+          'Request accepted (' + result.status + '). Checking video progress…';
+        realVideoTracking = true;
+        void refreshVideos();
+      } catch (error) {
+        if (jobId === currentJobId) {
+          document.getElementById('scene' + n + 'PaidStatus').textContent =
+            'Submission outcome: ' + error.message + ' — check job status before trying again.';
+          void refreshVideos();
+        }
+        // Fail closed: do not automatically re-enable after any uncertain request.
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
 
   async function runScene1Preflight(jobId) {
     if (!jobId || videoTestSection.hidden || jobId !== currentJobId) return;
