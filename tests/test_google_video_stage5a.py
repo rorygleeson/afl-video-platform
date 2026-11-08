@@ -204,10 +204,12 @@ class GoogleVideoAdapterTests(unittest.TestCase):
                 "status": "PREPARED", "requestId": request, "sourceImageKey": "missing"
             }},
         }}
-        with patch.object(w, "render_scene", side_effect=ValueError("missing prompt")), \\
-             patch.object(w, "transition") as transition, \\
-             patch.object(w, "release") as release, \\
-             patch.object(w, "google_json") as billable:
+        with (
+            patch.object(w, "render_scene", side_effect=ValueError("missing prompt")),
+            patch.object(w, "transition") as transition,
+            patch.object(w, "release") as release,
+            patch.object(w, "google_json") as billable,
+        ):
             with self.assertRaises(ValueError):
                 w.submit(job, "scene1", request)
         transition.assert_called_once_with(
