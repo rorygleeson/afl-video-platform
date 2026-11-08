@@ -34,7 +34,7 @@ def validate_name(value, label):
     return normalized
 
 
-def render_scene(s3, asset_bucket, job, scene_id):
+def render_scene(s3, asset_bucket, job, scene_id, *, allow_paid=False):
     if scene_id not in SCENE_IDS:
         raise ValueError("Unsupported scene")
     team = job.get("team")
@@ -44,8 +44,11 @@ def render_scene(s3, asset_bucket, job, scene_id):
     last = validate_name(job.get("lastName"), "Surname")
     config_raw = s3.get_object(Bucket=asset_bucket, Key=VIDEO_PREFIX + "config.json")["Body"].read(MAX_TEMPLATE_BYTES)
     config = json.loads(config_raw)
-    if config.get("videoGenerationEnabled") is not False or config.get("videoConcurrency") != 1:
-        raise ValueError("Unapproved video preview configuration")
+    enabled = config.get("videoGenerationEnabled")
+    if type(enabled) is not bool or config.get("videoConcurrency") != 1:
+        raise ValueError("Invalid video generation configuration")
+    # Paid approval cannot be inferred from S3 alone: the caller must
+    # explicitly opt in, and the worker/API additionally enforce IAM+job gates.
     scenes = {scene["id"]: scene for scene in config["scenes"]}
     definition = scenes[scene_id]
     template_name = definition["template"]
@@ -72,7 +75,7 @@ def render_scene(s3, asset_bucket, job, scene_id):
         "playerName": variables["fullName"],
         "teamName": variables["teamName"],
         "videoConcurrency": 1,
-        "videoGenerationEnabled": False,
-        "videoSubmissionAvailable": False,
+        "videoGenerationEnabled": enabled and allow_paid,
+        "videoSubmissionAvailable": enabled and allow_paid,
         "durationSeconds": definition["durationSeconds"],
     }
