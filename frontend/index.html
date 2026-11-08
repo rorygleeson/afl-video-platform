@@ -78,29 +78,36 @@
   <section id="videoPromptSection" hidden>
     <h2>Video prompts — free preview</h2>
     <p class="note">Preview Scene 1 before running its free mock test. Scene 2 unlocks after the Scene 1 mock completes; Scene 3 follows Scene 2. No real video or MP4 is generated at this stage.</p>
-    <button id="videoScene1" type="button">Preview Scene 1 — Run-up</button>
-    <button id="videoScene2" type="button" hidden>Preview Scene 2 — Winning kick</button>
-    <button id="videoScene3" type="button" hidden>Preview Scene 3 — Celebration</button>
-    <p id="videoPromptStatus" role="status" aria-live="polite"></p>
-    <pre id="videoPromptText" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.9rem"></pre>
+    <p>All three reference images are complete. Preview and mock-test each scene in sequence below.</p>
+    <p id="videoPromptStatus" hidden></p>
+    <pre id="videoPromptText" hidden></pre>
   </section>
   <section id="videoTestSection" hidden>
     <h2>Free scene workflow tests — no MP4s</h2>
     <p class="mock-note">Mock-only AWS workflow checks. No Google model calls, no playable video. Scene tests unlock one at a time.</p>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 — Run-up</strong>
+      <button id="videoScene1" type="button">Preview Scene 1 prompt</button>
+      <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
+      <pre id="videoPromptText1" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
       <button type="button" id="generateVideo1" disabled hidden>Run Scene 1 mock video workflow</button>
       <p id="videoStatus1" class="video-state" role="status">Generate reference image 1 first.</p>
       <div id="videoPlayer1"></div>
     </div>
     <div class="video-scene" id="videoPanel2" hidden>
       <strong>Scene 2 — Winning kick</strong>
+      <button id="videoScene2" type="button">Preview Scene 2 prompt</button>
+      <p id="videoPromptStatus2" class="video-state" role="status" aria-live="polite"></p>
+      <pre id="videoPromptText2" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
       <button type="button" id="generateVideo2" disabled hidden>Run Scene 2 mock video workflow</button>
       <p id="videoStatus2" class="video-state" role="status">Generate reference image 2 first.</p>
       <div id="videoPlayer2"></div>
     </div>
     <div class="video-scene" id="videoPanel3" hidden>
       <strong>Scene 3 — Celebration</strong>
+      <button id="videoScene3" type="button">Preview Scene 3 prompt</button>
+      <p id="videoPromptStatus3" class="video-state" role="status" aria-live="polite"></p>
+      <pre id="videoPromptText3" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
       <button type="button" id="generateVideo3" disabled hidden>Run Scene 3 mock video workflow</button>
       <p id="videoStatus3" class="video-state" role="status">Generate reference image 3 first.</p>
       <div id="videoPlayer3"></div>
@@ -192,6 +199,10 @@
     document.getElementById('videoScene1').hidden = false;
     document.getElementById('videoPanel1').hidden = false;
     previewedScenes.clear();
+    for (const n of [1, 2, 3]) {
+      document.getElementById('videoPromptStatus' + n).textContent = '';
+      document.getElementById('videoPromptText' + n).textContent = '';
+    }
     document.getElementById('assembleFinal').disabled = true;
     videoTestMessage.textContent = '';
     for (const n of [1, 2, 3]) {
@@ -629,6 +640,8 @@
       const jobToPreview = currentJobId;
       button.disabled = true;
       videoPromptStatus.textContent = 'Loading Scene ' + n + ' prompt from private S3…';
+      document.getElementById('videoPromptStatus' + n).textContent = 'Loading personalised prompt…';
+      document.getElementById('videoPromptText' + n).textContent = '';
       videoPromptText.textContent = '';
       try {
         const data = await api('/jobs/' + jobToPreview + '/video/scene' + n + '/preview');
@@ -636,14 +649,19 @@
         videoPromptStatus.textContent = data.playerName + ' — ' + data.teamName +
           ' | Scene ' + n + ' | ' + data.durationSeconds + ' seconds | no charge';
         videoPromptText.textContent = 'SCENE ' + n + ' — ' + SCENE_LABELS[n-1] + '\\n\\n' + data.prompt;
+        document.getElementById('videoPromptStatus' + n).textContent =
+          data.playerName + ' — ' + data.teamName + ' | ' + data.durationSeconds + ' seconds';
+        document.getElementById('videoPromptText' + n).textContent = data.prompt;
         previewedScenes.add('scene' + n);
         if (document.getElementById('videoStatus' + n).textContent.includes('Preview')) {
           document.getElementById('videoStatus' + n).textContent = 'Ready to run free mock test.';
         }
         document.getElementById('generateVideo' + n).hidden = false;
       } catch (error) {
-        if (jobToPreview === currentJobId) videoPromptStatus.textContent =
-          'Could not preview Scene ' + n + ': ' + error.message;
+        if (jobToPreview === currentJobId) {
+          videoPromptStatus.textContent = 'Could not preview Scene ' + n + ': ' + error.message;
+          document.getElementById('videoPromptStatus' + n).textContent = videoPromptStatus.textContent;
+        }
       } finally {
         button.disabled = false;
       }
