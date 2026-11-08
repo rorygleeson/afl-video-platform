@@ -239,6 +239,39 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         release.assert_called_once_with(job, "scene1", request)
         billable.assert_not_called()
 
+    def test_submission_diagnostic_is_scene_scoped_and_never_retries(self):
+        # Offline regression for all three scenes. No Google calls are made.
+        w = self.worker
+        w.PAID_ENABLED = "true"
+        w.MODEL = "gemini-omni-1.2-flash"
+        job, request = self.event["jobId"], self.event["requestId"]
+        for scene in ("scene1", "scene2", "scene3"):
+            w.JOBS.get_item.return_value = {"Item": {
+                "paidVideoApprovals": {scene: {
+                    "status": "REQUESTED",
+                    "executionName": "real-" + job + "-" + scene}},
+                "realVideos": {scene: {
+                    "status": "PREPARED", "requestId": request,
+                    "sourceImageKey": "results/" + job + "/" + scene + ".png"}}}}
+            w.S3.get_object.return_value = {
+                "ContentType": "image/png",
+                "Body": __import__("io").BytesIO(b"img")}
+            with (patch.object(w, "render_scene", return_value={
+                      "durationSeconds": 10 if scene == "scene3" else 8,
+                      "videoGenerationEnabled": True, "prompt": "Test"}),
+                  patch.object(w, "google_json",
+                      side_effect=w.ContractError("Google POST HTTP 403")) as google,
+                  patch.object(w, "transition") as transition):
+                with self.assertRaisesRegex(w.UnknownSubmission, "MANUAL_RECONCILIATION"):
+                    w.submit(job, scene, request)
+                google.assert_called_once()
+                self.assertEqual(transition.call_args_list[0].args[:5],
+                                 (job, scene, request, "PREPARED", "SUBMISSION_UNKNOWN"))
+                self.assertEqual(transition.call_args_list[1].args,
+                                 (job, scene, request, "SUBMISSION_UNKNOWN",
+                                  "SUBMISSION_UNKNOWN", {"errorCode": "GOOGLE_HTTP_403"}))
+            w.SLOTS.put_item.assert_not_called()
+
     def test_inline_image_to_video_request_has_exact_fields(self):
         w = self.worker
         result = w.image_payload(b"png-data", "image/png", "Alex kicks the ball", 8)
