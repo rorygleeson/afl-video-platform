@@ -155,6 +155,19 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         paid.assert_not_called()
         w.SLOTS.put_item.assert_not_called()
 
+    def test_paid_gate_blocks_any_job_not_explicitly_allowlisted(self):
+        w = self.worker
+        w.PAID_ENABLED = "true"
+        w.MODEL = "gemini-omni-1.2-flash"
+        w.APPROVED_JOB_ID = self.event["jobId"]
+        self.assertEqual(w.lambda_handler({"op": "gate", "jobId": self.event["jobId"],
+                                          "sceneId": "scene1"}, None)["status"], "ENABLED")
+        for job, scene in (("b" * 32, "scene1"), (self.event["jobId"], "scene2")):
+            with self.subTest(job=job, scene=scene), self.assertRaises(PermissionError):
+                w.lambda_handler({"op": "gate", "jobId": job, "sceneId": scene}, None)
+        w.JOBS.update_item.assert_not_called()
+        w.SLOTS.put_item.assert_not_called()
+
     def test_inline_image_to_video_request_has_exact_fields(self):
         w = self.worker
         result = w.image_payload(b"png-data", "image/png", "Alex kicks the ball", 8)
@@ -213,6 +226,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         movie = b"\x00\x00\x00\x18ftypisom" + b"z" * 200
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
+        w.APPROVED_JOB_ID = self.event["jobId"]
         w.JOBS.get_item.return_value = {"Item": {"realVideos": {"scene1": {
             "status": "PROCESSING", "requestId": self.event["requestId"],
             "interactionId": "interact-12345"
