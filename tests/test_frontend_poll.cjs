@@ -445,8 +445,9 @@ test('approved Scene 1 click submits only Scene 1 once with exact consent', asyn
   await h.els.generateRealScene1.listeners.click();
   await h.flush();
   assert.equal(h.els.generateRealScene1.hidden, true);
-  assert.equal(h.els.generateRealScene2.hidden, false);
-  assert.equal(h.els.generateRealScene3.hidden, false);
+  // Hide other paid buttons immediately until backend reports global slot state.
+  assert.equal(h.els.generateRealScene2.hidden, true);
+  assert.equal(h.els.generateRealScene3.hidden, true);
   const submitted = h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url));
   assert.equal(submitted.length, 1);
   assert.match(submitted[0].url, /\/real-videos\/scene1$/);
