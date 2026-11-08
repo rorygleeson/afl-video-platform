@@ -284,6 +284,8 @@ def video_status(job_id, scene_id=None):
     if scene_id:
         return response(200, {"jobId": job_id, "video": video_scene_public(job, scene_id)})
     return response(200, {"jobId": job_id, "videoGenerationMode": VIDEO_MODE,
+                          "realVideoMode": REAL_VIDEO_MODE,
+                          "scene1PaidApproved": REAL_VIDEO_MODE == "APPROVED_SCENE1" and job_id == APPROVED_VIDEO_JOB_ID,
                           "videos": {scene: video_scene_public(job, scene) for scene in VIDEO_SCENES},
                           "assembly": {"status": "NOT_IMPLEMENTED", "enabled": False}})
 
