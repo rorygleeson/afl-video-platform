@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#172432">
-  <title>AFL Video Lab — Stage 1</title>
+  <title>AFL Video Lab — Stage 4 mock video testing</title>
   <style>
     :root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#172432;background:#f4f6f9}
     body{max-width:560px;margin:0 auto;padding:24px 16px 50px}
@@ -20,6 +20,11 @@
     #results img{width:100%;border-radius:6px}
     #status{white-space:pre-wrap;overflow-wrap:anywhere}
     .poll-status{font-size:.9rem;margin-top:8px;color:#526174}
+    .video-scene{border:1px solid #d4dce5;border-radius:10px;padding:14px;margin:12px 0}
+    .video-scene button{margin-top:8px}
+    .video-scene video{width:100%;max-height:330px;border-radius:8px;margin-top:10px}
+    .video-state{font-size:.9rem;color:#465569;white-space:pre-wrap}
+    .mock-note{background:#fff4d9;border-radius:8px;padding:10px;font-size:.9rem}
   </style>
 </head>
 <body>
@@ -58,12 +63,36 @@
   <button id="refresh" type="button" hidden>Refresh job status</button>
   <section id="videoPromptSection" hidden>
     <h2>Video prompts — free preview</h2>
-    <p class="note">Choose a scene to see its exact personalised prompt and commentary before any paid video generation. These buttons do not call Google video models. Video generation is not implemented yet; concurrency is configured as 1.</p>
+    <p class="note">Choose a scene to see its exact personalised prompt and commentary before any paid video generation. These buttons do not call Google video models. Real Google video generation remains disabled. Stage 4 supports free mock scene runs; concurrency is 1.</p>
     <button id="videoScene1" type="button">Preview Scene 1 — Run-up</button>
     <button id="videoScene2" type="button">Preview Scene 2 — Winning kick</button>
     <button id="videoScene3" type="button">Preview Scene 3 — Celebration</button>
     <p id="videoPromptStatus" role="status" aria-live="polite"></p>
     <pre id="videoPromptText" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.9rem"></pre>
+  </section>
+  <section id="videoTestSection" hidden>
+    <h2>Scene video tests — MOCK ONLY</h2>
+    <p class="mock-note">These buttons run the actual AWS video workflow, but <strong>do not call Google or create MP4s</strong>. Each requires its matching completed reference image. Only one mock scene can run at a time. A playable video will appear here only after real video generation is implemented and approved.</p>
+    <div class="video-scene" id="videoPanel1">
+      <strong>Scene 1 — Run-up</strong>
+      <button type="button" id="generateVideo1" disabled>Run Scene 1 mock video workflow</button>
+      <p id="videoStatus1" class="video-state" role="status">Generate reference image 1 first.</p>
+      <div id="videoPlayer1"></div>
+    </div>
+    <div class="video-scene" id="videoPanel2">
+      <strong>Scene 2 — Winning kick</strong>
+      <button type="button" id="generateVideo2" disabled>Run Scene 2 mock video workflow</button>
+      <p id="videoStatus2" class="video-state" role="status">Generate reference image 2 first.</p>
+      <div id="videoPlayer2"></div>
+    </div>
+    <div class="video-scene" id="videoPanel3">
+      <strong>Scene 3 — Celebration</strong>
+      <button type="button" id="generateVideo3" disabled>Run Scene 3 mock video workflow</button>
+      <p id="videoStatus3" class="video-state" role="status">Generate reference image 3 first.</p>
+      <div id="videoPlayer3"></div>
+    </div>
+    <button id="assembleFinal" type="button" disabled>Assemble Final Video (Stage 5 — not yet available)</button>
+    <p id="videoTestMessage" class="poll-status" role="status" aria-live="polite"></p>
   </section>
   <h2>Job status</h2>
   <p id="status" role="status">Loading backend configuration…</p>
@@ -86,6 +115,8 @@
   const videoPromptSection = document.getElementById('videoPromptSection');
   const videoPromptStatus = document.getElementById('videoPromptStatus');
   const videoPromptText = document.getElementById('videoPromptText');
+  const videoTestSection = document.getElementById('videoTestSection');
+  const videoTestMessage = document.getElementById('videoTestMessage');
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
   let previewUrl, currentJobId, currentPhase = 'Initialising';
   const POLL_INTERVAL_MS = 5000;
@@ -96,6 +127,10 @@
   let refreshInFlight = false;
   let pollingEnabled = false;
   let pollErrors = 0;
+  let videoTimer = null;
+  let videoBusy = false;
+  let lastImageScenes = {};
+  const videoPending = new Set();
 
   function clearPollTimer() {
     if (pollTimer !== null) {
@@ -107,6 +142,85 @@
   function showPollingMessage(message) {
     pollStatus.hidden = !message;
     pollStatus.textContent = message;
+  }
+
+  function stopVideoPoll() {
+    if (videoTimer !== null) {
+      clearTimeout(videoTimer);
+      videoTimer = null;
+    }
+    videoPending.clear();
+  }
+
+  function resetVideoUi() {
+    stopVideoPoll();
+    lastImageScenes = {};
+    videoTestSection.hidden = true;
+    videoTestMessage.textContent = '';
+    for (const n of [1, 2, 3]) {
+      document.getElementById('generateVideo' + n).disabled = true;
+      document.getElementById('videoStatus' + n).textContent = 'Generate reference image ' + n + ' first.';
+      document.getElementById('videoPlayer' + n).replaceChildren();
+    }
+  }
+
+  async function refreshVideos() {
+    if (!currentJobId || videoBusy || document.hidden) return;
+    videoBusy = true;
+    const jobId = currentJobId;
+    try {
+      const data = await api('/jobs/' + jobId + '/videos');
+      if (jobId !== currentJobId) return;
+      let active = false;
+      for (const n of [1, 2, 3]) {
+        const sceneId = 'scene' + n;
+        const item = data.videos?.[sceneId] || {};
+        const state = item.status || 'NOT_REQUESTED';
+        const imageReady = lastImageScenes[sceneId]?.status === 'COMPLETED';
+        const button = document.getElementById('generateVideo' + n);
+        const player = document.getElementById('videoPlayer' + n);
+        const statusText = document.getElementById('videoStatus' + n);
+        const pending = videoPending.has(sceneId);
+        button.disabled = !imageReady || state !== 'NOT_REQUESTED' || pending;
+        if (state === 'NOT_REQUESTED') {
+          statusText.textContent = imageReady ? 'Ready for mock workflow (no charge).' : 'Waiting for reference image.';
+        } else {
+          statusText.textContent = state + (item.mock ? ' — mock only, no MP4 created' : '');
+        }
+        if (item.url && state === 'COMPLETED') {
+          if (player.dataset.url !== item.url) {
+            const video = document.createElement('video');
+            video.controls = true;
+            video.preload = 'metadata';
+            video.src = item.url;
+            player.replaceChildren(video);
+            player.dataset.url = item.url;
+          }
+        } else if (state.startsWith('MOCK_')) {
+          player.replaceChildren();
+          delete player.dataset.url;
+        }
+        if (['MOCK_CLAIMED', 'MOCK_GENERATING', 'MOCK_REQUESTED'].includes(state) || pending) {
+          active = true;
+          if (state !== 'NOT_REQUESTED') videoPending.delete(sceneId);
+        }
+      }
+      videoTestMessage.textContent = active
+        ? 'Checking mock video statuses automatically…'
+        : 'Mock workflow ready. No Google video calls enabled.';
+      if (active && !document.hidden) {
+        if (videoTimer !== null) clearTimeout(videoTimer);
+        videoTimer = setTimeout(() => { videoTimer = null; void refreshVideos(); }, 3500);
+      }
+    } catch (error) {
+      if (jobId === currentJobId) videoTestMessage.textContent = 'Video status unavailable: ' + error.message;
+      if (!document.hidden && jobId === currentJobId) {
+        if (videoTimer !== null) clearTimeout(videoTimer);
+        videoTimer = setTimeout(() => { videoTimer = null; void refreshVideos(); }, 10000);
+      }
+    } finally {
+      videoBusy = false;
+    }
   }
 
   function stopPolling() {
@@ -185,6 +299,7 @@
       generateScene1.hidden = true;
       refresh.hidden = true;
       videoPromptSection.hidden = true;
+      resetVideoUi();
       videoPromptText.textContent = '';
       results.replaceChildren();
       showStatus('Selection changed. Upload selfie and create a new job before generating.');
@@ -281,6 +396,8 @@
       pollErrors = 0;
       generateScene1.hidden = pollingEnabled || record.job.status !== 'AWAITING_IMAGE_PIPELINE';
       const scenes = record.job.scenes || {};
+      lastImageScenes = scenes;
+      videoTestSection.hidden = false;
       const statuses = ['scene1', 'scene2', 'scene3'].map(id =>
         id + ': ' + (scenes[id]?.status || 'PENDING') +
         (scenes[id]?.status === 'FAILED' && scenes[id]?.errorCode
@@ -305,6 +422,7 @@
         img.title = item.sceneId;
         results.appendChild(img);
       }
+      void refreshVideos();
       if (TERMINAL_STATUSES.has(record.job.status)) {
         stopPolling();
       } else if (record.job.status === 'GENERATING_IMAGES' && !pollingEnabled) {
@@ -353,7 +471,43 @@
     }
   });
 
-  refresh.addEventListener('click', refreshJob);
+  refresh.addEventListener('click', () => {
+    void refreshJob();
+    void refreshVideos();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && currentJobId) void refreshVideos();
+  });
+  for (const n of [1, 2, 3]) {
+    const button = document.getElementById('generateVideo' + n);
+    button.addEventListener('click', async () => {
+      const jobId = currentJobId;
+      const sceneId = 'scene' + n;
+      if (!jobId || !window.confirm('Run a FREE, MOCK-ONLY AWS workflow for Scene ' + n +
+          '? No Google video will be created or charged.')) return;
+      button.disabled = true;
+      videoPending.add(sceneId);
+      document.getElementById('videoStatus' + n).textContent = 'Starting mock video workflow…';
+      try {
+        const res = await api('/jobs/' + jobId + '/videos/' + sceneId, {
+          method: 'POST',
+          headers: {'Idempotency-Key': crypto.randomUUID()},
+        });
+        if (jobId !== currentJobId) return;
+        document.getElementById('videoStatus' + n).textContent =
+          (res.status || res.video?.status || 'MOCK_REQUESTED') + ' — no paid generation';
+        void refreshVideos();
+      } catch (error) {
+        videoPending.delete(sceneId);
+        if (jobId === currentJobId) {
+          document.getElementById('videoStatus' + n).textContent =
+            'Mock start failed: ' + error.message;
+          void refreshVideos();
+        }
+      }
+    });
+  }
 
   for (const n of [1, 2, 3]) {
     const button = document.getElementById('videoScene' + n);
@@ -399,6 +553,7 @@
     generate.disabled = true;
     // Never leave a previous job's paid action available during another upload.
     stopPolling();
+    resetVideoUi();
     currentJobId = null;
     generateScene1.hidden = true;
     generateScene1.disabled = false;
@@ -435,7 +590,9 @@
       currentJobId = created.job.jobId;
       refresh.hidden = false;
       videoPromptSection.hidden = false;
+      videoTestSection.hidden = false;
       generateScene1.hidden = false;
+      void refreshVideos();
       showStatus('Selfie uploaded and job created.\nJob: ' + currentJobId +
         '\nStatus: ' + created.job.status +
         '\nTap Generate 3 reference images to start paid edits.');
