@@ -64,6 +64,30 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertEqual(result, {"status": "LOCKED", "model": "UNCONFIGURED",
                                   "paidGenerationEnabled": False})
 
+    def test_new_worker_auth_preflight_never_invokes_video_model(self):
+        w = self.worker
+        with patch.object(w, "credentials", return_value="test-token") as auth:
+            result = w.lambda_handler({"op": "auth_check"}, None)
+        self.assertEqual(result, {"status": "AUTHENTICATED", "paidGenerationEnabled": False})
+        auth.assert_called_once()
+        w.S3.put_object.assert_not_called()
+        w.SLOTS.put_item.assert_not_called()
+
+    def test_new_worker_auth_preflight_reports_failure_without_secrets(self):
+        w = self.worker
+        with patch.object(w, "credentials", side_effect=RuntimeError("secret-value")):
+            result = w.lambda_handler({"op": "auth_check"}, None)
+        self.assertEqual(result["status"], "AUTHENTICATION_FAILED")
+        self.assertNotIn("secret-value", str(result))
+        w.S3.put_object.assert_not_called()
+
+    def test_new_worker_auth_preflight_refuses_unlocked_environment(self):
+        w = self.worker
+        w.PAID_ENABLED = "true"
+        w.MODEL = "gemini-omni-1.2-flash"
+        with self.assertRaisesRegex(PermissionError, "PREFLIGHT_REQUIRES_HARD_DISABLED_VIDEO"):
+            w.lambda_handler({"op": "auth_check"}, None)
+
     def test_inline_image_to_video_request_has_exact_fields(self):
         w = self.worker
         result = w.image_payload(b"png-data", "image/png", "Alex kicks the ball", 8)
