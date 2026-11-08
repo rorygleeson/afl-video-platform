@@ -110,6 +110,9 @@ jobs:
           code=response.get('errorCode','')
           if isinstance(code,str) and re.fullmatch(r'GOOGLE_[A-Z_]{3,80}',code):
               print('Safe Google authentication error code:', code)
+          kind=response.get('exceptionType','')
+          if isinstance(kind,str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{1,80}',kind):
+              print('Google auth exception class:',kind)
           if response.get('status')!='AUTHENTICATED' or response.get('paidGenerationEnabled') is not False:
               raise SystemExit('New worker Google IAM binding or WIF access not ready; paid generation remains locked')
           print('Google WIF authenticated successfully. Paid generation remains disabled.')

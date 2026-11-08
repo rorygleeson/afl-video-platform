@@ -89,6 +89,19 @@ def safe_error_code(exc):
         return "GOOGLE_AUTH_TIMEOUT"
     if "connection" in detail or "name resolution" in detail:
         return "GOOGLE_AUTH_NETWORK_ERROR"
+    # Categorise common google-auth and AWS external-account errors without
+    # returning provider messages, signed requests, or credential material.
+    if any(x in detail for x in ("aws security credentials", "aws credentials",
+                                 "aws metadata", "aws region", "169.254.169.254")):
+        return "GOOGLE_AWS_CREDENTIAL_SOURCE_ERROR"
+    if any(x in detail for x in ("invalid_target", "invalid_subject_token",
+                                 "invalid audience", "invalid_request")):
+        return "GOOGLE_FEDERATION_INVALID_REQUEST"
+    if any(x in detail for x in ("unauthorized_client", "invalid_client",
+                                 "invalid_credential", "invalid identity")):
+        return "GOOGLE_FEDERATION_INVALID_CLIENT"
+    if any(x in detail for x in ("certificate verify failed", "ssl:", "tls:")):
+        return "GOOGLE_AUTH_TLS_ERROR"
     return "GOOGLE_AUTH_ERROR"
 
 
@@ -376,7 +389,8 @@ def lambda_handler(event, context):
             code = safe_error_code(exc)
             LOG.warning("Google worker WIF preflight failed: code=%s exception_type=%s",
                         code, type(exc).__name__)
-            return {"status": "AUTHENTICATION_FAILED", "errorCode": code}
+            return {"status": "AUTHENTICATION_FAILED", "errorCode": code,
+                    "exceptionType": type(exc).__name__}
         return {"status": "AUTHENTICATED", "paidGenerationEnabled": False}
     job, scene, request = validate(event)
     if op == "claim":

@@ -89,8 +89,18 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertEqual(result, {
             "status": "AUTHENTICATION_FAILED",
             "errorCode": "GOOGLE_SERVICE_ACCOUNT_IMPERSONATION_DENIED",
+            "exceptionType": "RuntimeError",
         })
         self.assertNotIn("private-token", str(result))
+
+    def test_error_diagnostic_never_returns_provider_message(self):
+        w=self.worker
+        with patch.object(w, "credentials",
+            side_effect=RuntimeError("Could not load AWS security credentials; TOP_SECRET")):
+            result=w.lambda_handler({"op":"auth_check"},None)
+        self.assertEqual(result["errorCode"],"GOOGLE_AWS_CREDENTIAL_SOURCE_ERROR")
+        self.assertEqual(result["exceptionType"],"RuntimeError")
+        self.assertNotIn("TOP_SECRET",str(result))
 
     def test_new_worker_auth_preflight_refuses_unlocked_environment(self):
         w = self.worker
