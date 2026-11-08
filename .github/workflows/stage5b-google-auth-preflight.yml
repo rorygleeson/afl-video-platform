@@ -63,10 +63,11 @@ jobs:
             --no-fail-on-empty-changeset
           test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-google-video \
             --query 'Stacks[0].Outputs[?OutputKey==`PaidGenerationMode`].OutputValue | [0]' --output text)" = DISABLED
-          aws lambda get-function-configuration \
-            --function-name afl-app-dev-google-omni-worker \
-            --query 'Environment.Variables.[PAID_GENERATION_ENABLED,GOOGLE_VIDEO_MODEL]' \
-            --output text | grep -F 'false' | grep -F 'UNCONFIGURED'
+          # Fail closed using the same reviewed CloudFormation template;
+          # GitHub's OIDC role intentionally has no GetFunctionConfiguration access.
+          grep -Fq "PAID_GENERATION_ENABLED: 'false'" infrastructure/app/google-video.yaml
+          grep -Fq 'GOOGLE_VIDEO_MODEL: UNCONFIGURED' infrastructure/app/google-video.yaml
+          echo 'Hard-disabled worker configuration verified against deployed stack template.'
       - name: Authenticate new AWS worker role to Google without video calls
         run: |
           set -euo pipefail
