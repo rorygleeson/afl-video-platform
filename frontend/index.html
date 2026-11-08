@@ -179,6 +179,7 @@
       const data = await api('/jobs/' + jobId + '/videos');
       if (jobId !== currentJobId) return;
       let active = false;
+      let admissionWarning = '';
       for (const n of [1, 2, 3]) {
         const sceneId = 'scene' + n;
         const item = data.videos?.[sceneId] || {};
@@ -192,7 +193,7 @@
             Date.now() - (pendingStarted.get(sceneId) || 0) > 20000) {
           videoPending.delete(sceneId);
           pendingStarted.delete(sceneId);
-          videoTestMessage.textContent = 'Scene ' + n + ' did not claim the slot. Refresh status or check Step Functions before retrying.';
+          admissionWarning = 'Scene ' + n + ' did not claim the slot. You may retry this mock scene.';
         }
         button.disabled = !imageReady || state !== 'NOT_REQUESTED' || videoPending.has(sceneId);
         if (state === 'NOT_REQUESTED') {
@@ -221,9 +222,9 @@
           }
         }
       }
-      videoTestMessage.textContent = active
+      videoTestMessage.textContent = admissionWarning || (active
         ? 'Checking mock video statuses automatically…'
-        : 'Mock workflow ready. No Google video calls enabled.';
+        : 'Mock workflow ready. No Google video calls enabled.');
       if (active && !document.hidden) {
         if (videoTimer !== null) clearTimeout(videoTimer);
         videoTimer = setTimeout(() => { videoTimer = null; void refreshVideos(); }, 3500);
