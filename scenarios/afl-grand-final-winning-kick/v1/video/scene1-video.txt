@@ -1,17 +1,20 @@
-# AFL Grand Final — Scene 1: PRE-KICK RUN-UP
-# Runtime variables replaced by AWS before sending anything to Google:
-# $firstName = customer's first name
-# $lastName = customer's surname
-# $fullName = first + last, used for commentary
-# $teamName = official display name for selected AFL team
-# $guernsey = selected team's visible guernsey design and colours
-# $commentary = the exact spoken commentary for this scene
-# Never display these placeholder names or any generated text on the video.
+# AFL Grand Final — Scene 1: FULL-SPEED FINAL RUN
+# AWS substitutes $fullName, $teamName, $guernsey and $commentary.
+# Generate from the provided PERSONALISED scene-1 reference image, not the unpersonalised master.
 
-START FRAME: Use the already personalised Scene 1 image supplied with this request. The central player is $fullName, playing for $teamName in $guernsey. Preserve the person's exact facial identity, hair, age, body, playing guernsey, ball, pitch, stadium and night lighting. Do not invent a new face or jersey.
+FORMAT AND INTENT: 8 seconds, portrait 9:16, single continuous photorealistic LIVE AFL Grand Final television broadcast shot, normal match speed. A desperate, powerful sprint towards goal, not a slow-motion highlight or sports advertisement.
 
-MOTION: Portrait 9:16. Beginning in the supplied pose, the player runs forward confidently with the AFL football, gearing up for a game-winning kick. Athletic real-time movement, crisp broadcast camera tracking, no slow motion. The ball stays in the hands throughout Scene 1 — no kick yet. No scene cuts, duplicate footballs, altered player identity or extra people.
+EXACT OPENING FRAME AND CONTINUITY: Start in the exact composition of the supplied Scene 1 image: the central athlete is already moving, shown at a close three-quarter angle with a single red oval AFL football held securely against his torso. He is $fullName, playing for $teamName in $guernsey. Preserve his actual face, age, hair, build, uniform, grip and the same packed FLOODLIT NIGHT stadium, grass, shadows and crowd. No change to daytime. Keep the face stable throughout motion.
 
-AUDIO / COMMENTARY: Loud realistic Grand Final crowd. One excited commentator says exactly: "$commentary". Clear, natural sports cadence; keep names pronounced distinctly. No music requirement.
+REAL-TIME ACTION:
+0–1.5s: Continue from the existing moving pose without any standing start. He surges forward instantly with fast leg turnover, firm foot strikes, strong arm/shoulder movement and a realistic forward athletic lean.
+1.5–5.5s: Sustained near-full-speed AFL sprint, visibly covering significant ground. The background moves rapidly relative to him. His knees, feet, upper body and ball-holding arms coordinate naturally. Do not loop a run cycle or leave him jogging on the spot. He is escaping into OPEN SPACE; no tackle, bump or new defender.
+5.5–8s: Maintain speed, look upfield and make a subtle adjustment to the grip for an imminent running drop punt. DO NOT release, bounce, drop or kick the ball in this clip. Finish still carrying it at speed, ready for the next scene.
 
-NO TEXT: No subtitles, on-screen names, new logos, watermarks or titles.
+BROADCAST CAMERA: Start at exactly the reference angle and use a smooth, responsive sidelong/front-quarter tracking shot. Gradually widen just enough to reveal rapid footwork and the ground he covers. Preserve direction of travel, natural broadcast lens perspective and plausible stadium parallax. Background may exhibit natural motion blur; face and football remain legible. No abrupt scene cuts, invented crane/orbit/drone camera moves, extreme zoom or unnatural camera shake.
+
+OPPOSITION AND UNIFORMS: Essendon Bombers are the ONLY opposition team in this scenario. Their uniform is BLACK with a BOLD RED DIAGONAL SASH, consistently worn by every opponent. Scene 1 does NOT require any opponents; do not introduce one in foreground. If distant existing opponents remain in view, they must all be Essendon in that identical black-and-red sash design. No third team, changing colours or mixed opponent guernseys. The main player remains in $guernsey throughout.
+
+AUDIO: Loud believable Grand Final crowd, rapid footfalls and rising urgency. One excited Australian AFL commentator says exactly: "$commentary". Begin early and finish the sentence naturally within 8 seconds; clear names, no overlapped second announcer. Let the crowd continue afterwards. No background music.
+
+NEGATIVE CONSTRAINTS: Absolutely no slow motion, time dilation, floaty/weightless strides, jogging, running in place or prolonged cinematic pauses. No tackle, no kick, no extra ball, no changing face or guernsey, no morphing limbs, no text overlays/subtitles/new sponsor lettering, no fireworks or confetti. Retain the original night lighting and real AFL physical mechanics.
