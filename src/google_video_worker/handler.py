@@ -383,9 +383,11 @@ def poll(job, scene, request):
         raise ContractError("Missing Google interaction ID")
     reply = google_json("GET", BASE + "/" + interaction)
     state = reply.get("status")
-    if state in ("in_progress", "requires_action"):
-        return {"status": "WAITING"}
-    if state in ("failed", "cancelled", "incomplete"):
+    # Google's Interactions API can queue asynchronous jobs before execution.
+    # A queued job is still alive, not a failure or a second billable request.
+    if state in ("queued", "in_progress", "requires_action"):
+        return {"status": "WAITING", "providerStatus": state}
+    if state in ("failed", "cancelled", "incomplete", "budget_exceeded"):
         transition(job, scene, request, "PROCESSING", "FAILED", {"errorCode": "GOOGLE_" + state.upper()})
         return {"status": "FAILED"}
     if state != "completed":
