@@ -135,6 +135,7 @@
       </div>
       <div id="videoPlayer3"></div>
     </div>
+    <p id="nextStageMessage" class="note" hidden>All three mock workflows completed. Next: Stage 5B — one explicitly approved real Scene 1 Google video test. Paid video generation is not enabled yet, and no MP4 files exist. Final assembly remains unavailable until all three real MP4s are ready.</p>
     <button id="assembleFinal" type="button" disabled hidden>Assemble Final Video</button>
     <p id="videoTestMessage" class="poll-status" role="status" aria-live="polite"></p>
   </section>
@@ -213,6 +214,7 @@
     stopVideoPoll();
     lastImageScenes = {};
     mockCompletedScenes.clear();
+    document.getElementById('nextStageMessage').hidden = true;
     videoPromptSection.hidden = true;
     videoTestSection.hidden = true;
     document.getElementById('videoScene2').hidden = true;
@@ -252,6 +254,7 @@
       for (const n of [1,2,3]) {
         if (data.videos?.['scene' + n]?.status === 'MOCK_COMPLETED') mockCompletedScenes.add('scene' + n);
       }
+      document.getElementById('nextStageMessage').hidden = ![1,2,3].every(n => mockCompletedScenes.has('scene' + n));
       for (const n of [1,2,3]) {
         const unlocked = n === 1 || mockCompletedScenes.has('scene' + (n - 1));
         document.getElementById('videoPanel' + n).hidden = !unlocked;
