@@ -10,19 +10,19 @@
       "id": "scene1",
       "template": "scene1-video.txt",
       "durationSeconds": 8,
-      "commentaryTemplate": "$fullName has the ball! $teamName can win the Grand Final!"
+      "commentaryTemplate": "$lastName has it! Ten seconds to go!"
     },
     {
       "id": "scene2",
       "template": "scene2-video.txt",
       "durationSeconds": 8,
-      "commentaryTemplate": "$fullName kicks! It's through! $teamName have won the Grand Final!"
+      "commentaryTemplate": "He goes for goal! What a kick! He's scored!"
     },
     {
       "id": "scene3",
       "template": "scene3-video.txt",
       "durationSeconds": 10,
-      "commentaryTemplate": "$teamName are the premiers! $fullName has delivered the winning kick! $teamName are the AFL Grand Final champions!"
+      "commentaryTemplate": "$lastName wins it for $teamName! They're the premiers!"
     }
   ],
   "maxPaidScenesPerRequest": 1,
