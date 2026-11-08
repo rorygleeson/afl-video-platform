@@ -411,6 +411,29 @@ def finalize(job, scene, request):
     return release(job, scene, request)
 
 
+def operator_slot_status():
+    """Read-only concurrency ownership check; no Google or billable operations."""
+    record = SLOTS.get_item(Key={"slotId": SLOT}, ConsistentRead=True).get("Item")
+    if not record:
+        return {"status": "FREE"}
+    job_id = record.get("jobId", "")
+    scene = record.get("sceneId", "")
+    owner = record.get("owner", "")
+    info = {}
+    if isinstance(job_id, str) and JOB_RE.fullmatch(job_id):
+        job = get_job(job_id)
+        info = (job.get("realVideos", {}).get(scene, {}) or
+                job.get("videos", {}).get(scene, {}))
+    return {
+        "status": "OCCUPIED",
+        "jobId": job_id, "sceneId": scene, "owner": owner,
+        "videoStatus": info.get("status", "NO_VIDEO_RECORD"),
+        "providerInteractionKnown": bool(info.get("interactionId")),
+        "providerInteractionId": info.get("interactionId", ""),
+        "createdAt": info.get("createdAt", ""),
+    }
+
+
 def lambda_handler(event, context):
     op = event.get("op")
     # Gate is first in state machine; also independently enforce this for all
@@ -418,6 +441,8 @@ def lambda_handler(event, context):
     if op == "gate":
         require_paid_unlock(event.get("jobId"), event.get("sceneId"))
         return {"status": "ENABLED"}
+    if op == "operator_slot_status":
+        return operator_slot_status()
     if op == "contract_health":
         return {"status": "LOCKED" if PAID_ENABLED != "true" else "CONFIGURED",
                 "model": MODEL, "paidGenerationEnabled": PAID_ENABLED == "true"}
