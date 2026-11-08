@@ -19,6 +19,12 @@ Parameters:
   ScenarioAssetBucketName:
     Type: String
     Default: afl-video-bootstrap-artifactbucket-xiuriidgyft4
+  PaidVideoEnabled:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['false', 'true']
+Conditions:
+  PaidVideoOn: !Equals [!Ref PaidVideoEnabled, 'true']
 Resources:
   GoogleWorkerRole:
     Type: AWS::IAM::Role
@@ -78,9 +84,8 @@ Resources:
         S3Key: !Ref GoogleWorkerArtifactKey
       Environment:
         Variables:
-          PAID_GENERATION_ENABLED: 'false'
-          GOOGLE_VIDEO_MODEL: UNCONFIGURED
-          APPROVED_VIDEO_JOB_ID: ''
+          PAID_GENERATION_ENABLED: !If [PaidVideoOn, 'true', 'false']
+          GOOGLE_VIDEO_MODEL: !If [PaidVideoOn, gemini-omni-1.2-flash, UNCONFIGURED]
           GOOGLE_PROJECT_ID: afl-video-platform
           GOOGLE_PROJECT_NUMBER: '345956846110'
           GOOGLE_WIF_POOL_ID: afl-video-aws
@@ -149,4 +154,4 @@ Outputs:
   GoogleStateMachineArn:
     Value: !Ref GoogleStateMachine
   PaidGenerationMode:
-    Value: DISABLED
+    Value: !If [PaidVideoOn, ENABLED, DISABLED]
