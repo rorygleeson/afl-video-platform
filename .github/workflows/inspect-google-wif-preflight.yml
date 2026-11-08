@@ -22,3 +22,8 @@ jobs:
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name afl-app-dev-google-wif-preflight --query 'Stacks[0].{Status:StackStatus,Reason:StackStatusReason,Outputs:Outputs}' --output json || true
           aws cloudformation describe-stack-events --stack-name afl-app-dev-google-wif-preflight --query 'StackEvents[0:12].{Time:Timestamp,Resource:LogicalResourceId,Status:ResourceStatus,Reason:ResourceStatusReason}' --output json || true
+          echo 'V2 stack:'
+          aws cloudformation describe-stacks --stack-name afl-app-dev-google-wif-preflight-v2 --query 'Stacks[0].{Status:StackStatus,Reason:StackStatusReason,Outputs:Outputs}' --output json || true
+          aws cloudformation describe-stack-events --stack-name afl-app-dev-google-wif-preflight-v2 --query 'StackEvents[0:12].{Resource:LogicalResourceId,Status:ResourceStatus,Reason:ResourceStatusReason}' --output json || true
+          echo 'Recent Lambda diagnostic events (may be forbidden by restricted deploy role):'
+          aws logs describe-log-streams --log-group-name /aws/lambda/afl-app-dev-google-omni-preflight-v2 --order-by LastEventTime --descending --max-items 1 --query 'logStreams[0].logStreamName' --output text || true
