@@ -81,6 +81,17 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertNotIn("secret-value", str(result))
         w.S3.put_object.assert_not_called()
 
+    def test_new_worker_auth_preflight_categorises_google_iam_without_leaking_details(self):
+        w = self.worker
+        with patch.object(w, "credentials",
+                          side_effect=RuntimeError("iamcredentials.googleapis.com PERMISSION_DENIED private-token")):
+            result = w.lambda_handler({"op": "auth_check"}, None)
+        self.assertEqual(result, {
+            "status": "AUTHENTICATION_FAILED",
+            "errorCode": "GOOGLE_SERVICE_ACCOUNT_IMPERSONATION_DENIED",
+        })
+        self.assertNotIn("private-token", str(result))
+
     def test_new_worker_auth_preflight_refuses_unlocked_environment(self):
         w = self.worker
         w.PAID_ENABLED = "true"
