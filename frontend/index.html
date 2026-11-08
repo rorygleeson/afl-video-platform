@@ -93,6 +93,7 @@
       <strong>Scene 1 — Run-up</strong>
       <button id="videoScene1" type="button">Preview Scene 1 prompt (free)</button>
       <button id="scene1Preflight" type="button">Test Scene 1 readiness (free)</button>
+      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 8 seconds)</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite"></p>
       <details id="videoPromptDetails1" class="scene-prompt" hidden>
         <summary>Scene 1 prompt — show/hide</summary>
@@ -190,6 +191,7 @@
     videoTestSection.hidden = true;
     videoTestMessage.textContent = '';
     document.getElementById('scene1PreflightStatus').textContent = '';
+    document.getElementById('generateRealScene1').hidden = true;
     videoPromptStatus.textContent = '';
     videoPromptText.textContent = '';
     for (const n of [1, 2, 3]) {
@@ -212,6 +214,10 @@
       // Read-only: never call POST /videos/sceneN, which remains a mock-only API.
       const data = await api('/jobs/' + jobId + '/videos');
       if (jobId !== currentJobId) return;
+      const realScene = data.videos?.scene1 || {};
+      document.getElementById('generateRealScene1').hidden = !(
+        data.scene1PaidApproved === true && realScene.mode !== 'REAL' &&
+        realScene.status !== 'COMPLETED');
       for (const n of [1, 2, 3]) {
         const item = data.videos?.['scene' + n] || {};
         const player = document.getElementById('videoPlayer' + n);
@@ -584,6 +590,32 @@
       }
     });
   }
+
+  document.getElementById('generateRealScene1').addEventListener('click', async () => {
+    if (!currentJobId || videoTestSection.hidden) return;
+    const jobId = currentJobId;
+    const button = document.getElementById('generateRealScene1');
+    // An explicit human confirmation is required even after server-side approval.
+    if (!window.confirm('This will request one real 8-second Scene 1 video and incur a Google charge. Continue?')) return;
+    button.disabled = true;
+    button.hidden = true;
+    videoTestMessage.textContent = 'Submitting approved Scene 1 request…';
+    try {
+      const request = await api('/jobs/' + jobId + '/real-videos/scene1', {
+        method: 'POST',
+        headers: {'Idempotency-Key': crypto.randomUUID()},
+      });
+      if (jobId !== currentJobId) return;
+      videoTestMessage.textContent = 'Real Scene 1 request accepted (' + request.status +
+        '). No other video scenes were requested.';
+      void refreshVideos();
+    } catch (error) {
+      if (jobId === currentJobId) videoTestMessage.textContent = 'Real Scene 1 not started: ' + error.message;
+      // Do not automatically retry an uncertain request or show the button again.
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   document.getElementById('scene1Preflight').addEventListener('click', async () => {
     if (!currentJobId || videoTestSection.hidden) return;
