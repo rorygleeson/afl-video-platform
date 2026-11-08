@@ -1,0 +1,45 @@
+name: Diagnose Google WIF Lambda failure with temporary scoped logs access
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-google-wif-logs.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Create temporary scoped logs-reader IAM policy via CloudFormation
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy --stack-name afl-google-preflight-temp-log-reader --template-file infrastructure/app/google-preflight-temporary-logs.yaml --capabilities CAPABILITY_NAMED_IAM --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role
+      - name: Read only diagnostic messages from the two probe Lambdas
+        run: |
+          set -euo pipefail
+          for lg in /aws/lambda/afl-app-dev-google-omni-preflight-v2 /aws/lambda/afl-app-dev-google-omni-preflight; do
+            echo "LOG GROUP $lg"
+            for attempt in 1 2 3; do
+              if aws logs filter-log-events --log-group-name "$lg" --limit 25 --query 'events[].message' --output text > /tmp/probe-events.txt 2>/tmp/probe-error.txt; then
+                grep -Ei 'START|END|REPORT|ERROR|WARNING|WIF|AuthStatus|ErrorCode|Runtime|Task timed out|AccessDenied|Unable to import' /tmp/probe-events.txt | cut -c1-350 || true
+                break
+              fi
+              echo "log read attempt $attempt unavailable"
+              if [ "$attempt" = 3 ]; then cat /tmp/probe-error.txt | cut -c1-300; fi
+              sleep 3
+            done
+          done
+      - name: Remove temporary diagnostic IAM policy stack
+        if: always()
+        run: |
+          set +e
+          aws cloudformation delete-stack --stack-name afl-google-preflight-temp-log-reader
+          aws cloudformation wait stack-delete-complete --stack-name afl-google-preflight-temp-log-reader
+          aws cloudformation describe-stacks --stack-name afl-google-preflight-temp-log-reader >/dev/null 2>&1 && exit 1 || exit 0
