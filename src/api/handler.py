@@ -277,6 +277,23 @@ def video_scene_public(job, scene_id):
     return result
 
 
+def paid_scene_in_progress(job, requested_scene=None):
+    """Prevent reserving a second paid scene while any other is nonterminal.
+
+    An approval with no worker result is ambiguous; fail closed rather than
+    issue another potentially chargeable request.
+    """
+    terminal = {"COMPLETED", "FAILED"}
+    approvals = job.get("paidVideoApprovals", {})
+    real = job.get("realVideos", {})
+    for scene in VIDEO_SCENES:
+        if scene == requested_scene:
+            continue
+        if approvals.get(scene) and real.get(scene, {}).get("status") not in terminal:
+            return True
+    return False
+
+
 def video_status(job_id, scene_id=None):
     job = get_job(job_id)
     if not job:
@@ -286,7 +303,7 @@ def video_status(job_id, scene_id=None):
     return response(200, {"jobId": job_id, "videoGenerationMode": VIDEO_MODE,
                           "realVideoMode": REAL_VIDEO_MODE,
                           "scene1PaidApproved": REAL_VIDEO_MODE == "ENABLED",
-                          "paidScenes": {scene: REAL_VIDEO_MODE == "ENABLED" and not job.get("paidVideoApprovals", {}).get(scene) and not job.get("realVideos", {}).get(scene) for scene in VIDEO_SCENES},
+                          "paidScenes": {scene: REAL_VIDEO_MODE == "ENABLED" and not paid_scene_in_progress(job, scene) and not job.get("paidVideoApprovals", {}).get(scene) and not job.get("realVideos", {}).get(scene) for scene in VIDEO_SCENES},
                           "videos": {scene: video_scene_public(job, scene) for scene in VIDEO_SCENES},
                           "assembly": {"status": "NOT_IMPLEMENTED", "enabled": False}})
 
@@ -372,6 +389,8 @@ def start_real_scene(job_id, scene_id, event):
         return response(404, {"error": "Job not found"})
     if job.get("paidVideoApprovals", {}).get(scene_id) or job.get("realVideos", {}).get(scene_id):
         return response(409, {"error": "This scene already has a paid request; check status, do not retry"})
+    if paid_scene_in_progress(job, scene_id):
+        return response(409, {"error": "A different paid scene is pending or generating. Only one scene may run at a time."})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
            or not job.get("scenes", {}).get(scene, {}).get("resultKey")
            for scene in VIDEO_SCENES):
