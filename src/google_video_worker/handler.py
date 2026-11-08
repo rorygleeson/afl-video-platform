@@ -316,16 +316,24 @@ def submit(job, scene, request):
     record = owner_record(job, scene, request)
     if record.get("status") != "PREPARED":
         raise ContractError("Submission cannot be retried or started from this state")
-    rendered = render_scene(S3, PROMPT_BUCKET, get_job(job), scene, allow_paid=True)
-    # Existing S3 config has videoGenerationEnabled=false by design; the
-    # initial paid approval must explicitly replace this configuration too.
-    if rendered.get("videoGenerationEnabled") is not True:
-        raise PermissionError("SCENARIO_VIDEO_GENERATION_DISABLED")
-    key = record["sourceImageKey"]
-    image = S3.get_object(Bucket=BUCKET, Key=key)
-    content_type = image.get("ContentType", "")
-    blob = image["Body"].read(MAX_IMAGE_BYTES + 1)
-    body = image_payload(blob, content_type, rendered["prompt"], rendered["durationSeconds"])
+    # All local validation happens BEFORE any billable POST. Failures here
+    # are known not to be charged and must not occupy the global slot forever.
+    try:
+        rendered = render_scene(S3, PROMPT_BUCKET, get_job(job), scene, allow_paid=True)
+        if rendered.get("videoGenerationEnabled") is not True:
+            raise PermissionError("SCENARIO_VIDEO_GENERATION_DISABLED")
+        key = record["sourceImageKey"]
+        image = S3.get_object(Bucket=BUCKET, Key=key)
+        content_type = image.get("ContentType", "")
+        blob = image["Body"].read(MAX_IMAGE_BYTES + 1)
+        body = image_payload(blob, content_type, rendered["prompt"], rendered["durationSeconds"])
+    except Exception:
+        try:
+            transition(job, scene, request, "PREPARED", "FAILED",
+                       {"errorCode": "PRE_SUBMISSION_VALIDATION_FAILED"})
+        finally:
+            release(job, scene, request)
+        raise
     # Set ambiguous state BEFORE issuing the billable POST. A Lambda timeout
     # must NEVER cause Step Functions to resubmit this operation.
     transition(job, scene, request, "PREPARED", "SUBMISSION_UNKNOWN")
