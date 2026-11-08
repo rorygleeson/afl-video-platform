@@ -56,7 +56,7 @@ jobs:
           python - <<'PY'
           import json
           data=json.load(open('/tmp/wif-result.json'))
-          if isinstance(data, dict) and data.get('errorType'):
+          if isinstance(data, dict) and not data.get('status') and data.get('errorType'):
               print('Lambda runtime error type:', str(data['errorType'])[:100])
               message=str(data.get('errorMessage',''))
               # Print only safe import/runtime errors, not Google service exception contents.
