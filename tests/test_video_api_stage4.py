@@ -67,6 +67,40 @@ class VideoStage4ApiTests(unittest.TestCase):
         self.assertEqual(body["status"], "PAID_GENERATION_DISABLED")
         self.states.start_execution.assert_not_called()
 
+    def test_dynamic_paid_scene_submissions_require_exact_consent(self):
+        self.api.REAL_VIDEO_MODE = "ENABLED"
+        self.api.GOOGLE_STATE_MACHINE_ARN = "arn:aws:states:ap-southeast-2:123456789012:stateMachine:real"
+        for n in (1, 2, 3):
+            scene = "scene" + str(n)
+            event = {"httpMethod": "POST",
+                     "path": "/jobs/" + self.jobid + "/real-videos/" + scene,
+                     "headers": {"Idempotency-Key": "test-idempotency-key-1234"},
+                     "body": json.dumps({"confirmPaidScene": scene})}
+            self.states.reset_mock()
+            self.ddb.reset_mock()
+            self.s3.head_object.return_value = {"ContentLength": 100}
+            status, body = self.api.lambda_handler(event, None)["statusCode"], None
+            self.assertEqual(status, 202)
+            self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
+                             "real-" + self.jobid + "-" + scene)
+            self.assertEqual(self.states.start_execution.call_args.kwargs["input"],
+                             json.dumps({"jobId": self.jobid, "sceneId": scene}, separators=(",", ":")))
+            self.assertTrue(any("paidVideoApprovals" in c.kwargs.get("UpdateExpression", "")
+                                for c in self.ddb.update_item.call_args_list))
+            event["body"] = "{}"
+            self.states.reset_mock()
+            self.assertEqual(self.api.lambda_handler(event, None)["statusCode"], 400)
+            self.states.start_execution.assert_not_called()
+        self.api.REAL_VIDEO_MODE = "DISABLED"
+
+    def test_approval_marks_real_request_pending_not_mock_completed(self):
+        self.job["videos"] = {"scene1": {"status": "MOCK_COMPLETED"}}
+        self.job["paidVideoApprovals"] = {"scene1": {"status": "REQUESTED"}}
+        result = self.api.video_scene_public(self.job, "scene1")
+        self.assertEqual(result["mode"], "REAL")
+        self.assertEqual(result["status"], "REQUESTED")
+        self.assertNotIn("url", result)
+
     def test_mock_results_cannot_masquerade_as_real_mp4(self):
         self.job["videos"] = {"scene1": {"status": "MOCK_COMPLETED"}}
         self.job["realVideos"] = {"scene1": {"status": "PROCESSING", "requestId": "real-1"}}
