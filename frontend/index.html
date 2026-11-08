@@ -85,9 +85,6 @@
   <button id="generateScene1" type="button" hidden>Generate 3 reference images with Replicate (paid API)</button>
   <button id="refresh" type="button" hidden aria-hidden="true" tabindex="-1" style="display:none">Refresh job status</button>
   <button id="resumeLast" type="button" hidden>Resume your last job</button>
-  <label for="resumeJobId">Restore an existing job (no generation or charge)</label>
-  <input id="resumeJobId" type="text" maxlength="32" placeholder="Paste your 32-character job ID" autocomplete="off" autocapitalize="off" spellcheck="false">
-  <button id="resumeById" type="button" class="quiet-button">Restore existing job</button>
   <section id="jobProgressSection">
     <h2>Reference images</h2>
     <div id="jobIdPanel" hidden>
@@ -177,8 +174,6 @@
   const googleStatus = document.getElementById('googleStatus');
   const refresh = document.getElementById('refresh');
   const resumeLast = document.getElementById('resumeLast');
-  const resumeJobId = document.getElementById('resumeJobId');
-  const resumeById = document.getElementById('resumeById');
   const generateScene1 = document.getElementById('generateScene1');
   const status = document.getElementById('status');
   const jobIdPanel = document.getElementById('jobIdPanel');
@@ -202,13 +197,8 @@
   let refreshInFlight = false;
   let pollingEnabled = false;
   let pollErrors = 0;
-  // Keep only the nonsensitive job identifier; never store the API key.
-  const savedJob = window.localStorage?.getItem('aflLastJobId') ||
-    window.sessionStorage?.getItem('aflLastJobId') || '';
-  if (/^[0-9a-f]{32}$/.test(savedJob)) {
-    resumeLast.hidden = false;
-    resumeJobId.value = savedJob;
-  }
+  const savedJob = window.sessionStorage?.getItem('aflLastJobId') || '';
+  if (/^[0-9a-f]{32}$/.test(savedJob)) resumeLast.hidden = false;
   let videoTimer = null;
   let videoBusy = false;
   let videoRefreshRequested = false;
@@ -534,8 +524,7 @@
       generate.hidden = false;
       generateScene1.hidden = true;
       refresh.hidden = true;
-      // Do not discard a completed job's recovery pointer when editing inputs.
-      // Only the current on-screen selection is cleared.
+      window.sessionStorage?.removeItem('aflLastJobId');
       resumeLast.hidden = true;
       videoPromptSection.hidden = true;
       resetVideoUi();
@@ -750,48 +739,32 @@
     }
   });
 
-  async function restoreExistingJob(jobId) {
+  resumeLast.addEventListener('click', async () => {
+    const jobId = window.sessionStorage?.getItem('aflLastJobId') || '';
     if (!/^[0-9a-f]{32}$/.test(jobId)) {
-      showStatus('Enter a valid 32-character job ID to restore.');
+      resumeLast.hidden = true;
       return;
     }
     resumeLast.disabled = true;
-    resumeById.disabled = true;
     try {
-      // Read-only recovery. Never call POST or regenerate images/videos.
       const found = await api('/jobs/' + jobId);
-      if (!found.job || found.job.jobId !== jobId)
-        throw new Error('Saved job is unavailable.');
-      stopPolling();
-      resetVideoUi();
+      if (!found.job || found.job.jobId !== jobId) throw new Error('Saved job is unavailable.');
       currentJobId = jobId;
-      window.sessionStorage?.setItem('aflLastJobId', jobId);
-      window.localStorage?.setItem('aflLastJobId', jobId);
-      resumeJobId.value = jobId;
       syncJobIdPanel();
       generate.hidden = true;
-      generateScene1.hidden = true;
       videoPromptSection.hidden = true;
       videoTestSection.hidden = true;
       refresh.hidden = true;
       resumeLast.hidden = true;
       results.replaceChildren();
-      showStatus('Restoring existing job. No paid generation.');
-      await refreshJob();
+      showStatus('Restoring previously created job…');
+      void refreshJob();
     } catch (error) {
-      showStatus('Could not restore job: ' + error.message +
-        '. Your original job has not been deleted.');
+      generate.hidden = false;
+      showStatus('Could not resume job: ' + error.message);
     } finally {
       resumeLast.disabled = false;
-      resumeById.disabled = false;
     }
-  }
-
-  resumeLast.addEventListener('click', () => {
-    void restoreExistingJob(savedJob);
-  });
-  resumeById.addEventListener('click', () => {
-    void restoreExistingJob(resumeJobId.value.trim().toLowerCase());
   });
 
   refresh.addEventListener('click', () => {
@@ -983,8 +956,6 @@
       results.replaceChildren();
       generate.hidden = true;
       window.sessionStorage?.setItem('aflLastJobId', currentJobId);
-      window.localStorage?.setItem('aflLastJobId', currentJobId);
-      resumeJobId.value = currentJobId;
       resumeLast.hidden = true;
       refresh.hidden = true;
       videoPromptSection.hidden = true;
