@@ -366,6 +366,35 @@
             player.replaceChildren(video);
             player.dataset.url = item.url;
           }
+          // Native video-menu downloads can use a cached, expired S3 URL.
+          // Always fetch a fresh, attachment-signed URL when a user downloads.
+          if (!player.querySelector('.scene-download')) {
+            const download = document.createElement('button');
+            download.type = 'button';
+            download.className = 'scene-download quiet-button';
+            download.textContent = 'Download Scene ' + n + ' MP4';
+            download.addEventListener('click', async () => {
+              const requestedJob = currentJobId;
+              download.disabled = true;
+              download.textContent = 'Preparing fresh download link…';
+              try {
+                const latest = await api('/jobs/' + requestedJob + '/videos');
+                if (currentJobId !== requestedJob) return;
+                const current = latest.videos?.['scene' + n] || {};
+                if (current.status !== 'COMPLETED' || !current.downloadUrl)
+                  throw new Error('Download link unavailable. Please check deployment.');
+                // Content-Disposition=attachment makes the browser download,
+                // rather than replacing this page with a video.
+                window.location.assign(current.downloadUrl);
+              } catch (error) {
+                videoTestMessage.textContent = 'Scene ' + n + ' download failed: ' + error.message;
+              } finally {
+                download.disabled = false;
+                download.textContent = 'Download Scene ' + n + ' MP4';
+              }
+            });
+            player.appendChild(download);
+          }
         } else {
           // Never present mock JSON as a real MP4, but show genuine progress.
           state.textContent = item.mode === 'REAL'
