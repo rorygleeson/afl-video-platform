@@ -36,6 +36,10 @@
     .scene-prompt summary{cursor:pointer;font-weight:650;color:#1261a0}
     .scene-prompt pre{max-height:350px;overflow-y:auto}
     .video-result{margin-top:12px;padding:10px;border-top:1px solid #d4dce5}
+    .video-scene .quiet-button{background:transparent;border:1px solid #cbd5df;color:#1261a0;font-weight:600;min-height:40px;margin-top:4px}
+    #videoPanel1{padding:16px}
+    #videoPanel1 .video-state{line-height:1.45}
+    #videoPanel1 .scene-prompt pre{max-height:230px}
 
   </style>
 </head>
@@ -81,33 +85,26 @@
     <div id="results" aria-label="Reference images"></div>
   </section>
   <section id="videoPromptSection" hidden>
-    <h2>Video scene prompts</h2>
-    <p class="note">Preview each personalised S3 prompt below. Mock testing is complete and has been removed from this page. Real Google video generation is not enabled yet.</p>
     <p id="videoPromptStatus" hidden></p>
     <pre id="videoPromptText" hidden></pre>
   </section>
   <section id="videoTestSection" hidden>
-    <h2>Video creation — step by step</h2>
-    <p class="note" id="realVideoGate"><strong>Where we are:</strong> Google sign-in has passed. The free checks below prepare your existing reference images for video. <strong>No real MP4 has been made.</strong> Paid video stays locked until we approve one specific job.</p>
+    <h2 style="margin-bottom:6px">Create your videos</h2>
+    <p class="poll-status" id="realVideoGate">Reference images are ready. Check Scene 1 before creating an MP4.</p>
     <div class="video-scene" id="videoPanel1">
-      <strong>Scene 1 — Run-up (8 seconds)</strong>
-      <p><strong>Step 1 — Review the instructions</strong></p>
-      <p class="note">See the exact personalised prompt and commentary we will send to Google. This only reads text from S3 — it creates nothing.</p>
-      <button id="videoScene1" type="button">Preview Scene 1 prompt (free)</button>
-      <p><strong>Step 2 — Check everything is ready</strong></p>
-      <p class="note">AWS reads the already-created Scene 1 image and checks its size, format and the video request. <strong>No Google video call.</strong></p>
-      <button id="scene1Preflight" type="button">Test Scene 1 readiness (free)</button>
+      <strong>Scene 1 · Run-up · 8 seconds</strong>
+      <p class="poll-status" style="margin:6px 0 12px">Check your existing image and video instructions. This is free.</p>
+      <button id="scene1Preflight" type="button">Check Scene 1 (free)</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite"></p>
-      <p><strong>Step 3 — Make the real MP4</strong></p>
-      <p class="note">This is the only step that uses paid Google video generation. It remains locked until we explicitly approve a single job and enable billing.</p>
-      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 8 seconds)</button>
-      <p id="scene1PaidStatus" class="video-state" role="status">Locked — no paid Google video generation authorised.</p>
+      <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
+      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid)</button>
+      <button id="videoScene1" type="button" class="quiet-button">View exact video prompt</button>
       <details id="videoPromptDetails1" class="scene-prompt" hidden>
-        <summary>Scene 1 prompt — show/hide</summary>
+        <summary>Video prompt and commentary</summary>
         <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
         <pre id="videoPromptText1" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
       </details>
-      <p id="videoStatus1" class="video-state" role="status">Real video not generated.</p>
+      <p id="videoStatus1" class="video-state" role="status" hidden>Real video not generated.</p>
       <div id="videoPlayer1"></div>
     </div>
     <div class="video-scene" id="videoPanel2">
@@ -200,7 +197,7 @@
     videoTestSection.hidden = true;
     videoTestMessage.textContent = '';
     document.getElementById('scene1PreflightStatus').textContent = '';
-    document.getElementById('scene1PaidStatus').textContent = 'Locked — no paid Google video generation authorised.';
+    document.getElementById('scene1PaidStatus').textContent = 'MP4 generation: locked (not charged)';
     document.getElementById('generateRealScene1').hidden = true;
     videoPromptStatus.textContent = '';
     videoPromptText.textContent = '';
@@ -227,8 +224,8 @@
       const realScene = data.videos?.scene1 || {};
       document.getElementById('scene1PaidStatus').textContent =
         data.scene1PaidApproved === true
-          ? 'One paid Scene 1 request is authorised for this job. Generating will incur a charge.'
-          : 'Locked — no paid Google video generation authorised.';
+          ? 'MP4 generation: approved for this job (paid)'
+          : 'MP4 generation: locked (not charged)';
       document.getElementById('generateRealScene1').hidden = !(
         data.scene1PaidApproved === true && !realVideoTracking &&
         realScene.mode !== 'REAL' && realScene.status !== 'COMPLETED');
@@ -661,9 +658,10 @@
       if (result.status !== 'READY' || result.googleSubmissionMade !== false) {
         throw new Error('Readiness check did not complete safely');
       }
-      status.textContent = 'PASS — Scene 1 image checked (' +
+      status.textContent = '✓ READY — Image (' +
         (result.imageBytes / 1048576).toFixed(2) +
-        ' MB); personalised 8-second prompt and Google request validated. No video generated or charged. Next: the paid MP4 step is still locked.';
+        ' MB) and video prompt checked. No charge.';
+      button.textContent = 'Recheck Scene 1 (free)';
     } catch (error) {
       if (jobId === currentJobId) status.textContent = 'Preflight failed: ' + error.message;
     } finally {
