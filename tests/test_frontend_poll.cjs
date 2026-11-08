@@ -29,7 +29,7 @@ function setup(options = {}) {
     };
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
-                      'generateScene1', 'resumeLast', 'status', 'pollStatus', 'key', 'team', 'scenario',
+                      'generateScene1', 'resumeLast', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
                       'testGoogle', 'googleStatus', 'firstName', 'lastName',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
@@ -96,6 +96,12 @@ function setup(options = {}) {
         status: 'AUTHENTICATED', videoGenerationEnabled: false,
       }; },
     };
+    if (url.endsWith('/scenarios')) {
+      if (options.forbidGateway) return {
+        ok:false, status:403, async json(){return {message:'Forbidden'};},
+      };
+      return {ok:true, status:200, async json(){return {scenarios:['afl-grand-final-winning-kick']};}};
+    }
     if (url.endsWith('/uploads')) return {
       ok: true, async json() { return {
         uploadKey: 'uploads/aaa.png',
@@ -528,4 +534,27 @@ test('uncertain Scene 1 submission locks Scenes 2 and 3', async () => {
   assert.equal(h.els.videoPanel2.hidden, true);
   assert.equal(h.els.videoPanel3.hidden, true);
   assert.match(h.els.scene1PaidStatus.textContent,/do not retry/i);
+});
+
+test('upload checks API access automatically and preserves any existing job on 403', async () => {
+  const h = setup({forbidGateway:true});
+  await h.els.generate.listeners.click();
+  assert.match(h.els.status.textContent, /API Gateway refused access \(403\)/);
+  assert.match(h.els.apiConnectionStatus.textContent, /API access denied/);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/scenarios')).length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/uploads')).length, 0,
+    '403 must be caught before presigned upload is requested');
+  assert.equal(h.calls.filter(c => c.url === 'https://s3.example.com/upload').length, 0);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/jobs') && c.opts.method==='POST').length,0);
+  assert.equal(h.els.generate.disabled, false);
+});
+
+test('valid API key is checked before initiating signed selfie upload', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  const calls = h.calls.map(c => c.url);
+  assert.ok(calls.indexOf('https://api.example.com/scenarios') <
+            calls.indexOf('https://api.example.com/uploads'));
+  assert.match(h.els.apiConnectionStatus.textContent, /API connected/);
+  assert.equal(h.els.jobIdPanel.hidden, false);
 });
