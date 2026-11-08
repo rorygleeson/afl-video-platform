@@ -36,6 +36,7 @@ PROMPT_BUCKET = os.environ["SCENARIO_ASSET_BUCKET"]
 
 MODEL = os.environ.get("GOOGLE_VIDEO_MODEL", "UNCONFIGURED")
 PAID_ENABLED = os.environ.get("PAID_GENERATION_ENABLED", "false")
+APPROVED_JOB_ID = os.environ.get("APPROVED_VIDEO_JOB_ID", "")
 PROJECT = os.environ.get("GOOGLE_PROJECT_ID", "afl-video-platform")
 BASE = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/global/interactions"
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -53,9 +54,12 @@ class UnknownSubmission(RuntimeError):
     pass
 
 
-def require_paid_unlock():
+def require_paid_unlock(job=None, scene=None):
     if PAID_ENABLED != "true" or MODEL != "gemini-omni-1.2-flash":
         raise PermissionError("PAID_GENERATION_DISABLED_STAGE_5A")
+    # Even after explicit unlock, a single authorised job and Scene 1 only.
+    if not JOB_RE.fullmatch(APPROVED_JOB_ID) or job != APPROVED_JOB_ID or scene != "scene1":
+        raise PermissionError("PAID_SCENE_NOT_EXPLICITLY_APPROVED")
 
 
 def validate(event):
@@ -252,7 +256,7 @@ def transition(job, scene, request, old, new, extra=None):
 
 
 def claim(job, scene, request):
-    require_paid_unlock()
+    require_paid_unlock(job, scene)
     item = get_job(job)
     ref = item.get("scenes", {}).get(scene, {})
     key = ref.get("resultKey", "")
@@ -307,7 +311,7 @@ def release(job, scene, request):
 
 
 def submit(job, scene, request):
-    require_paid_unlock()
+    require_paid_unlock(job, scene)
     record = owner_record(job, scene, request)
     if record.get("status") != "PREPARED":
         raise ContractError("Submission cannot be retried or started from this state")
@@ -361,7 +365,7 @@ def get_video_content(response):
 
 
 def poll(job, scene, request):
-    require_paid_unlock()
+    require_paid_unlock(job, scene)
     record = owner_record(job, scene, request)
     if record.get("status") != "PROCESSING":
         raise ContractError("Video not in processing state")
@@ -401,7 +405,7 @@ def lambda_handler(event, context):
     # Gate is first in state machine; also independently enforce this for all
     # operations that could reach the Google paid API.
     if op == "gate":
-        require_paid_unlock()
+        require_paid_unlock(event.get("jobId"), event.get("sceneId"))
         return {"status": "ENABLED"}
     if op == "contract_health":
         return {"status": "LOCKED" if PAID_ENABLED != "true" else "CONFIGURED",
