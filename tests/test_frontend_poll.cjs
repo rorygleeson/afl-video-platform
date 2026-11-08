@@ -206,6 +206,11 @@ test('Google Cloud auth-check button never invokes paid generation', async () =>
 test('separate free video preview buttons substitute name/team without paid API calls', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
+  assert.equal(h.els.videoPromptSection.hidden, true);
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  await h.nextTimer();
+  await h.nextTimer();
   assert.equal(h.els.videoPromptSection.hidden, false);
   for (const n of [1,2,3]) {
     await h.els['videoScene' + n].listeners.click();
@@ -230,6 +235,10 @@ test('first and last names are mandatory before S3 upload', async () => {
 test('editing names invalidates existing job and previews', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  await h.nextTimer();
+  await h.nextTimer();
   await h.els.videoScene1.listeners.click();
   h.els.firstName.listeners.input();
   assert.equal(h.els.videoPromptSection.hidden, true);
@@ -240,15 +249,49 @@ test('editing names invalidates existing job and previews', async () => {
 test('three mock scene controls remain separate and never request paid video', async () => {
   const h=setup();
   await h.els.generate.listeners.click();
+  assert.equal(h.els.videoTestSection.hidden,true, 'mock video section hidden until all reference images complete');
+  assert.equal(h.els.videoPromptSection.hidden,true, 'free video previews also hidden during image generation');
   await h.els.generateScene1.listeners.click();
   await h.flush();
+  assert.equal(h.els.videoTestSection.hidden,true, 'one completed image must not reveal video controls');
+  await h.nextTimer();
+  assert.equal(h.els.videoTestSection.hidden,true, 'two completed images must not reveal video controls');
+  await h.nextTimer();
   assert.equal(h.els.videoTestSection.hidden,false);
+  assert.equal(h.els.videoPromptSection.hidden,false);
   assert.equal(h.els.generateVideo1.disabled,false);
-  assert.equal(h.els.generateVideo2.disabled,true);
+  assert.equal(h.els.generateVideo2.disabled,false);
+  assert.equal(h.els.generateVideo3.disabled,false);
   await h.els.generateVideo1.listeners.click();
   await h.flush();
   const submitted=h.calls.filter(c=>/\/videos\/scene[123]$/.test(c.url)&&c.opts.method==='POST');
   assert.equal(submitted.length,1);
   assert.match(submitted[0].url,/videos\/scene1$/);
   assert.equal(h.els.assembleFinal.disabled,true);
+});
+
+test('job status and image thumbnails appear directly below job actions, before any video controls', () => {
+  const order = ['id="resumeLast"', 'id="jobProgressSection"', 'id="status"',
+                 'id="results"', 'id="videoPromptSection"', 'id="videoTestSection"'];
+  let previous = -1;
+  for (const item of order) {
+    const position = html.indexOf(item);
+    assert.ok(position > previous, item + ' must appear after the preceding item');
+    previous = position;
+  }
+});
+
+test('video controls stay hidden if any reference scene is still generating', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  assert.equal(h.els.videoTestSection.hidden,true);
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  assert.equal(h.getPolls(),1);
+  assert.equal(h.els.videoTestSection.hidden,true);
+  assert.equal(h.els.videoPromptSection.hidden,true);
+  await h.nextTimer();
+  assert.equal(h.getPolls(),2);
+  assert.equal(h.els.videoTestSection.hidden,true);
+  assert.equal(h.els.videoPromptSection.hidden,true);
 });
