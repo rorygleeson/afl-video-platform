@@ -471,7 +471,7 @@ test('read-only workflow review status does not re-open a paid button', async ()
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
-  assert.match(h.els.scene1PaidStatus.textContent, /Manual review required/);
+  assert.match(h.els.scene1PaidStatus.textContent, /Generation needs review/);
   assert.equal(h.els.generateRealScene1.hidden, true);
   assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
 });
