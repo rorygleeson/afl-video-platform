@@ -32,6 +32,11 @@
     .reference-card img{display:block;width:100%;height:auto;aspect-ratio:9/16;object-fit:cover}
     .video-scene .video-state{margin:8px 0}
     .step-heading{font-weight:700;margin-top:10px}
+    .scene-prompt{margin-top:10px;border:1px solid #d4dce5;border-radius:8px;padding:10px}
+    .scene-prompt summary{cursor:pointer;font-weight:650;color:#1261a0}
+    .scene-prompt pre{max-height:350px;overflow-y:auto}
+    .video-result{margin-top:12px;padding:10px;border-top:1px solid #d4dce5}
+
   </style>
 </head>
 <body>
@@ -88,28 +93,46 @@
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 — Run-up</strong>
       <button id="videoScene1" type="button">Preview Scene 1 prompt</button>
-      <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
-      <pre id="videoPromptText1" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      <details id="videoPromptDetails1" class="scene-prompt" hidden>
+        <summary>Scene 1 prompt — show/hide</summary>
+        <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
+        <pre id="videoPromptText1" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      </details>
       <button type="button" id="generateVideo1" disabled hidden>Run Scene 1 mock video workflow</button>
-      <p id="videoStatus1" class="video-state" role="status">Generate reference image 1 first.</p>
+      <div class="video-result" aria-label="Scene 1 test result">
+        <strong>Mock test result</strong>
+        <p id="videoStatus1" class="video-state" role="status">Generate reference image 1 first.</p>
+      </div>
       <div id="videoPlayer1"></div>
     </div>
     <div class="video-scene" id="videoPanel2" hidden>
       <strong>Scene 2 — Winning kick</strong>
       <button id="videoScene2" type="button">Preview Scene 2 prompt</button>
-      <p id="videoPromptStatus2" class="video-state" role="status" aria-live="polite"></p>
-      <pre id="videoPromptText2" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      <details id="videoPromptDetails2" class="scene-prompt" hidden>
+        <summary>Scene 2 prompt — show/hide</summary>
+        <p id="videoPromptStatus2" class="video-state" role="status" aria-live="polite"></p>
+        <pre id="videoPromptText2" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      </details>
       <button type="button" id="generateVideo2" disabled hidden>Run Scene 2 mock video workflow</button>
-      <p id="videoStatus2" class="video-state" role="status">Generate reference image 2 first.</p>
+      <div class="video-result" aria-label="Scene 2 test result">
+        <strong>Mock test result</strong>
+        <p id="videoStatus2" class="video-state" role="status">Generate reference image 2 first.</p>
+      </div>
       <div id="videoPlayer2"></div>
     </div>
     <div class="video-scene" id="videoPanel3" hidden>
       <strong>Scene 3 — Celebration</strong>
       <button id="videoScene3" type="button">Preview Scene 3 prompt</button>
-      <p id="videoPromptStatus3" class="video-state" role="status" aria-live="polite"></p>
-      <pre id="videoPromptText3" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      <details id="videoPromptDetails3" class="scene-prompt" hidden>
+        <summary>Scene 3 prompt — show/hide</summary>
+        <p id="videoPromptStatus3" class="video-state" role="status" aria-live="polite"></p>
+        <pre id="videoPromptText3" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
+      </details>
       <button type="button" id="generateVideo3" disabled hidden>Run Scene 3 mock video workflow</button>
-      <p id="videoStatus3" class="video-state" role="status">Generate reference image 3 first.</p>
+      <div class="video-result" aria-label="Scene 3 test result">
+        <strong>Mock test result</strong>
+        <p id="videoStatus3" class="video-state" role="status">Generate reference image 3 first.</p>
+      </div>
       <div id="videoPlayer3"></div>
     </div>
     <button id="assembleFinal" type="button" disabled hidden>Assemble Final Video</button>
@@ -202,6 +225,9 @@
     for (const n of [1, 2, 3]) {
       document.getElementById('videoPromptStatus' + n).textContent = '';
       document.getElementById('videoPromptText' + n).textContent = '';
+      const promptDetails = document.getElementById('videoPromptDetails' + n);
+      promptDetails.open = false;
+      promptDetails.hidden = true;
     }
     document.getElementById('assembleFinal').disabled = true;
     videoTestMessage.textContent = '';
@@ -655,6 +681,9 @@
         document.getElementById('videoPromptStatus' + n).textContent =
           data.playerName + ' — ' + data.teamName + ' | ' + data.durationSeconds + ' seconds';
         document.getElementById('videoPromptText' + n).textContent = data.prompt;
+        const promptDetails = document.getElementById('videoPromptDetails' + n);
+        promptDetails.hidden = false;
+        promptDetails.open = true; // First preview opens; native summary can collapse/reopen.
         previewedScenes.add('scene' + n);
         if (document.getElementById('videoStatus' + n).textContent.includes('Preview')) {
           document.getElementById('videoStatus' + n).textContent = 'Ready to run free mock test.';
