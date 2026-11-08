@@ -32,12 +32,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/wif-direct
-          python -m pip install --target dist/wif-direct 'google-auth[requests]>=2.30,<3'
+          python -m pip install --target dist/wif-direct --platform manylinux2014_x86_64 --python-version 3.13 --implementation cp --abi cp313 --only-binary=:all: 'google-auth[requests]>=2.30,<3'
           cp tests/aws_google_wif_preflight/handler.py tests/aws_google_wif_preflight/direct.py dist/wif-direct/
           (cd dist/wif-direct && zip -q -r ../wif-direct.zip .)
-          PYTHONPATH=dist/wif-direct python - <<'PY'
-          import direct, handler, google.auth
-          print('Packaged direct Lambda imports: OK')
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('dist/wif-direct.zip') as z:
+              names=set(z.namelist())
+              assert 'direct.py' in names and 'handler.py' in names
+              assert any('_cffi_backend' in x and 'cpython-313' in x for x in names), 'Missing Python 3.13 cffi binary'
+              print('AWS Lambda Python 3.13 cffi dependency included')
           PY
           aws s3 cp dist/wif-direct.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/google-wif-direct/$GITHUB_SHA.zip"
       - name: Create temporary direct Lambda and role-specific invoke permission
