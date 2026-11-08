@@ -50,6 +50,22 @@ class ReplicatePromptTests(unittest.TestCase):
         self.assertIn("natural happy smile or slightly open triumphant mouth",
                       self.config["scenes"][2]["promptInstructions"])
 
+    def test_customer_hair_and_selected_team_override_master(self):
+        shared = self.config["sharedPrompt"].lower()
+        self.assertIn("full head replacement", shared)
+        self.assertIn("image 2 (selfie)", shared)
+        self.assertIn("never assume the customer has dark, straight or short hair", shared)
+        self.assertIn("selected playing guernsey style", shared)
+        for scene in self.config["scenes"]:
+            with self.subTest(scene=scene["id"]):
+                prompt = namespace["build_image_prompt"](self.config, scene, "geelong").lower()
+                self.assertIn("navy blue and white horizontal hoops", prompt)
+                self.assertIn("hairstyle", prompt)
+                self.assertIn("selected team", prompt)
+        celebration = self.config["scenes"][2]["promptInstructions"].lower()
+        self.assertIn("every visible celebrating teammate", celebration)
+        self.assertIn("the selected team's guernsey", celebration)
+
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):
             with self.subTest(shared=invalid):
