@@ -87,14 +87,21 @@
     <pre id="videoPromptText" hidden></pre>
   </section>
   <section id="videoTestSection" hidden>
-    <h2>Real video generation — preparation</h2>
-    <p class="note" id="realVideoGate">Real Google video submission is locked until the Stage 5B authentication, billing and idempotency checks are completed. No paid video calls can be made from this page.</p>
+    <h2>Video creation — step by step</h2>
+    <p class="note" id="realVideoGate"><strong>Where we are:</strong> Google sign-in has passed. The free checks below prepare your existing reference images for video. <strong>No real MP4 has been made.</strong> Paid video stays locked until we approve one specific job.</p>
     <div class="video-scene" id="videoPanel1">
-      <strong>Scene 1 — Run-up</strong>
+      <strong>Scene 1 — Run-up (8 seconds)</strong>
+      <p><strong>Step 1 — Review the instructions</strong></p>
+      <p class="note">See the exact personalised prompt and commentary we will send to Google. This only reads text from S3 — it creates nothing.</p>
       <button id="videoScene1" type="button">Preview Scene 1 prompt (free)</button>
+      <p><strong>Step 2 — Check everything is ready</strong></p>
+      <p class="note">AWS reads the already-created Scene 1 image and checks its size, format and the video request. <strong>No Google video call.</strong></p>
       <button id="scene1Preflight" type="button">Test Scene 1 readiness (free)</button>
-      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 8 seconds)</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite"></p>
+      <p><strong>Step 3 — Make the real MP4</strong></p>
+      <p class="note">This is the only step that uses paid Google video generation. It remains locked until we explicitly approve a single job and enable billing.</p>
+      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 8 seconds)</button>
+      <p id="scene1PaidStatus" class="video-state" role="status">Locked — no paid Google video generation authorised.</p>
       <details id="videoPromptDetails1" class="scene-prompt" hidden>
         <summary>Scene 1 prompt — show/hide</summary>
         <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
@@ -193,6 +200,7 @@
     videoTestSection.hidden = true;
     videoTestMessage.textContent = '';
     document.getElementById('scene1PreflightStatus').textContent = '';
+    document.getElementById('scene1PaidStatus').textContent = 'Locked — no paid Google video generation authorised.';
     document.getElementById('generateRealScene1').hidden = true;
     videoPromptStatus.textContent = '';
     videoPromptText.textContent = '';
@@ -217,6 +225,10 @@
       const data = await api('/jobs/' + jobId + '/videos');
       if (jobId !== currentJobId) return;
       const realScene = data.videos?.scene1 || {};
+      document.getElementById('scene1PaidStatus').textContent =
+        data.scene1PaidApproved === true
+          ? 'One paid Scene 1 request is authorised for this job. Generating will incur a charge.'
+          : 'Locked — no paid Google video generation authorised.';
       document.getElementById('generateRealScene1').hidden = !(
         data.scene1PaidApproved === true && !realVideoTracking &&
         realScene.mode !== 'REAL' && realScene.status !== 'COMPLETED');
@@ -649,8 +661,9 @@
       if (result.status !== 'READY' || result.googleSubmissionMade !== false) {
         throw new Error('Readiness check did not complete safely');
       }
-      status.textContent = 'Ready: existing Scene 1 image (' +
-        result.imageBytes + ' bytes), 8-second prompt validated. No video generated or charged.';
+      status.textContent = 'PASS — Scene 1 image checked (' +
+        (result.imageBytes / 1048576).toFixed(2) +
+        ' MB); personalised 8-second prompt and Google request validated. No video generated or charged. Next: the paid MP4 step is still locked.';
     } catch (error) {
       if (jobId === currentJobId) status.textContent = 'Preflight failed: ' + error.message;
     } finally {
