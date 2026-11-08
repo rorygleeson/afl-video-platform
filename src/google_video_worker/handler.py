@@ -36,7 +36,6 @@ PROMPT_BUCKET = os.environ["SCENARIO_ASSET_BUCKET"]
 
 MODEL = os.environ.get("GOOGLE_VIDEO_MODEL", "UNCONFIGURED")
 PAID_ENABLED = os.environ.get("PAID_GENERATION_ENABLED", "false")
-APPROVED_JOB_ID = os.environ.get("APPROVED_VIDEO_JOB_ID", "")
 PROJECT = os.environ.get("GOOGLE_PROJECT_ID", "afl-video-platform")
 BASE = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/global/interactions"
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -56,10 +55,12 @@ class UnknownSubmission(RuntimeError):
 
 def require_paid_unlock(job=None, scene=None):
     if PAID_ENABLED != "true" or MODEL != "gemini-omni-1.2-flash":
-        raise PermissionError("PAID_GENERATION_DISABLED_STAGE_5A")
-    # Even after explicit unlock, a single authorised job and Scene 1 only.
-    if not JOB_RE.fullmatch(APPROVED_JOB_ID) or job != APPROVED_JOB_ID or scene != "scene1":
-        raise PermissionError("PAID_SCENE_NOT_EXPLICITLY_APPROVED")
+        raise PermissionError("PAID_GENERATION_DISABLED")
+    if not isinstance(job, str) or not JOB_RE.fullmatch(job) or scene not in SCENES:
+        raise PermissionError("PAID_SCENE_INVALID")
+    approval = get_job(job).get("paidVideoApprovals", {}).get(scene, {})
+    if approval.get("status") != "REQUESTED" or approval.get("executionName") != "real-" + job + "-" + scene:
+        raise PermissionError("PAID_SCENE_NOT_USER_APPROVED")
 
 
 def validate(event):
@@ -193,30 +194,30 @@ def image_payload(blob, content_type, prompt, duration):
 
 def scene_preflight(job, scene):
     """Free read-only contract check; NEVER calls Google Interactions or modifies job state."""
-    if PAID_ENABLED != "false" or MODEL != "UNCONFIGURED":
-        raise PermissionError("PREFLIGHT_REQUIRES_HARD_DISABLED_VIDEO")
-    if scene != "scene1":
-        raise ContractError("Only Scene 1 is authorised for preflight")
+    if (PAID_ENABLED == "false" and MODEL != "UNCONFIGURED") or (PAID_ENABLED == "true" and MODEL != "gemini-omni-1.2-flash"):
+        raise PermissionError("PREFLIGHT_WORKER_CONFIG_INVALID")
+    if scene not in SCENES:
+        raise ContractError("Invalid preflight scene")
     item = get_job(job)
     ref = item.get("scenes", {}).get(scene, {})
     key = ref.get("resultKey", "")
     if ref.get("status") != "COMPLETED" or not isinstance(key, str):
         raise ContractError("Scene 1 reference image not completed")
-    if not re.fullmatch(r"results/" + re.escape(job) + r"/scene1\.(png|jpg|jpeg|webp)", key):
+    if not re.fullmatch(r"results/" + re.escape(job) + "/" + scene + r"\.(png|jpg|jpeg|webp)", key):
         raise ContractError("Unexpected Scene 1 image key")
     config = render_scene(S3, PROMPT_BUCKET, item, scene)
-    if config["durationSeconds"] != 8 or config["videoGenerationEnabled"] is not False:
-        raise ContractError("Unexpected locked Scene 1 configuration")
+    if config["durationSeconds"] not in (8, 10) or config["videoGenerationEnabled"] is not False:
+        raise ContractError("Unexpected free preview configuration")
     # Validate actual current S3 object. Expired 7-day images must fail closed.
     response = S3.get_object(Bucket=BUCKET, Key=key)
     raw = response["Body"].read(MAX_IMAGE_BYTES + 1)
-    req = image_payload(raw, response.get("ContentType", ""), config["prompt"], 8)
-    assert req["background"] is True and req["response_format"][0]["duration"] == "8s"
+    req = image_payload(raw, response.get("ContentType", ""), config["prompt"], config["durationSeconds"])
+    assert req["background"] is True and req["response_format"][0]["duration"] == str(config["durationSeconds"]) + "s"
     # Return only metadata, never the image, prompt, PII, auth token or encoded payload.
-    return {"status": "READY", "sceneId": scene, "durationSeconds": 8,
+    return {"status": "READY", "sceneId": scene, "durationSeconds": config["durationSeconds"],
             "imageBytes": len(raw), "imageSha256": hashlib.sha256(raw).hexdigest(),
             "promptBytes": len(config["prompt"].encode("utf-8")),
-            "modelConfigured": False, "paidGenerationEnabled": False,
+            "modelConfigured": MODEL == "gemini-omni-1.2-flash", "paidGenerationEnabled": PAID_ENABLED == "true",
             "googleSubmissionMade": False}
 
 
@@ -417,8 +418,8 @@ def lambda_handler(event, context):
         # Non-billable diagnostic; the new worker role must successfully
         # exchange its AWS identity for the configured Google service account.
         # No model API endpoint or job can be accessed through this operation.
-        if PAID_ENABLED != "false" or MODEL != "UNCONFIGURED":
-            raise PermissionError("PREFLIGHT_REQUIRES_HARD_DISABLED_VIDEO")
+        if PAID_ENABLED not in ("true", "false"):
+            raise PermissionError("INVALID_WORKER_MODE")
         try:
             credentials()
         except Exception as exc:
