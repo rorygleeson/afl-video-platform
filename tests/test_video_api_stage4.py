@@ -93,6 +93,37 @@ class VideoStage4ApiTests(unittest.TestCase):
             self.states.start_execution.assert_not_called()
         self.api.REAL_VIDEO_MODE = "DISABLED"
 
+    def test_second_paid_scene_rejected_until_first_is_terminal(self):
+        self.api.REAL_VIDEO_MODE = "ENABLED"
+        self.api.GOOGLE_STATE_MACHINE_ARN = "arn:aws:states:ap-southeast-2:123456789012:stateMachine:real"
+        self.job["paidVideoApprovals"] = {"scene1": {"status": "REQUESTED"}}
+        self.job["realVideos"] = {"scene1": {"status": "PROCESSING"}}
+        event = {"httpMethod": "POST", "path": "/jobs/" + self.jobid + "/real-videos/scene2",
+                 "headers": {"Idempotency-Key": "test-idempotency-key-1234"},
+                 "body": json.dumps({"confirmPaidScene": "scene2"})}
+        result = self.api.lambda_handler(event, None)
+        self.assertEqual(result["statusCode"], 409)
+        self.assertIn("Only one scene", json.loads(result["body"])["error"])
+        self.states.start_execution.assert_not_called()
+        self.ddb.update_item.assert_not_called()
+        self.assertFalse(self.api.video_status(self.jobid)["statusCode"] != 200)
+        self.job["realVideos"]["scene1"]["status"] = "COMPLETED"
+        self.assertFalse(self.api.paid_scene_in_progress(self.job, "scene2"))
+        self.api.REAL_VIDEO_MODE = "DISABLED"
+
+    def test_failed_sfn_is_shown_as_review_required_not_new_paid_attempt(self):
+        self.api.GOOGLE_STATE_MACHINE_ARN = "arn:aws:states:ap-southeast-2:123456789012:stateMachine:afl-app-dev-google-omni"
+        self.job["paidVideoApprovals"] = {"scene1": {
+            "status": "REQUESTED", "executionName": "real-" + self.jobid + "-scene1"}}
+        self.states.describe_execution.return_value = {"status": "FAILED"}
+        result = self.api.video_scene_public(self.job, "scene1")
+        self.assertEqual(result["status"], "REVIEW_REQUIRED")
+        self.assertEqual(result["errorCode"], "WORKFLOW_FAILED")
+        self.assertNotIn("url", result)
+        self.assertIn(":execution:afl-app-dev-google-omni:", 
+                      self.states.describe_execution.call_args.kwargs["executionArn"])
+        self.states.start_execution.assert_not_called()
+
     def test_approval_marks_real_request_pending_not_mock_completed(self):
         self.job["videos"] = {"scene1": {"status": "MOCK_COMPLETED"}}
         self.job["paidVideoApprovals"] = {"scene1": {"status": "REQUESTED"}}
