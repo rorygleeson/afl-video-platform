@@ -164,6 +164,8 @@ test('auto polls every 5 seconds, adds each image once and stops when complete',
   const h = setup();
   await h.els.generate.listeners.click();
   assert.equal(h.els.generateScene1.hidden, false);
+  assert.equal(h.els.generate.hidden, true, 'upload button hides once the job is created');
+  assert.equal(h.els.refresh.hidden, true, 'manual refresh remains hidden; polling is automatic');
   await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.getPolls(), 1);
@@ -205,6 +207,7 @@ test('changing team cancels pending polling and hides old paid job action', asyn
   await h.flush();
   assert.equal(h.timers.size, 1);
   h.els.team.listeners.change();
+  assert.equal(h.els.generate.hidden, false, 'changing details reveals new job upload action');
   assert.equal(h.timers.size, 0);
   assert.equal(h.els.generateScene1.hidden, true);
   assert.equal(h.els.refresh.hidden, true);
