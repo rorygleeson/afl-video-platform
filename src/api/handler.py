@@ -526,6 +526,31 @@ def scene1_preflight(job_id):
     return response(200, data)
 
 
+def paid_google_connectivity_check():
+    """Free WIF connectivity check for the *actual paid-video* worker."""
+    if not GOOGLE_WORKER_ARN:
+        return response(503, {"status": "NOT_CONFIGURED", "errorCode": "GOOGLE_WORKER_UNAVAILABLE"})
+    try:
+        invocation = LAMBDA.invoke(
+            FunctionName=GOOGLE_WORKER_ARN,
+            InvocationType="RequestResponse",
+            Payload=json.dumps({"op": "auth_check"}).encode(),
+        )
+        if invocation.get("FunctionError"):
+            return response(502, {"status": "AUTHENTICATION_FAILED",
+                                  "errorCode": "GOOGLE_WORKER_RUNTIME_ERROR"})
+        result = json.loads(invocation["Payload"].read())
+    except (ClientError, ValueError, TypeError):
+        LOG.exception("Paid Google connection check could not complete")
+        return response(502, {"status": "AUTHENTICATION_FAILED",
+                              "errorCode": "GOOGLE_WORKER_CONNECTIVITY_ERROR"})
+    if result.get("status") != "AUTHENTICATED":
+        return response(502, {"status": "AUTHENTICATION_FAILED",
+                              "errorCode": result.get("errorCode", "GOOGLE_AUTH_ERROR")})
+    return response(200, {"status": "AUTHENTICATED", "videoGenerationEnabled": False,
+                          "paidGenerationTriggered": False})
+
+
 def google_auth_check():
     """Keyless Google authentication test; never starts a model job."""
     if not VIDEO_WORKER_ARN:
@@ -589,6 +614,8 @@ def lambda_handler(event, context):
             return scene1_preflight(preflight_match.group(1))
         if method == "GET" and path == "/video/auth-check":
             return google_auth_check()
+        if method == "GET" and path == "/video/paid-google-auth-check":
+            return paid_google_connectivity_check()
         if method == "GET" and path == "/scenarios":
             return response(200, {
                 "scenarios": [{
