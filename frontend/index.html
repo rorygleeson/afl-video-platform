@@ -92,6 +92,8 @@
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 — Run-up</strong>
       <button id="videoScene1" type="button">Preview Scene 1 prompt (free)</button>
+      <button id="scene1Preflight" type="button">Test Scene 1 readiness (free)</button>
+      <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite"></p>
       <details id="videoPromptDetails1" class="scene-prompt" hidden>
         <summary>Scene 1 prompt — show/hide</summary>
         <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
@@ -187,6 +189,7 @@
     videoPromptSection.hidden = true;
     videoTestSection.hidden = true;
     videoTestMessage.textContent = '';
+    document.getElementById('scene1PreflightStatus').textContent = '';
     videoPromptStatus.textContent = '';
     videoPromptText.textContent = '';
     for (const n of [1, 2, 3]) {
@@ -581,6 +584,28 @@
       }
     });
   }
+
+  document.getElementById('scene1Preflight').addEventListener('click', async () => {
+    if (!currentJobId || videoTestSection.hidden) return;
+    const jobId = currentJobId;
+    const button = document.getElementById('scene1Preflight');
+    const status = document.getElementById('scene1PreflightStatus');
+    button.disabled = true;
+    status.textContent = 'Checking existing image and prompt in AWS — no video generation…';
+    try {
+      const result = await api('/jobs/' + jobId + '/video/scene1/preflight');
+      if (jobId !== currentJobId) return;
+      if (result.status !== 'READY' || result.googleSubmissionMade !== false) {
+        throw new Error('Readiness check did not complete safely');
+      }
+      status.textContent = 'Ready: existing Scene 1 image (' +
+        result.imageBytes + ' bytes), 8-second prompt validated. No video generated or charged.';
+    } catch (error) {
+      if (jobId === currentJobId) status.textContent = 'Preflight failed: ' + error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   generate.addEventListener('click', async () => {
     const file = input.files[0];
