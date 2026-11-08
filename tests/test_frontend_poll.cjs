@@ -38,6 +38,7 @@ function setup() {
                       'videoPromptDetails1','videoPromptDetails2','videoPromptDetails3',
                       'videoScene1', 'videoScene2', 'videoScene3',
                       'scene1Preflight', 'scene1PreflightStatus', 'scene1PaidStatus', 'generateRealScene1',
+                      'scene2PaidStatus', 'scene3PaidStatus', 'generateRealScene2', 'generateRealScene3',
                       'videoTestSection','videoTestMessage','assembleFinal','nextStageMessage',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
@@ -48,7 +49,7 @@ function setup() {
   }
   els.assembleFinal.disabled = true;
   els.assembleFinal.hidden = true; // Matches the HTML hidden attribute.
-  els.generateRealScene1.hidden = true;
+  for (const n of [1, 2, 3]) els['generateRealScene' + n].hidden = true;
   els.jobIdPanel.hidden = true;
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
@@ -404,4 +405,19 @@ test('Scene 1 free readiness automatically runs once for a finished job', async 
                'Optional manual recheck is explicitly initiated');
   assert.equal(h.calls.filter(c => c.url.endsWith('/real-videos/scene1')).length, 0,
                'Readiness never submits a paid MP4');
+});
+
+test('all three real video buttons are independently wired but never call paid endpoints while locked', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  await h.nextTimer();
+  await h.nextTimer();
+  for (const n of [1,2,3]) {
+    assert.equal(h.els['generateRealScene' + n].hidden, true);
+    assert.ok(h.els['generateRealScene' + n].listeners.click, 'Scene ' + n + ' must be wired');
+    assert.match(h.els['scene' + n + 'PaidStatus'].textContent, /locked/);
+  }
+  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
 });
