@@ -23,7 +23,7 @@ function setup() {
     };
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
-                      'generateScene1', 'status', 'pollStatus', 'key', 'team', 'scenario',
+                      'generateScene1', 'resumeLast', 'status', 'pollStatus', 'key', 'team', 'scenario',
                       'testGoogle', 'googleStatus', 'firstName', 'lastName',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
                       'videoScene1', 'videoScene2', 'videoScene3',
@@ -111,9 +111,15 @@ function setup() {
     }
     throw new Error('Unexpected URL ' + url);
   };
+  const storage = new Map();
+  const sessionStorage = {
+    getItem(k) { return storage.has(k) ? storage.get(k) : null; },
+    setItem(k, v) { storage.set(k, String(v)); },
+    removeItem(k) { storage.delete(k); },
+  };
   const ctx = {
     document: doc,
-    window: {AFL_CONFIG: {apiBaseUrl: 'https://api.example.com'}, confirm: () => true},
+    window: {AFL_CONFIG: {apiBaseUrl: 'https://api.example.com'}, confirm: () => true, sessionStorage},
     fetch, Set, URL: {createObjectURL() { return 'blob:test'; }, revokeObjectURL() {}},
     FormData: class { append() {} },
     crypto: {randomUUID() { return 'test-idempotency-key'; }},
@@ -135,7 +141,7 @@ function setup() {
     await flush();
     return scheduled.delay;
   }
-  return {els, doc, calls, timers, flush, nextTimer, getPolls: () => statusPolls};
+  return {els, doc, calls, timers, flush, nextTimer, sessionStorage, getPolls: () => statusPolls};
 }
 
 test('auto polls every 5 seconds, adds each image once and stops when complete', async () => {
