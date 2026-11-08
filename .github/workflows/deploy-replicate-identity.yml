@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/image_worker/handler.py'
       - 'scenarios/afl-grand-final-winning-kick/v1/config.json'
+      - 'tests/test_replicate_prompts.py'
       - '.github/workflows/deploy-replicate-identity.yml'
   workflow_dispatch:
 
@@ -23,23 +24,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate existing image worker contract and stronger face prompt
+      - name: Validate S3-owned Replicate prompt and unchanged image request
         run: |
           set -euo pipefail
           python -m py_compile src/image_worker/handler.py
+          python -m unittest discover -s tests -p 'test_replicate_prompts.py' -v
           python - <<'PY'
           import json
           from pathlib import Path
-          source=Path('src/image_worker/handler.py').read_text()
           cfg=json.loads(Path('scenarios/afl-grand-final-winning-kick/v1/config.json').read_text())
-          assert 'DEFINITIVE, ONLY source' in source
-          assert 'precise photographic FACE REPLACEMENT' in source
-          assert 'image_input": [master_url, selfie_url]' in source
-          assert '"aspect_ratio": "9:16", "resolution": "2K"' in source
-          assert [x['id'] for x in cfg['scenes']] == ['scene1','scene2','scene3']
-          assert all(x['model']=='google/nano-banana-pro' for x in cfg['scenes'])
-          assert 'natural happy smile or slightly open mouth' in cfg['scenes'][2]['promptInstructions']
-          print('Only Replicate identity prompting modified; no paid generation requested.')
+          assert cfg['scenarioId']=='afl-grand-final-winning-kick' and cfg['version']=='v1'
+          assert all(s['operation']=='image_edit' for s in cfg['scenes'])
+          print('Replicate prompt config validated. No paid image calls.')
           PY
 
       - name: Assume existing GitHub AWS deployment role
@@ -48,7 +44,20 @@ jobs:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
           aws-region: ap-southeast-2
 
-      - name: Package Replicate image worker and deploy its existing CloudFormation resource
+      - name: Publish and verify complete image prompts in S3 BEFORE new Lambda
+        run: |
+          set -euo pipefail
+          asset_bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend \
+            --query 'Stacks[0].Parameters[?ParameterKey==`ScenarioAssetsBucket`].ParameterValue | [0]' --output text)
+          test -n "$asset_bucket" && test "$asset_bucket" != None
+          key=scenarios/afl-grand-final-winning-kick/v1/config.json
+          aws s3 cp "$key" "s3://$asset_bucket/$key" --content-type application/json
+          aws s3api get-object --bucket "$asset_bucket" --key "$key" /tmp/afl-image-config-verify.json > /dev/null
+          cmp "$key" /tmp/afl-image-config-verify.json
+          echo "S3 scenario configuration verified before Lambda update."
+          echo "Verified Replicate scenario config in S3; no image/video generation was triggered."
+
+      - name: Deploy existing Replicate worker using S3-owned prompts
         run: |
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name afl-app-dev-backend --output json > /tmp/afl-backend-stack.json
@@ -74,15 +83,3 @@ jobs:
             --query 'Stacks[0].Parameters[?ParameterKey==`ImageWorkerArtifactKey`].ParameterValue | [0]' --output text)
           test "$actual_key" = "$worker_key"
           echo "Verified image worker artifact: $worker_key"
-
-      - name: Publish and byte-verify Scene 3 image instructions in scenario S3 config
-        run: |
-          set -euo pipefail
-          asset_bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend \
-            --query 'Stacks[0].Parameters[?ParameterKey==`ScenarioAssetsBucket`].ParameterValue | [0]' --output text)
-          test -n "$asset_bucket" && test "$asset_bucket" != None
-          key=scenarios/afl-grand-final-winning-kick/v1/config.json
-          aws s3 cp "$key" "s3://$asset_bucket/$key" --content-type application/json
-          aws s3api get-object --bucket "$asset_bucket" --key "$key" /tmp/afl-image-config-verify.json > /dev/null
-          cmp "$key" /tmp/afl-image-config-verify.json
-          echo "Verified Replicate scenario config in S3; no image/video generation was triggered."
