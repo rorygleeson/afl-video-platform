@@ -224,14 +224,14 @@ def get_job(job):
 
 
 def owner_record(job, scene, request):
-    record = get_job(job).get("videos", {}).get(scene, {})
+    record = get_job(job).get("realVideos", {}).get(scene, {})
     if record.get("requestId") != request:
         raise ContractError("Video attempt ownership mismatch")
     return record
 
 
 def transition(job, scene, request, old, new, extra=None):
-    expr = "SET videos.#scene.#status = :new, videos.#scene.updatedAt = :now"
+    expr = "SET realVideos.#scene.#status = :new, realVideos.#scene.updatedAt = :now"
     names = {"#scene": scene, "#status": "status"}
     values = {
         ":new": new, ":old": old, ":owner": request,
@@ -240,12 +240,12 @@ def transition(job, scene, request, old, new, extra=None):
     for idx, (key, value) in enumerate((extra or {}).items()):
         placeholder = f"#k{idx}"
         v = f":v{idx}"
-        expr += f", videos.#scene.{placeholder} = {v}"
+        expr += f", realVideos.#scene.{placeholder} = {v}"
         names[placeholder] = key
         values[v] = value
     JOBS.update_item(
         Key={"jobId": job}, UpdateExpression=expr,
-        ConditionExpression="videos.#scene.requestId = :owner AND videos.#scene.#status = :old",
+        ConditionExpression="realVideos.#scene.requestId = :owner AND realVideos.#scene.#status = :old",
         ExpressionAttributeNames=names,
         ExpressionAttributeValues=values,
     )
@@ -260,7 +260,7 @@ def claim(job, scene, request):
         raise ContractError("Reference image not completed")
     if not re.fullmatch(r"results/" + re.escape(job) + "/" + scene + r"\.(png|jpg|jpeg|webp)", key):
         raise ContractError("Unexpected reference image S3 key")
-    if item.get("videos", {}).get(scene):
+    if item.get("realVideos", {}).get(scene):
         raise ContractError("Video scene already claimed")
     # Reserve globally against both mock and real workflows. Never auto-expire
     # the slot while the provider status might still be unknown.
@@ -271,14 +271,14 @@ def claim(job, scene, request):
     try:
         JOBS.update_item(
             Key={"jobId": job},
-            UpdateExpression="SET videos = if_not_exists(videos, :empty)",
+            UpdateExpression="SET realVideos = if_not_exists(realVideos, :empty)",
             ConditionExpression="attribute_exists(jobId)",
             ExpressionAttributeValues={":empty": {}},
         )
         JOBS.update_item(
             Key={"jobId": job},
-            UpdateExpression="SET videos.#scene = :value",
-            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(videos.#scene)",
+            UpdateExpression="SET realVideos.#scene = :value",
+            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(realVideos.#scene)",
             ExpressionAttributeNames={"#scene": scene},
             ExpressionAttributeValues={
                 ":value": {"status": "PREPARED", "requestId": request,
