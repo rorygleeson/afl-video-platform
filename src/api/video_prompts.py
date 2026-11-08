@@ -45,7 +45,7 @@ def render_scene(s3, asset_bucket, job, scene_id, *, allow_paid=False):
     config_raw = s3.get_object(Bucket=asset_bucket, Key=VIDEO_PREFIX + "config.json")["Body"].read(MAX_TEMPLATE_BYTES)
     config = json.loads(config_raw)
     enabled = config.get("videoGenerationEnabled")
-    if type(enabled) is not bool or config.get("videoConcurrency") != 1:
+    if type(enabled) is not bool:
         raise ValueError("Invalid video generation configuration")
     # Paid approval cannot be inferred from S3 alone: the caller must
     # explicitly opt in, and the worker/API additionally enforce IAM+job gates.
@@ -74,7 +74,6 @@ def render_scene(s3, asset_bucket, job, scene_id, *, allow_paid=False):
         "commentary": commentary,
         "playerName": variables["fullName"],
         "teamName": variables["teamName"],
-        "videoConcurrency": 1,
         "videoGenerationEnabled": enabled and allow_paid,
         "videoSubmissionAvailable": enabled and allow_paid,
         "durationSeconds": definition["durationSeconds"],
