@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#172432">
-  <title>AFL Video — Create your AFL moment</title>
+  <title>AFL Video Lab — video integration testing</title>
   <style>
     :root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#172432;background:#f4f6f9}
     body{max-width:560px;margin:0 auto;padding:24px 16px 50px}
@@ -43,20 +43,23 @@
     #videoPanel1{padding:16px}
     #videoPanel1 .video-state{line-height:1.45}
     #videoPanel1 .scene-prompt pre{max-height:230px}
+    .video-debug{margin-top:12px;border-top:1px solid #d4dce5;padding-top:10px}
+    .video-debug summary{font-size:.9rem;color:#1261a0;cursor:pointer}
+    .debug-text{font-size:.78rem;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;max-height:200px;overflow:auto}
 
   </style>
 </head>
 <body>
 <main>
-  <h1>Create your AFL video</h1>
-  <p>Upload a photo, create your three reference images, then make each video in order.</p>
+  <h1>AFL Video Lab</h1>
+  <p>Test your connections, upload a selfie, create three reference images, then preview prompts and generate each MP4 separately.</p>
   <p class="poll-status">Each paid generation requires your confirmation. Nothing starts automatically.</p>
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off" aria-describedby="apiConnectionStatus">
   <p id="apiConnectionStatus" class="poll-status" role="status" aria-live="polite">API access is checked automatically before uploading.</p>
-  <button id="testApi" type="button" hidden aria-hidden="true" tabindex="-1">Test API connection</button>
-  <button id="testGoogle" type="button" hidden aria-hidden="true" tabindex="-1">Test Google Cloud connection</button>
-  <p id="googleStatus" role="status" aria-live="polite" hidden></p>
+  <button id="testApi" type="button">Test x-api-key</button>
+  <button id="testGoogle" type="button">Test Google connectivity (free)</button>
+  <p id="googleStatus" role="status" aria-live="polite"></p>
   <label for="scenario">Scenario</label>
   <select id="scenario"><option value="afl-grand-final-winning-kick">AFL Grand Final — Winning Kick</option></select>
   <label for="team">Team</label>
@@ -99,14 +102,14 @@
   </section>
   <section id="videoTestSection" hidden>
     <h2 style="margin-bottom:6px">Create your videos</h2>
-    <p class="poll-status" id="realVideoGate">Generate each scene in order. The next scene unlocks only when the previous MP4 is finished.</p>
+    <p class="poll-status" id="realVideoGate">Review each prompt, then generate an individual MP4. Paid requests require confirmation and run one at a time.</p>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 8 seconds</strong>
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite" hidden></p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
       <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 8 seconds)</button>
-      <button id="videoScene1" type="button" hidden aria-hidden="true" tabindex="-1">View exact video prompt</button>
+      <button id="videoScene1" type="button">Show / hide Scene 1 prompt (free)</button>
       <details id="videoPromptDetails1" class="scene-prompt" hidden>
         <summary>Video prompt and commentary</summary>
         <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
@@ -114,12 +117,17 @@
       </details>
       <p id="videoStatus1" class="video-state" role="status" hidden>Real video not generated.</p>
       <div id="videoPlayer1"></div>
+      <details id="videoDebugDetails1" class="video-debug">
+        <summary>Scene 1 status &amp; debug information</summary>
+        <pre id="videoDebugText1" class="debug-text">Not started</pre>
+      </details>
+
     </div>
-    <div class="video-scene" id="videoPanel2" hidden>
+    <div class="video-scene" id="videoPanel2">
       <strong>Scene 2 — Winning kick</strong>
       <button id="generateRealScene2" type="button" hidden>Generate Scene 2 MP4 (paid, 8 seconds)</button>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
-      <button id="videoScene2" type="button" hidden aria-hidden="true" tabindex="-1">Preview Scene 2 prompt (free)</button>
+      <button id="videoScene2" type="button">Show / hide Scene 2 prompt (free)</button>
       <details id="videoPromptDetails2" class="scene-prompt" hidden>
         <summary>Scene 2 prompt — show/hide</summary>
         <p id="videoPromptStatus2" class="video-state" role="status" aria-live="polite"></p>
@@ -127,12 +135,17 @@
       </details>
       <p id="videoStatus2" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer2"></div>
+      <details id="videoDebugDetails2" class="video-debug">
+        <summary>Scene 2 status &amp; debug information</summary>
+        <pre id="videoDebugText2" class="debug-text">Not started</pre>
+      </details>
+
     </div>
-    <div class="video-scene" id="videoPanel3" hidden>
+    <div class="video-scene" id="videoPanel3">
       <strong>Scene 3 — Celebration</strong>
       <button id="generateRealScene3" type="button" hidden>Generate Scene 3 MP4 (paid, 10 seconds)</button>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
-      <button id="videoScene3" type="button" hidden aria-hidden="true" tabindex="-1">Preview Scene 3 prompt (free)</button>
+      <button id="videoScene3" type="button">Show / hide Scene 3 prompt (free)</button>
       <details id="videoPromptDetails3" class="scene-prompt" hidden>
         <summary>Scene 3 prompt — show/hide</summary>
         <p id="videoPromptStatus3" class="video-state" role="status" aria-live="polite"></p>
@@ -140,6 +153,11 @@
       </details>
       <p id="videoStatus3" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer3"></div>
+      <details id="videoDebugDetails3" class="video-debug">
+        <summary>Scene 3 status &amp; debug information</summary>
+        <pre id="videoDebugText3" class="debug-text">Not started</pre>
+      </details>
+
     </div>
     <button id="assembleFinal" type="button" disabled hidden>Assemble Final Video</button>
     <p id="videoTestMessage" class="poll-status" role="status" aria-live="polite"></p>
@@ -275,15 +293,10 @@
       const data = await api('/jobs/' + jobId + '/videos');
       if (jobId !== currentJobId) return;
       const approvals = data.paidScenes || {};
-      const priorCompleted = n => {
-        if (n === 1) return true;
-        const prev = data.videos?.['scene' + (n - 1)] || {};
-        return prev.mode === 'REAL' && prev.status === 'COMPLETED' &&
-          typeof prev.url === 'string' && prev.url.length > 0 && !prev.mock;
-      };
-      // Never show the next paid scene before its predecessor has a real MP4.
+      // All prompts and paid actions appear after the three reference
+      // images complete. The server allows only one paid request at a time.
       for (const n of [1, 2, 3]) {
-        document.getElementById('videoPanel' + n).hidden = !priorCompleted(n);
+        document.getElementById('videoPanel' + n).hidden = false;
       }
       for (const n of [1, 2, 3]) {
         const id = 'scene' + n;
@@ -300,7 +313,20 @@
                   : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
             : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
         document.getElementById('generateRealScene' + n).hidden =
-          !priorCompleted(n) || !authorised || videoSubmittedScenes.has(id) || real.mode === 'REAL';
+          !authorised || videoSubmittedScenes.has(id) || real.mode === 'REAL';
+        const lines = [
+          'Job: ' + jobId,
+          'Scene: ' + id,
+          'Mode: ' + (real.mode || 'NOT_REQUESTED'),
+          'Status: ' + (real.status || 'NOT_REQUESTED'),
+          'Workflow: ' + (real.workflowStatus || '—'),
+          'Google interaction: ' + (real.interactionId || '—'),
+          'Request: ' + (real.requestId || '—'),
+          'Error: ' + (real.failureCode || real.errorCode || '—'),
+          'Last checked: ' + new Date().toLocaleTimeString(),
+          'Status checks are read-only. No paid retries.',
+        ];
+        document.getElementById('videoDebugText' + n).textContent = lines.join('\n');
       }
       for (const n of [1, 2, 3]) {
         const item = data.videos?.['scene' + n] || {};
@@ -330,9 +356,10 @@
       const realStates = [1, 2, 3].map(n => data.videos?.['scene' + n] || {});
       realVideoTracking = realStates.some(st => st.mode === 'REAL' &&
         !['COMPLETED', 'FAILED', 'CANCELLED', 'REVIEW_REQUIRED'].includes(st.status));
-      // Poll only while a real submission is potentially active. Never POST from polling.
+      // Poll status continuously for the current visible job. No automatic
+      // paid POSTs, even when a scene is complete or requires manual review.
       stopVideoPoll();
-      if (realVideoTracking && !document.hidden && jobId === currentJobId) {
+      if (!document.hidden && jobId === currentJobId && !videoTestSection.hidden) {
         videoTimer = setTimeout(() => {
           videoTimer = null;
           void refreshVideos();
@@ -699,6 +726,11 @@
     const button = document.getElementById('videoScene' + n);
     button.addEventListener('click', async () => {
       if (!currentJobId) return;
+      const promptDetails = document.getElementById('videoPromptDetails' + n);
+      if (!promptDetails.hidden) {
+        promptDetails.open = !promptDetails.open;
+        return;
+      }
       const jobToPreview = currentJobId;
       button.disabled = true;
       videoPromptStatus.textContent = 'Loading Scene ' + n + ' prompt from private S3…';
@@ -714,7 +746,6 @@
         document.getElementById('videoPromptStatus' + n).textContent =
           data.playerName + ' — ' + data.teamName + ' | ' + data.durationSeconds + ' seconds';
         document.getElementById('videoPromptText' + n).textContent = data.prompt;
-        const promptDetails = document.getElementById('videoPromptDetails' + n);
         promptDetails.hidden = false;
         promptDetails.open = true; // First preview opens; native summary can collapse/reopen.
         // Preview only: never start mock or paid video generation from this page.
@@ -740,6 +771,10 @@
       if (!window.confirm('Generate a real ' + duration + '-second video for Scene ' +
                           n + '? This will incur a Google charge. Only this scene will run.')) return;
       videoSubmittedScenes.add(sceneId);
+      document.getElementById('videoDebugDetails' + n).open = true;
+      document.getElementById('videoDebugText' + n).textContent =
+        'Job: ' + jobId + '\nScene: ' + sceneId +
+        '\nSubmitting one paid request…\nNo automatic retry.';
       // Hide all paid controls until the server confirms which scene owns
       // the single global generation slot. No other scene is auto-submitted.
       for (const idx of [1, 2, 3]) {
