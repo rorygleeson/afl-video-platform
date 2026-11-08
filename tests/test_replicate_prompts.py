@@ -43,7 +43,10 @@ class ReplicatePromptTests(unittest.TestCase):
             with self.subTest(scene=scene["id"]):
                 text = scene["promptInstructions"].lower()
                 self.assertIn("face", text)
-                self.assertIn("essendon", text if scene["id"] != "scene3" else text + " essendon")
+                if scene["id"] in ("scene1", "scene2"):
+                    self.assertIn("essendon", text)
+                else:
+                    self.assertIn("do not introduce opposition players", text)
         self.assertIn("natural excited smile or slightly open mouth",
                       self.config["scenes"][2]["promptInstructions"])
 
