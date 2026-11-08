@@ -2,6 +2,12 @@
 
 This page describes **implemented code**, not the earlier stage plans. AWS Sydney (`ap-southeast-2`), development environment.
 
+## High-level architecture diagram
+
+![Current AFL video platform — user, app, API, image and video Step Functions, Lambda workers, providers and storage](architecture-high-level.svg)
+
+[Open the diagram on its own](architecture-high-level.svg). The image and paid-video pipelines are intentionally separate; both use the same API, job table and private storage. The arrows show the main processing sequence, not every individual read/write call.
+
 ## What exists
 
 The test website is a replaceable **HTML/JavaScript client**, hosted in private S3 via CloudFront. The business workflow is behind **API Gateway REST API** and an API Lambda. AWS resources are deployed with **CloudFormation and GitHub Actions** (not Terraform).
