@@ -101,9 +101,9 @@
     <p class="poll-status" id="realVideoGate">Reference images are ready. Check Scene 1 before creating an MP4.</p>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 8 seconds</strong>
-      <p class="poll-status" style="margin:6px 0 12px">Check your existing image and video instructions. This is free.</p>
-      <button id="scene1Preflight" type="button">Check Scene 1 (free)</button>
-      <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite"></p>
+      <p class="poll-status" style="margin:6px 0 12px">The app checks your image and prompt automatically. No charges.</p>
+      <button id="scene1Preflight" type="button">Recheck readiness (free)</button>
+      <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite">Scene 1 check runs automatically when reference images are ready.</p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
       <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid)</button>
       <button id="videoScene1" type="button" class="quiet-button">View exact video prompt</button>
@@ -180,6 +180,7 @@
   let videoBusy = false;
   let realVideoTracking = false;
   let lastImageScenes = {};
+  let preflightCheckedJobId = null;
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
 
   function clearPollTimer() {
@@ -225,11 +226,12 @@
   function resetVideoUi() {
     stopVideoPoll();
     realVideoTracking = false;
+    preflightCheckedJobId = null;
     lastImageScenes = {};
     videoPromptSection.hidden = true;
     videoTestSection.hidden = true;
     videoTestMessage.textContent = '';
-    document.getElementById('scene1PreflightStatus').textContent = '';
+    document.getElementById('scene1PreflightStatus').textContent = 'Scene 1 check runs automatically when reference images are ready.';
     document.getElementById('scene1PaidStatus').textContent = 'MP4 generation: locked (not charged)';
     document.getElementById('generateRealScene1').hidden = true;
     videoPromptStatus.textContent = '';
@@ -536,7 +538,14 @@
           card.appendChild(img);
         }
       }
-      if (referenceImagesReady) void refreshVideos();
+      if (referenceImagesReady) {
+        void refreshVideos();
+        // Run once per visible job. A manual recheck remains available if inputs change.
+        if (preflightCheckedJobId !== requestedJobId) {
+          preflightCheckedJobId = requestedJobId;
+          void runScene1Preflight(requestedJobId);
+        }
+      }
       if (TERMINAL_STATUSES.has(record.job.status)) {
         stopPolling();
       } else if (record.job.status === 'GENERATING_IMAGES' && !pollingEnabled) {
@@ -680,9 +689,8 @@
     }
   });
 
-  document.getElementById('scene1Preflight').addEventListener('click', async () => {
-    if (!currentJobId || videoTestSection.hidden) return;
-    const jobId = currentJobId;
+  async function runScene1Preflight(jobId) {
+    if (!jobId || videoTestSection.hidden || jobId !== currentJobId) return;
     const button = document.getElementById('scene1Preflight');
     const status = document.getElementById('scene1PreflightStatus');
     button.disabled = true;
@@ -696,12 +704,16 @@
       status.textContent = '✓ READY — Image (' +
         (result.imageBytes / 1048576).toFixed(2) +
         ' MB) and video prompt checked. No charge.';
-      button.textContent = 'Recheck Scene 1 (free)';
+      button.textContent = 'Recheck readiness (free)';
     } catch (error) {
       if (jobId === currentJobId) status.textContent = 'Preflight failed: ' + error.message;
     } finally {
       button.disabled = false;
     }
+  }
+
+  document.getElementById('scene1Preflight').addEventListener('click', () => {
+    if (currentJobId) void runScene1Preflight(currentJobId);
   });
 
   generate.addEventListener('click', async () => {
