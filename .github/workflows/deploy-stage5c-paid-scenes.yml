@@ -4,6 +4,11 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/deploy-stage5c-paid-scenes.yml'
+      - 'src/google_video_worker/handler.py'
+      - 'src/api/video_prompts.py'
+      - 'infrastructure/app/google-video.yaml'
+      - 'scenarios/afl-grand-final-winning-kick/v1/video/**'
+      - 'tests/test_google_video_stage5a.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -88,6 +93,22 @@ jobs:
           assert result.get('status')=='CONFIGURED'
           assert result.get('model')=='gemini-omni-1.2-flash'
           print('Google worker configured; NO model generation requested.')
+          PY
+      - name: Check real Google WIF authentication without generating video
+        run: |
+          set -euo pipefail
+          aws lambda invoke --function-name afl-app-dev-google-omni-worker \
+            --cli-binary-format raw-in-base64-out --payload '{"op":"auth_check"}' \
+            /tmp/auth-video.json > /tmp/auth-video-meta.json
+          python - <<'PY'
+          import json
+          result=json.load(open('/tmp/auth-video.json'))
+          meta=json.load(open('/tmp/auth-video-meta.json'))
+          if meta.get('FunctionError') or result.get('status')!='AUTHENTICATED':
+              print('Google model generation has NOT been attempted.')
+              print('Safe auth diagnostic:', result.get('errorCode', 'UNAVAILABLE'))
+              raise SystemExit('Google WIF is not ready; fail deployment before enabling new API')
+          print('Google WIF authenticated. No paid model request was made.')
           PY
       - name: Publish versioned three-scene generation config to private S3
         run: |
