@@ -34,6 +34,7 @@ function setup() {
     els[name] = el();
     els[name].replaceChildren = function() {};
   }
+  els.assembleFinal.disabled = true;
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
   els.firstName.value = 'Alex';
