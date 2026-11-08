@@ -334,6 +334,14 @@ def video_scene_public(job, scene_id):
         if key == f"videos/{job['jobId']}/{scene_id}.mp4":
             result["url"] = S3.generate_presigned_url(
                 "get_object", Params={"Bucket": UPLOAD_BUCKET, "Key": key}, ExpiresIn=300)
+            # Separate attachment link: a fresh status GET signs each download,
+            # without restarting generation or affecting an existing video player.
+            result["downloadUrl"] = S3.generate_presigned_url(
+                "get_object", Params={
+                    "Bucket": UPLOAD_BUCKET, "Key": key,
+                    "ResponseContentDisposition": f'attachment; filename="afl-{scene_id}.mp4"',
+                    "ResponseContentType": "video/mp4",
+                }, ExpiresIn=300)
     return result
 
 
