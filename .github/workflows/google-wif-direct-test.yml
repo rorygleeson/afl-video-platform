@@ -35,6 +35,10 @@ jobs:
           python -m pip install --target dist/wif-direct 'google-auth[requests]>=2.30,<3'
           cp tests/aws_google_wif_preflight/handler.py tests/aws_google_wif_preflight/direct.py dist/wif-direct/
           (cd dist/wif-direct && zip -q -r ../wif-direct.zip .)
+          PYTHONPATH=dist/wif-direct python - <<'PY'
+          import direct, handler, google.auth
+          print('Packaged direct Lambda imports: OK')
+          PY
           aws s3 cp dist/wif-direct.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/google-wif-direct/$GITHUB_SHA.zip"
       - name: Create temporary direct Lambda and role-specific invoke permission
         run: |
@@ -48,6 +52,13 @@ jobs:
           python - <<'PY'
           import json
           data=json.load(open('/tmp/wif-result.json'))
+          if isinstance(data, dict) and data.get('errorType'):
+              print('Lambda runtime error type:', str(data['errorType'])[:100])
+              message=str(data.get('errorMessage',''))
+              # Print only safe import/runtime errors, not Google service exception contents.
+              if any(x in message for x in ('Unable to import module','No module named','Handler not found')):
+                  print('Import failure:', message[:200])
+              raise SystemExit('Runtime error occurred before a usable auth result')
           print('Google new-worker WIF status:', data.get('status'))
           print('Google new-worker WIF error code:', data.get('errorCode'))
           assert data.get('status') in ('AUTHENTICATED','AUTHENTICATION_FAILED')
