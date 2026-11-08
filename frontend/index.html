@@ -36,6 +36,9 @@
     .scene-prompt summary{cursor:pointer;font-weight:650;color:#1261a0}
     .scene-prompt pre{max-height:350px;overflow-y:auto}
     .video-result{margin-top:12px;padding:10px;border-top:1px solid #d4dce5}
+    .job-id-row{display:flex;align-items:center;gap:8px;border:1px solid #d4dce5;padding:9px;border-radius:9px;margin:10px 0 14px}
+    .job-id-row code{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.85rem}
+    .job-id-row button{width:auto;min-width:66px;margin:0;background:#1261a0;min-height:38px;padding:7px 10px}
     .video-scene .quiet-button{background:transparent;border:1px solid #cbd5df;color:#1261a0;font-weight:600;min-height:40px;margin-top:4px}
     #videoPanel1{padding:16px}
     #videoPanel1 .video-state{line-height:1.45}
@@ -80,6 +83,11 @@
   <button id="resumeLast" type="button" hidden>Resume Last Job (no AI charge)</button>
   <section id="jobProgressSection">
     <h2>Reference image progress</h2>
+    <div id="jobIdPanel" hidden>
+      <strong>Current Job ID</strong>
+      <div class="job-id-row"><code id="currentJobIdText"></code><button id="copyJobId" type="button">Copy</button></div>
+      <p id="copyJobStatus" class="poll-status" role="status" aria-live="polite"></p>
+    </div>
     <p id="status" role="status">Loading backend configuration…</p>
     <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
     <div id="results" aria-label="Reference images"></div>
@@ -145,6 +153,10 @@
   const resumeLast = document.getElementById('resumeLast');
   const generateScene1 = document.getElementById('generateScene1');
   const status = document.getElementById('status');
+  const jobIdPanel = document.getElementById('jobIdPanel');
+  const currentJobIdText = document.getElementById('currentJobIdText');
+  const copyJobId = document.getElementById('copyJobId');
+  const copyJobStatus = document.getElementById('copyJobStatus');
   const results = document.getElementById('results');
   const pollStatus = document.getElementById('pollStatus');
   const videoPromptSection = document.getElementById('videoPromptSection');
@@ -188,6 +200,27 @@
       videoTimer = null;
     }
   }
+
+  function syncJobIdPanel() {
+    const valid = typeof currentJobId === 'string' && /^[0-9a-f]{32}$/.test(currentJobId);
+    jobIdPanel.hidden = !valid;
+    currentJobIdText.textContent = valid ? currentJobId : '';
+    if (!valid) copyJobStatus.textContent = '';
+  }
+
+  copyJobId.addEventListener('click', async () => {
+    if (!/^[0-9a-f]{32}$/.test(currentJobId || '')) return;
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(currentJobId);
+        copyJobStatus.textContent = 'Job ID copied.';
+      } else {
+        copyJobStatus.textContent = 'Select the Job ID above to copy it.';
+      }
+    } catch {
+      copyJobStatus.textContent = 'Select the Job ID above to copy it.';
+    }
+  });
 
   function resetVideoUi() {
     stopVideoPoll();
@@ -352,6 +385,7 @@
     if (currentJobId) {
       stopPolling();
       currentJobId = null;
+      syncJobIdPanel();
       generate.hidden = false;
       generateScene1.hidden = true;
       refresh.hidden = true;
@@ -562,6 +596,7 @@
       const found = await api('/jobs/' + jobId);
       if (!found.job || found.job.jobId !== jobId) throw new Error('Saved job is unavailable.');
       currentJobId = jobId;
+      syncJobIdPanel();
       generate.hidden = true;
       videoPromptSection.hidden = true;
       videoTestSection.hidden = true;
@@ -692,6 +727,7 @@
     stopPolling();
     resetVideoUi();
     currentJobId = null;
+    syncJobIdPanel();
     generateScene1.hidden = true;
     generateScene1.disabled = false;
     refresh.hidden = true;
@@ -725,6 +761,7 @@
         }),
       });
       currentJobId = created.job.jobId;
+      syncJobIdPanel();
       generate.hidden = true;
       window.sessionStorage?.setItem('aflLastJobId', currentJobId);
       resumeLast.hidden = true;
