@@ -294,6 +294,10 @@ def start_mock_video(job_id, scene_id, event):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
+    if any(job.get("scenes", {}).get(s, {}).get("status") != "COMPLETED"
+           or not job.get("scenes", {}).get(s, {}).get("resultKey")
+           for s in VIDEO_SCENES):
+        return response(409, {"error": "Complete all three reference images before video testing"})
     scene = job.get("scenes", {}).get(scene_id, {})
     key = scene.get("resultKey")
     if scene.get("status") != "COMPLETED" or not isinstance(key, str) or not key.startswith(
