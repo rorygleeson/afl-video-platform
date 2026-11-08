@@ -44,6 +44,7 @@ function setup() {
     // Keep the basic DOM simulation intact for the new reference image cards.
   }
   els.assembleFinal.disabled = true;
+  els.assembleFinal.hidden = true; // Matches the HTML hidden attribute.
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
   els.firstName.value = 'Alex';
