@@ -41,7 +41,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/google-video
-          python -m pip install --disable-pip-version-check --target dist/google-video 'google-auth[requests]>=2.30,<3'
+          # Lambda Python 3.13 on x86_64 needs Linux-native wheel binaries.
+          # Runner-native wheels can lack _cffi_backend on AWS.
+          python -m pip install --disable-pip-version-check \
+            --platform manylinux2014_x86_64 --python-version 3.13 \
+            --implementation cp --abi cp313 --only-binary=:all: \
+            --target dist/google-video 'google-auth[requests]>=2.30,<3'
+          python - <<'PY'
+          from pathlib import Path
+          root=Path('dist/google-video')
+          assert list(root.glob('_cffi_backend*.so')), 'Lambda-native _cffi_backend is missing'
+          assert list(root.glob('cryptography/hazmat/bindings/_rust*.so')), 'Lambda-native cryptography Rust extension missing'
+          print('Lambda-native Python 3.13 x86_64 wheels verified')
+          PY
           cp src/google_video_worker/handler.py src/api/video_prompts.py dist/google-video/
           (cd dist/google-video && zip -q -r ../google-video.zip .)
           aws s3 cp dist/google-video.zip \
