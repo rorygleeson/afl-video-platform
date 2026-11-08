@@ -132,6 +132,26 @@ class VideoStage4ApiTests(unittest.TestCase):
         self.assertEqual(result["status"], "REQUESTED")
         self.assertNotIn("url", result)
 
+    def test_failed_paid_execution_sanitizes_google_http_error(self):
+        self.api.GOOGLE_STATE_MACHINE_ARN = (
+            "arn:aws:states:ap-southeast-2:123456789012:stateMachine:afl-app-dev-google-omni")
+        self.job["paidVideoApprovals"] = {
+            "scene1": {"status": "REQUESTED",
+                       "executionName": "real-" + self.jobid + "-scene1"}}
+        self.job["realVideos"] = {"scene1": {"status": "SUBMISSION_UNKNOWN"}}
+        self.states.describe_execution.return_value = {"status": "FAILED"}
+        self.states.get_execution_history.return_value = {"events": [{
+            "taskFailedEventDetails": {
+                "cause": "Google POST HTTP 403 private-token=must-never-be-leaked"}
+        }]}
+        public = self.api.video_scene_public(self.job, "scene1")
+        self.assertEqual(public["status"], "REVIEW_REQUIRED")
+        self.assertEqual(public["failureCode"], "GOOGLE_HTTP_403")
+        self.assertNotIn("private-token", str(public))
+        self.assertEqual(self.states.get_execution_history.call_args.kwargs[
+            "includeExecutionData"], False)
+        self.states.start_execution.assert_not_called()
+
     def test_mock_results_cannot_masquerade_as_real_mp4(self):
         self.job["videos"] = {"scene1": {"status": "MOCK_COMPLETED"}}
         self.job["realVideos"] = {"scene1": {"status": "PROCESSING", "requestId": "real-1"}}
