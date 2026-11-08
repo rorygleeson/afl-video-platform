@@ -34,8 +34,9 @@ function setup() {
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
                       'videoPromptStatus1','videoPromptStatus2','videoPromptStatus3',
                       'videoPromptText1','videoPromptText2','videoPromptText3',
+                      'videoPromptDetails1','videoPromptDetails2','videoPromptDetails3',
                       'videoScene1', 'videoScene2', 'videoScene3',
-                      'videoTestSection','videoTestMessage','assembleFinal',
+                      'videoTestSection','videoTestMessage','assembleFinal','nextStageMessage',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
                       'videoPlayer1','videoPlayer2','videoPlayer3',
@@ -236,8 +237,13 @@ test('separate free video preview buttons substitute name/team without paid API 
   assert.match(h.els.videoPromptText.textContent, /Geelong Cats/);
   assert.match(h.els.videoPromptText.textContent, /SCENE 1/);
   assert.match(h.els.videoPromptText1.textContent,/Alex Tonelli/);
+  assert.equal(h.els.videoPromptDetails1.hidden,false,'prompt is available after preview');
+  assert.equal(h.els.videoPromptDetails1.open,true,'first preview expands prompt');
   assert.equal(h.els.videoPromptText2.textContent,'', 'scene 2 prompt must not be displayed yet');
   assert.equal(h.els.videoScene2.hidden, true, 'scene 2 is locked before mock 1 completes');
+  h.els.videoPromptDetails1.open = false; // User collapses long prompt.
+  assert.equal(h.els.videoPromptDetails1.open,false);
+  assert.equal(h.els.generateVideo1.hidden,false,'mock action remains visible when prompt is collapsed');
   assert.equal(h.calls.filter(c => c.url.includes('/video/scene') && c.url.endsWith('/preview')).length, 1);
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1,
     'Only the separately confirmed reference-image generation request may have occurred');
@@ -302,7 +308,14 @@ test('three mock scene controls remain separate and never request paid video', a
   await h.flush();
   assert.equal(h.els.videoPanel2.hidden,false);
   assert.equal(h.els.videoPanel3.hidden,true);
+  assert.equal(h.els.nextStageMessage.hidden,true,'next stage waits until all three mock tests finish');
   assert.match(h.els.videoStatus1.textContent,/No MP4 was generated/);
+  h.mockStatuses.scene2 = 'MOCK_COMPLETED';
+  h.mockStatuses.scene3 = 'MOCK_COMPLETED';
+  h.doc.listeners.visibilitychange();
+  await h.flush();
+  assert.equal(h.els.nextStageMessage.hidden,false,'informational next-stage notice appears after all mock tests');
+  assert.equal(h.els.assembleFinal.hidden,true,'assembly stays hidden without real MP4s');
 });
 
 test('reference image progress stays above scene video controls', () => {
