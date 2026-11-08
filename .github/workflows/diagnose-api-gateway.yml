@@ -35,6 +35,20 @@ jobs:
           except Exception as exc:
               print('Frontend config unavailable:',type(exc).__name__)
           PY
+          echo "Unauthenticated GET /scenarios diagnostic (expected 403 Forbidden, never returns key data):"
+          python - <<'PY'
+          import json,urllib.request,urllib.error
+          stack=json.load(open('/tmp/stack.json'))['Stacks'][0]
+          url=next(o['OutputValue'] for o in stack['Outputs'] if o['OutputKey']=='ApiBaseUrl').rstrip('/')+'/scenarios'
+          try:
+              with urllib.request.urlopen(url,timeout=12) as r:
+                  print('Unexpected open endpoint status:',r.status)
+                  raise SystemExit('API key is not being enforced')
+          except urllib.error.HTTPError as ex:
+              data=ex.read(1024).decode('utf-8','replace')
+              print('HTTP:',ex.code, 'Body:',data[:180])
+              assert ex.code == 403 and 'Forbidden' in data, 'Unexpected route/stage error; do not claim repaired'
+          PY
           echo "All recorded key/usage-plan/deployment resource events:"
           jq -r '[.StackEvents[]|select(.LogicalResourceId|test("ApiKey|ApiUsagePlan|UsagePlanKey|ApiDeployment|RestApi"))][:60][]|[.Timestamp,.LogicalResourceId,.ResourceStatus,.ResourceStatusReason//""]|@tsv' /tmp/events.json
           jq -e 'any(.StackEvents[]; .LogicalResourceId=="ApiDeploymentRecovery20261108" and .ResourceStatus=="CREATE_COMPLETE")' /tmp/events.json >/dev/null
