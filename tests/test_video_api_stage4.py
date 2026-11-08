@@ -60,6 +60,21 @@ class VideoStage4ApiTests(unittest.TestCase):
         reply = self.api.lambda_handler(event, None)
         return reply["statusCode"], json.loads(reply["body"])
 
+    def test_paid_worker_google_connectivity_is_free_and_uses_actual_worker(self):
+        import io
+        self.api.GOOGLE_WORKER_ARN = "arn:aws:lambda:ap-southeast-2:123456789012:function:paid-worker"
+        self.api.LAMBDA.invoke.return_value = {"Payload": io.BytesIO(
+            json.dumps({"status":"AUTHENTICATED", "paidGenerationEnabled":False}).encode())}
+        code, data = self.invoke("GET", "/video/paid-google-auth-check")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["status"], "AUTHENTICATED")
+        self.assertIs(data["paidGenerationTriggered"], False)
+        self.assertEqual(self.api.LAMBDA.invoke.call_args.kwargs["FunctionName"],
+                         self.api.GOOGLE_WORKER_ARN)
+        self.assertEqual(json.loads(self.api.LAMBDA.invoke.call_args.kwargs["Payload"]),
+                         {"op":"auth_check"})
+        self.states.start_execution.assert_not_called()
+
     def test_real_scene1_is_hard_locked_and_never_starts_sfn(self):
         self.api.REAL_VIDEO_MODE = "DISABLED"
         status, body = self.invoke("POST", "/jobs/" + self.jobid + "/real-videos/scene1")
