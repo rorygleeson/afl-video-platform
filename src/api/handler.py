@@ -370,7 +370,7 @@ def start_real_scene1(job_id, event):
            for scene in VIDEO_SCENES):
         return response(409, {"error": "All three reference images must be complete"})
     source = item["scenes"]["scene1"]["resultKey"]
-    if not re.fullmatch(r"results/" + re.escape(job_id) + r"/scene1\\.(png|jpg|jpeg|webp)", source):
+    if not re.fullmatch(r"results/" + re.escape(job_id) + r"/scene1\.(png|jpg|jpeg|webp)", source):
         return response(409, {"error": "Invalid Scene 1 reference image key"})
     try:
         S3.head_object(Bucket=UPLOAD_BUCKET, Key=source)
