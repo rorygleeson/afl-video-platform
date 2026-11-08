@@ -1,11 +1,5 @@
 name: Stage 5B free Google worker authentication preflight
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/stage5b-google-auth-preflight.yml'
-      - 'src/google_video_worker/handler.py'
-      - 'tests/test_google_video_stage5a.py'
   workflow_dispatch:
 permissions:
   contents: read
