@@ -33,7 +33,7 @@ class VideoPromptTests(unittest.TestCase):
                 self.assertNotIn("$commentary", result["prompt"])
                 self.assertFalse(result["videoGenerationEnabled"])
                 self.assertFalse(result["videoSubmissionAvailable"])
-                self.assertEqual(result["videoConcurrency"], 1)
+                self.assertNotIn("videoConcurrency", result)
                 self.assertEqual(result["sceneId"], scene)
         scene3 = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")
         self.assertIn("AFL Grand Final champions", scene3["commentary"])
@@ -53,7 +53,7 @@ class VideoPromptTests(unittest.TestCase):
     def test_paid_video_requires_explicit_caller_opt_in(self):
         cfg = json.loads((SCENARIO / "video" / "config.json").read_text())
         self.assertIs(cfg["videoGenerationEnabled"], True)
-        self.assertEqual(cfg["videoConcurrency"], 1)
+        self.assertNotIn("videoConcurrency", cfg)
         self.assertEqual(cfg["maxPaidScenesPerRequest"], 1)
         self.assertEqual(len(cfg["scenes"]), 3)
         job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
