@@ -62,6 +62,12 @@
   <button id="generateScene1" type="button" hidden>Generate 3 reference images with Replicate (paid API)</button>
   <button id="refresh" type="button" hidden>Refresh job status</button>
   <button id="resumeLast" type="button" hidden>Resume Last Job (no AI charge)</button>
+  <section id="jobProgressSection">
+    <h2>Job status</h2>
+    <p id="status" role="status">Loading backend configuration…</p>
+    <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
+    <div id="results" aria-label="Reference images"></div>
+  </section>
   <section id="videoPromptSection" hidden>
     <h2>Video prompts — free preview</h2>
     <p class="note">Choose a scene to see its exact personalised prompt and commentary before any paid video generation. These buttons do not call Google video models. Real Google video generation remains disabled. Stage 4 supports free mock scene runs; concurrency is 1.</p>
@@ -95,10 +101,6 @@
     <button id="assembleFinal" type="button" disabled>Assemble Final Video (Stage 5 — not yet available)</button>
     <p id="videoTestMessage" class="poll-status" role="status" aria-live="polite"></p>
   </section>
-  <h2>Job status</h2>
-  <p id="status" role="status">Loading backend configuration…</p>
-  <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
-  <div id="results" aria-label="Reference images"></div>
 </main>
 <script src="./config.js"></script>
 <script>
@@ -421,7 +423,17 @@
       generateScene1.hidden = pollingEnabled || record.job.status !== 'AWAITING_IMAGE_PIPELINE';
       const scenes = record.job.scenes || {};
       lastImageScenes = scenes;
-      videoTestSection.hidden = false;
+      // Keep all video controls and previews hidden until the full set of
+      // three personalised reference images has completed successfully.
+      const referenceImagesReady = ['scene1', 'scene2', 'scene3']
+        .every(id => scenes[id]?.status === 'COMPLETED');
+      videoPromptSection.hidden = !referenceImagesReady;
+      videoTestSection.hidden = !referenceImagesReady;
+      if (!referenceImagesReady) {
+        stopVideoPoll();
+        videoPromptText.textContent = '';
+        videoPromptStatus.textContent = '';
+      }
       const statuses = ['scene1', 'scene2', 'scene3'].map(id =>
         id + ': ' + (scenes[id]?.status || 'PENDING') +
         (scenes[id]?.status === 'FAILED' && scenes[id]?.errorCode
@@ -446,7 +458,7 @@
         img.title = item.sceneId;
         results.appendChild(img);
       }
-      void refreshVideos();
+      if (referenceImagesReady) void refreshVideos();
       if (TERMINAL_STATUSES.has(record.job.status)) {
         stopPolling();
       } else if (record.job.status === 'GENERATING_IMAGES' && !pollingEnabled) {
@@ -506,8 +518,8 @@
       const found = await api('/jobs/' + jobId);
       if (!found.job || found.job.jobId !== jobId) throw new Error('Saved job is unavailable.');
       currentJobId = jobId;
-      videoPromptSection.hidden = false;
-      videoTestSection.hidden = false;
+      videoPromptSection.hidden = true;
+      videoTestSection.hidden = true;
       refresh.hidden = false;
       resumeLast.hidden = true;
       results.replaceChildren();
@@ -641,10 +653,9 @@
       window.sessionStorage?.setItem('aflLastJobId', currentJobId);
       resumeLast.hidden = true;
       refresh.hidden = false;
-      videoPromptSection.hidden = false;
-      videoTestSection.hidden = false;
+      videoPromptSection.hidden = true;
+      videoTestSection.hidden = true;
       generateScene1.hidden = false;
-      void refreshVideos();
       showStatus('Selfie uploaded and job created.\nJob: ' + currentJobId +
         '\nStatus: ' + created.job.status +
         '\nTap Generate 3 reference images to start paid edits.');
