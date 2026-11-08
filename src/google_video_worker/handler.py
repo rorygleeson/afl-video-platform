@@ -325,8 +325,26 @@ def submit(job, scene, request):
     transition(job, scene, request, "PREPARED", "SUBMISSION_UNKNOWN")
     try:
         result = google_json("POST", BASE, body, max_bytes=1024 * 1024)
-    except Exception:
-        LOG.exception("Google submission outcome uncertain; manual reconciliation required")
+    except Exception as exc:
+        # Diagnose all scenes without retaining provider payloads, tokens or images.
+        # An HTTP response or network error still does not prove the paid POST
+        # was not accepted. Never automatically unlock/retry this scene.
+        if isinstance(exc, ContractError):
+            match = re.fullmatch(r"Google POST HTTP ([1-5][0-9]{2})", str(exc))
+            code = "GOOGLE_HTTP_" + match.group(1) if match else "GOOGLE_RESPONSE_ERROR"
+        elif isinstance(exc, urllib.error.URLError):
+            code = "GOOGLE_NETWORK_ERROR"
+        elif isinstance(exc, (TimeoutError, ConnectionError)):
+            code = "GOOGLE_NETWORK_TIMEOUT"
+        else:
+            code = safe_error_code(exc) if not isinstance(exc, (ValueError, TypeError)) else "GOOGLE_REQUEST_ERROR"
+        try:
+            transition(job, scene, request, "SUBMISSION_UNKNOWN", "SUBMISSION_UNKNOWN",
+                       {"errorCode": code})
+        except Exception:
+            LOG.exception("Could not save safe Google submission diagnostic")
+        LOG.error("Google submission uncertain scene=%s code=%s exception_type=%s",
+                  scene, code, type(exc).__name__)
         raise UnknownSubmission("UNKNOWN_SUBMISSION_REQUIRES_MANUAL_RECONCILIATION") from None
     interaction = result.get("id", "")
     if not isinstance(interaction, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", interaction):
