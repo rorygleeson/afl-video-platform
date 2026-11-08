@@ -108,22 +108,20 @@ class VideoStage4ApiTests(unittest.TestCase):
             self.states.start_execution.assert_not_called()
         self.api.REAL_VIDEO_MODE = "DISABLED"
 
-    def test_second_paid_scene_rejected_until_first_is_terminal(self):
+    def test_other_paid_scene_is_independent_of_processing_scene(self):
         self.api.REAL_VIDEO_MODE = "ENABLED"
         self.api.GOOGLE_STATE_MACHINE_ARN = "arn:aws:states:ap-southeast-2:123456789012:stateMachine:real"
         self.job["paidVideoApprovals"] = {"scene1": {"status": "REQUESTED"}}
         self.job["realVideos"] = {"scene1": {"status": "PROCESSING"}}
+        self.admission.get_item.return_value = {"Item": {"slotId": "GLOBAL_VIDEO_SLOT_0"}}
         event = {"httpMethod": "POST", "path": "/jobs/" + self.jobid + "/real-videos/scene2",
                  "headers": {"Idempotency-Key": "request-example-20261108"},
                  "body": json.dumps({"confirmPaidScene": "scene2"})}
-        result = self.api.lambda_handler(event, None)
-        self.assertEqual(result["statusCode"], 409)
-        self.assertIn("Only one scene", json.loads(result["body"])["error"])
-        self.states.start_execution.assert_not_called()
-        self.ddb.update_item.assert_not_called()
-        self.assertFalse(self.api.video_status(self.jobid)["statusCode"] != 200)
-        self.job["realVideos"]["scene1"]["status"] = "COMPLETED"
-        self.assertFalse(self.api.paid_scene_in_progress(self.job, "scene2"))
+        response = self.api.lambda_handler(event, None)
+        self.assertEqual(response["statusCode"], 202)
+        self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
+                         "real-" + self.jobid + "-scene2")
+        self.admission.get_item.assert_not_called()
         self.api.REAL_VIDEO_MODE = "DISABLED"
 
     def test_failed_sfn_is_shown_as_review_required_not_new_paid_attempt(self):
