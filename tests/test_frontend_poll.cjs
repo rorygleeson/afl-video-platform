@@ -36,6 +36,7 @@ function setup() {
                       'videoPromptText1','videoPromptText2','videoPromptText3',
                       'videoPromptDetails1','videoPromptDetails2','videoPromptDetails3',
                       'videoScene1', 'videoScene2', 'videoScene3',
+                      'scene1Preflight', 'scene1PreflightStatus',
                       'videoTestSection','videoTestMessage','assembleFinal','nextStageMessage',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
@@ -78,6 +79,12 @@ function setup() {
         teamName: 'Geelong Cats', durationSeconds: 8,
         prompt: 'Alex Tonelli plays for Geelong Cats; 3D video prompt',
         videoGenerationEnabled: false,
+      }; },
+    };
+    if (url.endsWith('/video/scene1/preflight')) return {
+      ok: true, async json() { return {
+        status: 'READY', imageBytes: 18000, durationSeconds: 8,
+        googleSubmissionMade: false, paidGenerationEnabled: false
       }; },
     };
     if (url.endsWith('/video/auth-check')) return {
@@ -322,4 +329,18 @@ test('video controls stay hidden if any reference scene is still generating', as
   assert.equal(h.getPolls(),2);
   assert.equal(h.els.videoTestSection.hidden,true);
   assert.equal(h.els.videoPromptSection.hidden,true);
+});
+
+test('Scene 1 preflight is read-only and makes no video POST', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  await h.nextTimer();
+  await h.nextTimer();
+  assert.equal(h.els.videoTestSection.hidden, false);
+  await h.els.scene1Preflight.listeners.click();
+  assert.match(h.els.scene1PreflightStatus.textContent, /No video generated or charged/);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 1);
+  assert.equal(h.calls.filter(c => /\/videos\/scene1$/.test(c.url) && c.opts.method === 'POST').length, 0);
 });
