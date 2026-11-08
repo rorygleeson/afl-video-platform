@@ -36,7 +36,7 @@ function setup() {
                       'videoPromptText1','videoPromptText2','videoPromptText3',
                       'videoPromptDetails1','videoPromptDetails2','videoPromptDetails3',
                       'videoScene1', 'videoScene2', 'videoScene3',
-                      'videoTestSection','videoTestMessage','assembleFinal',
+                      'videoTestSection','videoTestMessage','assembleFinal','nextStageMessage',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
                       'videoPlayer1','videoPlayer2','videoPlayer3',
@@ -308,7 +308,14 @@ test('three mock scene controls remain separate and never request paid video', a
   await h.flush();
   assert.equal(h.els.videoPanel2.hidden,false);
   assert.equal(h.els.videoPanel3.hidden,true);
+  assert.equal(h.els.nextStageMessage.hidden,true,'next stage waits until all three mock tests finish');
   assert.match(h.els.videoStatus1.textContent,/No MP4 was generated/);
+  h.mockStatuses.scene2 = 'MOCK_COMPLETED';
+  h.mockStatuses.scene3 = 'MOCK_COMPLETED';
+  h.doc.listeners.visibilitychange();
+  await h.flush();
+  assert.equal(h.els.nextStageMessage.hidden,false,'informational next-stage notice appears after all mock tests');
+  assert.equal(h.els.assembleFinal.hidden,true,'assembly stays hidden without real MP4s');
 });
 
 test('reference image progress stays above scene video controls', () => {
