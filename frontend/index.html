@@ -182,6 +182,7 @@
   if (/^[0-9a-f]{32}$/.test(savedJob)) resumeLast.hidden = false;
   let videoTimer = null;
   let videoBusy = false;
+  let videoRefreshRequested = false;
   let realVideoTracking = false;
   const videoSubmittedScenes = new Set();
   let lastImageScenes = {};
@@ -230,6 +231,7 @@
 
   function resetVideoUi() {
     stopVideoPoll();
+    videoRefreshRequested = false;
     realVideoTracking = false;
     videoSubmittedScenes.clear();
     preflightCheckedJobId = null;
@@ -258,7 +260,13 @@
   }
 
   async function refreshVideos() {
-    if (!currentJobId || videoBusy || document.hidden || videoTestSection.hidden) return;
+    if (!currentJobId || document.hidden || videoTestSection.hidden) return;
+    if (videoBusy) {
+      // A paid POST can complete while an older status GET is still running.
+      // Remember to fetch fresh state instead of silently dropping that poll.
+      videoRefreshRequested = true;
+      return;
+    }
     videoBusy = true;
     const jobId = currentJobId;
     try {
@@ -334,6 +342,10 @@
       }
     } finally {
       videoBusy = false;
+      if (videoRefreshRequested) {
+        videoRefreshRequested = false;
+        if (jobId === currentJobId) void refreshVideos();
+      }
     }
   }
 
