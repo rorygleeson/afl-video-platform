@@ -8,7 +8,8 @@ AWS serverless pilot for personalised AFL Grand Final videos.
 
 ## Start here
 
-- [Architecture and simple end-to-end flow](docs/ARCHITECTURE.md) — current, no Mermaid diagrams
+- [High-level architecture diagram](docs/architecture-high-level.svg) — user → frontend → API → Step Functions / Lambda → providers and storage
+- [Architecture and simple end-to-end flow](docs/ARCHITECTURE.md) — current system overview
 - [Complete API endpoint inventory](docs/API_ENDPOINTS.md) — browser contract for a future replacement frontend
 - [Prioritised bug/risk review](docs/CODE_REVIEW_2026-11-08.md) — what to fix and what not to overbuild
 
