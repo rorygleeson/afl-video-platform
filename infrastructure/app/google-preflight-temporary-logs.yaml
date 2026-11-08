@@ -1,0 +1,24 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Temporary least-privilege CloudWatch read diagnostics for Google WIF preflight only.
+Resources:
+  TemporaryPreflightLogRead:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: afl-google-preflight-temporary-log-read
+      Roles:
+        - afl-video-github-deploy-role
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DescribeTwoPreflightStreams
+            Effect: Allow
+            Action: logs:DescribeLogStreams
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-google-omni-preflight-v2:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-google-omni-preflight:*'
+          - Sid: ReadOnlyPreflightEvents
+            Effect: Allow
+            Action: [logs:GetLogEvents, logs:FilterLogEvents]
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-google-omni-preflight-v2:*'
+              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-google-omni-preflight:*'
