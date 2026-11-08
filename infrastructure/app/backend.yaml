@@ -106,6 +106,10 @@ Resources:
                 Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub '${UploadsBucket.Arn}/results/*'
+              - Sid: ReadCompletedVideoClips
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub '${UploadsBucket.Arn}/videos/*'
               - Sid: StartScene1OnExplicitRequest
                 Effect: Allow
                 Action: states:StartExecution
