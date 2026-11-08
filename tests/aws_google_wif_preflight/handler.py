@@ -40,7 +40,13 @@ def exchange():
     creds, _ = load_credentials_from_dict(
         info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
     )
-    creds.refresh(Request())
+    class BoundedRequest:
+        def __init__(self):
+            self.delegate = Request()
+        def __call__(self, *args, **kwargs):
+            kwargs["timeout"] = min(float(kwargs.get("timeout", 8)), 8)
+            return self.delegate(*args, **kwargs)
+    creds.refresh(BoundedRequest())
     if not creds.valid:
         raise RuntimeError("Invalid Google WIF credentials")
     # Do NOT return token, account data, JWT or provider body.
