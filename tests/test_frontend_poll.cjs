@@ -211,7 +211,7 @@ test('auto polls every 5 seconds, adds each image once and stops when complete',
   assert.equal(await h.nextTimer(), 5000);
   assert.equal(h.getPolls(), 3);
   assert.equal(h.imageCount(), 3);
-  assert.equal(h.timers.size, 0, 'Completed job must stop polling');
+  assert.equal(h.timers.size, 1, 'Reference image polling ends; video status continues polling automatically');
   assert.equal(h.els.pollStatus.hidden, true);
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1,
                'Polling cannot trigger new Replicate generation');
