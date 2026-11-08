@@ -26,8 +26,13 @@ function setup() {
                       'generateScene1', 'status', 'pollStatus', 'key', 'team', 'scenario',
                       'testGoogle', 'googleStatus', 'firstName', 'lastName',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
-                      'videoScene1', 'videoScene2', 'videoScene3']) {
+                      'videoScene1', 'videoScene2', 'videoScene3',
+                      'videoTestSection','videoTestMessage','assembleFinal',
+                      'generateVideo1','generateVideo2','generateVideo3',
+                      'videoStatus1','videoStatus2','videoStatus3',
+                      'videoPlayer1','videoPlayer2','videoPlayer3']) {
     els[name] = el();
+    els[name].replaceChildren = function() {};
   }
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
@@ -75,6 +80,15 @@ function setup() {
     };
     if (url.endsWith('/generate')) return {
       ok: true, async json() { return {status: 'GENERATING_IMAGES'}; },
+    };
+    if (url.endsWith('/videos')) return {
+      ok: true, async json() { return {videoGenerationMode: 'MOCK_ONLY', videos: {
+        scene1: {status: 'NOT_REQUESTED'}, scene2: {status: 'NOT_REQUESTED'},
+        scene3: {status: 'NOT_REQUESTED'},
+      }}; },
+    };
+    if (/\/videos\/scene[123]$/.test(url) && opts.method === 'POST') return {
+      ok: true, async json() { return {status: 'MOCK_REQUESTED'}; },
     };
     if (url.endsWith('/images')) return {
       ok: true, async json() { return {
@@ -213,4 +227,21 @@ test('editing names invalidates existing job and previews', async () => {
   h.els.firstName.listeners.input();
   assert.equal(h.els.videoPromptSection.hidden, true);
   assert.equal(h.els.refresh.hidden, true);
+});
+
+
+test('three mock scene controls remain separate and never request paid video', async () => {
+  const h=setup();
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  assert.equal(h.els.videoTestSection.hidden,false);
+  assert.equal(h.els.generateVideo1.disabled,false);
+  assert.equal(h.els.generateVideo2.disabled,true);
+  await h.els.generateVideo1.listeners.click();
+  await h.flush();
+  const submitted=h.calls.filter(c=>/\/videos\/scene[123]$/.test(c.url)&&c.opts.method==='POST');
+  assert.equal(submitted.length,1);
+  assert.match(submitted[0].url,/videos\/scene1$/);
+  assert.equal(h.els.assembleFinal.disabled,true);
 });
