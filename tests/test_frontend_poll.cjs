@@ -341,7 +341,7 @@ test('Scene 1 preflight is read-only and makes no video POST', async () => {
   await h.nextTimer();
   assert.equal(h.els.videoTestSection.hidden, false);
   await h.els.scene1Preflight.listeners.click();
-  assert.match(h.els.scene1PreflightStatus.textContent, /No video generated or charged/);
+  assert.match(h.els.scene1PreflightStatus.textContent, /READY.*No charge/);
   assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 1);
   assert.equal(h.calls.filter(c => /\/videos\/scene1$/.test(c.url) && c.opts.method === 'POST').length, 0);
 });
