@@ -36,7 +36,7 @@ function setup() {
                       'videoPromptText1','videoPromptText2','videoPromptText3',
                       'videoPromptDetails1','videoPromptDetails2','videoPromptDetails3',
                       'videoScene1', 'videoScene2', 'videoScene3',
-                      'scene1Preflight', 'scene1PreflightStatus',
+                      'scene1Preflight', 'scene1PreflightStatus', 'generateRealScene1',
                       'videoTestSection','videoTestMessage','assembleFinal','nextStageMessage',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
@@ -47,6 +47,7 @@ function setup() {
   }
   els.assembleFinal.disabled = true;
   els.assembleFinal.hidden = true; // Matches the HTML hidden attribute.
+  els.generateRealScene1.hidden = true;
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
   els.firstName.value = 'Alex';
@@ -343,4 +344,16 @@ test('Scene 1 preflight is read-only and makes no video POST', async () => {
   assert.match(h.els.scene1PreflightStatus.textContent, /No video generated or charged/);
   assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 1);
   assert.equal(h.calls.filter(c => /\/videos\/scene1$/.test(c.url) && c.opts.method === 'POST').length, 0);
+});
+
+test('real Scene 1 paid button remains hidden and never starts without approval', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  await h.nextTimer();
+  await h.nextTimer();
+  await h.els.scene1Preflight.listeners.click();
+  assert.equal(h.els.generateRealScene1.hidden, true);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/real-videos/scene1')).length, 0);
 });
