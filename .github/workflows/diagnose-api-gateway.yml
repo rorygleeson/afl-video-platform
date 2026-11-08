@@ -37,3 +37,5 @@ jobs:
           PY
           echo "All recorded key/usage-plan/deployment resource events:"
           jq -r '[.StackEvents[]|select(.LogicalResourceId|test("ApiKey|ApiUsagePlan|UsagePlanKey|ApiDeployment|RestApi"))][:60][]|[.Timestamp,.LogicalResourceId,.ResourceStatus,.ResourceStatusReason//""]|@tsv' /tmp/events.json
+          jq -e 'any(.StackEvents[]; .LogicalResourceId=="ApiDeploymentRecovery20261108" and .ResourceStatus=="CREATE_COMPLETE")' /tmp/events.json >/dev/null
+          echo "Verified fresh API deployment was created successfully. No key values accessed."
