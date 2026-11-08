@@ -15,18 +15,23 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
           aws-region: ap-southeast-2
-      - name: Inspect API Gateway configuration without viewing credentials
+      - name: Compare live CloudFormation API resources and recent events
         run: |
           set -euo pipefail
           aws cloudformation describe-stacks --stack-name afl-app-dev-backend --output json > /tmp/stack.json
-          api_id=$(jq -r '.Stacks[0].Outputs[]|select(.OutputKey=="ApiBaseUrl")|.OutputValue' /tmp/stack.json | sed -E 's@https://([^.]+).*@\1@')
-          key_id=$(jq -r '.Stacks[0].Outputs[]|select(.OutputKey=="ApiKeyId")|.OutputValue' /tmp/stack.json)
           echo "Stack status: $(jq -r '.Stacks[0].StackStatus' /tmp/stack.json)"
-          echo "API ID: $api_id"
-          echo "API stage: dev"
-          aws apigateway get-api-key --api-key "$key_id" --no-include-value --output json > /tmp/apikey.json
-          echo "Key enabled: $(jq -r '.enabled' /tmp/apikey.json)"
-          aws apigateway get-usage-plans --key-id "$key_id" --output json > /tmp/plans.json
-          jq -r --arg api "$api_id" '.items[] | "Usage plan: "+.name+"; linked to API/dev: "+ ((any(.apiStages[]?; .apiId==$api and .stage=="dev"))|tostring)' /tmp/plans.json
-          aws apigateway get-stages --rest-api-id "$api_id" --query 'item[].{stage:stageName, deploymentId:deploymentId}' --output json
-          aws apigateway get-method --rest-api-id "$api_id" --resource-id "$(aws apigateway get-resources --rest-api-id "$api_id" --query 'items[?path==`/{proxy+}`].id | [0]' --output text)" --http-method ANY --query '{apiKeyRequired:apiKeyRequired}' --output json
+          echo "API Base URL: $(jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ApiBaseUrl") | .OutputValue' /tmp/stack.json)"
+          aws cloudformation describe-stack-resources --stack-name afl-app-dev-backend --output json > /tmp/resources.json
+          jq -r '.StackResources[]|select(.LogicalResourceId|test("Api|UsagePlan|Deployment|Proxy"))|[.LogicalResourceId,.PhysicalResourceId,.ResourceStatus]|@tsv' /tmp/resources.json
+          aws cloudformation describe-stack-events --stack-name afl-app-dev-backend --output json > /tmp/events.json
+          echo "Most recent API resource events:"
+          jq -r '[.StackEvents[]|select(.LogicalResourceId|test("Api|UsagePlan|Deployment|Proxy"))][:25][]|[.Timestamp,.LogicalResourceId,.ResourceStatus,.ResourceStatusReason//""]|@tsv' /tmp/events.json
+          echo "Frontend config URL (public, no key):"
+          python - <<'PY'
+          import urllib.request,re
+          try:
+              u=urllib.request.urlopen('https://d9i3mlqvt0ks6.cloudfront.net/',timeout=12).read().decode()
+              matches=re.findall(r'apiBaseUrl[^;\\n]*',u)
+              for line in matches[:3]: print(line[:240])
+          except Exception as exc: print('Frontend fetch unavailable:',type(exc).__name__)
+          PY
