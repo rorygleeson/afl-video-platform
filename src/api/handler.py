@@ -303,7 +303,7 @@ def video_scene_public(job, scene_id):
               "mode": "REAL" if (real or approval) else ("MOCK_ONLY" if VIDEO_MODE == "MOCK_ONLY" else "DISABLED")}
     if status in ("MOCK_CLAIMED", "MOCK_GENERATING", "MOCK_COMPLETED", "MOCK_FAILED"):
         result["mock"] = True
-    if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED"):
+    if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED", "SUBMISSION_UNKNOWN"):
         result["errorCode"] = item["errorCode"]
     if (real or approval) and status not in ("COMPLETED", "FAILED") and GOOGLE_STATE_MACHINE_ARN:
         # Read-only reconciliation of Step Functions failures. Never issue a new
@@ -318,6 +318,8 @@ def video_scene_public(job, scene_id):
                 result["status"] = "REVIEW_REQUIRED"
                 result["errorCode"] = "WORKFLOW_" + execution["status"]
                 result["failureCode"] = safe_execution_failure_code(arn)
+                if real.get("errorCode"):
+                    result["failureCode"] = real["errorCode"]
             elif execution.get("status") == "RUNNING":
                 result["workflowStatus"] = "RUNNING"
         except ClientError as exc:
