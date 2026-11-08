@@ -315,7 +315,7 @@ def submit(job, scene, request):
     record = owner_record(job, scene, request)
     if record.get("status") != "PREPARED":
         raise ContractError("Submission cannot be retried or started from this state")
-    rendered = render_scene(S3, PROMPT_BUCKET, get_job(job), scene)
+    rendered = render_scene(S3, PROMPT_BUCKET, get_job(job), scene, allow_paid=True)
     # Existing S3 config has videoGenerationEnabled=false by design; the
     # initial paid approval must explicitly replace this configuration too.
     if rendered.get("videoGenerationEnabled") is not True:
