@@ -109,6 +109,52 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(PermissionError, "PREFLIGHT_REQUIRES_HARD_DISABLED_VIDEO"):
             w.lambda_handler({"op": "auth_check"}, None)
 
+    def test_free_scene1_preflight_checks_s3_and_never_calls_google(self):
+        w = self.worker
+        self.assertEqual(w.PAID_ENABLED, "false")
+        job = "a" * 32
+        scene = {"status": "COMPLETED", "resultKey": f"results/{job}/scene1.png"}
+        w.JOBS.get_item.return_value = {"Item": {"jobId": job, "scenes": {"scene1": scene}}}
+        w.S3.get_object.return_value = {
+            "ContentType": "image/png", "Body": __import__("io").BytesIO(b"real-image-bytes")}
+        with patch.object(w, "render_scene", return_value={
+            "durationSeconds": 8, "videoGenerationEnabled": False, "prompt": "Ready to run"
+        }), patch.object(w, "google_json") as paid:
+            data = w.lambda_handler({"op": "scene_preflight", "jobId": job,
+                                    "sceneId": "scene1", "requestId": "freepreflight"}, None)
+        self.assertEqual(data["status"], "READY")
+        self.assertEqual(data["imageBytes"], len(b"real-image-bytes"))
+        self.assertFalse(data["paidGenerationEnabled"])
+        self.assertFalse(data["googleSubmissionMade"])
+        paid.assert_not_called()
+        w.SLOTS.put_item.assert_not_called()
+        w.JOBS.update_item.assert_not_called()
+
+    def test_preflight_refuses_unlocked_environment_or_other_scene(self):
+        w = self.worker
+        with self.assertRaises(w.ContractError):
+            w.lambda_handler({"op": "scene_preflight", "jobId": "a" * 32,
+                              "sceneId": "scene2", "requestId": "freepreflight"}, None)
+        w.PAID_ENABLED = "true"
+        with self.assertRaisesRegex(PermissionError, "PREFLIGHT_REQUIRES_HARD_DISABLED"):
+            w.lambda_handler({"op": "scene_preflight", "jobId": "a" * 32,
+                              "sceneId": "scene1", "requestId": "freepreflight"}, None)
+
+    def test_preflight_missing_or_expired_image_fails_closed(self):
+        w = self.worker
+        job = "a" * 32
+        w.JOBS.get_item.return_value = {"Item": {
+            "jobId": job, "scenes": {"scene1": {"status": "COMPLETED",
+            "resultKey": f"results/{job}/scene1.png"}}}}
+        w.S3.get_object.side_effect = RuntimeError("NoSuchKey")
+        with patch.object(w, "render_scene", return_value={
+            "durationSeconds": 8, "videoGenerationEnabled": False, "prompt": "Safe"
+        }), patch.object(w, "google_json") as paid:
+            with self.assertRaises(RuntimeError):
+                w.scene_preflight(job, "scene1")
+        paid.assert_not_called()
+        w.SLOTS.put_item.assert_not_called()
+
     def test_inline_image_to_video_request_has_exact_fields(self):
         w = self.worker
         result = w.image_payload(b"png-data", "image/png", "Alex kicks the ball", 8)
