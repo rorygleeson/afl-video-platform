@@ -24,6 +24,9 @@ VIDEO_WORKER_ARN = os.environ.get("VIDEO_WORKER_ARN")
 SCENARIO_ASSET_BUCKET = os.environ.get("SCENARIO_ASSET_BUCKET")
 VIDEO_STATE_MACHINE_ARN = os.environ.get("VIDEO_STATE_MACHINE_ARN")
 VIDEO_MODE = os.environ.get("VIDEO_MODE", "DISABLED")
+VIDEO_ADMISSION_TABLE = os.environ.get("VIDEO_ADMISSION_TABLE")
+ADMISSION = (boto3.resource("dynamodb").Table(VIDEO_ADMISSION_TABLE)
+             if VIDEO_ADMISSION_TABLE else None)
 VIDEO_SCENES = ("scene1", "scene2", "scene3")
 
 # Presigned browser POSTs must target the bucket's regional endpoint and use
@@ -306,6 +309,8 @@ def start_mock_video(job_id, scene_id, event):
     if current:
         return response(200, {"jobId": job_id, "video": video_scene_public(job, scene_id),
                               "message": "Scene already requested; no new execution created"})
+    if ADMISSION and ADMISSION.get_item(Key={"slotId": "GLOBAL_VIDEO_SLOT_0"}, ConsistentRead=True).get("Item"):
+        return response(409, {"error": "Another mock scene is running. Try after it finishes."})
     # This Stage 4 test has a SINGLE fixed execution name for each job/scene,
     # irrespective of client token. It cannot accidentally create a second run.
     execution_name = f"v-{job_id}-{scene_id}"
