@@ -342,9 +342,10 @@ test('Scene 1 preflight is read-only and makes no video POST', async () => {
   await h.nextTimer();
   await h.nextTimer();
   assert.equal(h.els.videoTestSection.hidden, false);
-  await h.els.scene1Preflight.listeners.click();
+  await h.flush();
   assert.match(h.els.scene1PreflightStatus.textContent, /READY.*No charge/);
-  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 1,
+               'Automatic free preflight runs after all reference images complete');
   assert.equal(h.calls.filter(c => /\/videos\/scene1$/.test(c.url) && c.opts.method === 'POST').length, 0);
 });
 
@@ -380,4 +381,27 @@ test('changing selections hides stale job ID', async () => {
   h.els.team.listeners.change();
   assert.equal(h.els.jobIdPanel.hidden, true);
   assert.equal(h.els.currentJobIdText.textContent, '');
+});
+
+test('Scene 1 free readiness automatically runs once for a finished job', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 0);
+  await h.nextTimer();
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 0);
+  await h.nextTimer();
+  assert.equal(h.els.videoTestSection.hidden, false);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 1);
+  assert.match(h.els.scene1PreflightStatus.textContent, /READY/);
+  await h.els.refresh.listeners.click();
+  await h.flush();
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 1,
+               'Status polling and refresh never duplicate automatic checks');
+  await h.els.scene1Preflight.listeners.click();
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 2,
+               'Optional manual recheck is explicitly initiated');
+  assert.equal(h.calls.filter(c => c.url.endsWith('/real-videos/scene1')).length, 0,
+               'Readiness never submits a paid MP4');
 });
