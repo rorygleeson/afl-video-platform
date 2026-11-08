@@ -311,9 +311,11 @@ def start_mock_video(job_id, scene_id, event):
                               "message": "Scene already requested; no new execution created"})
     if ADMISSION and ADMISSION.get_item(Key={"slotId": "GLOBAL_VIDEO_SLOT_0"}, ConsistentRead=True).get("Item"):
         return response(409, {"error": "Another mock scene is running. Try after it finishes."})
-    # This Stage 4 test has a SINGLE fixed execution name for each job/scene,
-    # irrespective of client token. It cannot accidentally create a second run.
-    execution_name = f"v-{job_id}-{scene_id}"
+    # Stable per idempotency key, but a new explicit click can retry when an
+    # earlier mock execution lost admission before creating a scene record.
+    # The DynamoDB worker slot remains the hard guard against parallel work.
+    token_hash = hashlib.sha256(token.encode()).hexdigest()[:16]
+    execution_name = f"v-{job_id}-{scene_id}-{token_hash}"
     try:
         STATES.start_execution(
             stateMachineArn=VIDEO_STATE_MACHINE_ARN,
