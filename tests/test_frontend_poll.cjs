@@ -9,7 +9,7 @@ const html = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'
 const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
 new vm.Script(script, {filename: 'frontend/index.html'});
 
-function setup() {
+function setup(options = {}) {
   let statusPolls = 0;
   const mockStatuses = {scene1: 'NOT_REQUESTED', scene2: 'NOT_REQUESTED', scene3: 'NOT_REQUESTED'};
   const calls = [];
@@ -111,10 +111,19 @@ function setup() {
       ok: true, async json() { return {status: 'GENERATING_IMAGES'}; },
     };
     if (url.endsWith('/videos')) return {
-      ok: true, async json() { return {videoGenerationMode: 'MOCK_ONLY', videos: {
-        scene1: {status: mockStatuses.scene1}, scene2: {status: mockStatuses.scene2},
-        scene3: {status: mockStatuses.scene3},
-      }}; },
+      ok: true, async json() { return {
+        videoGenerationMode: 'MOCK_ONLY',
+        paidScenes: options.paidScenes || {},
+        videos: {
+          scene1: {status: mockStatuses.scene1},
+          scene2: {status: mockStatuses.scene2},
+          scene3: {status: mockStatuses.scene3},
+          ...(options.realVideos || {}),
+        },
+      }; },
+    };
+    if (/\/real-videos\/scene[123]$/.test(url) && opts.method === 'POST') return {
+      ok: true, async json() { return {status: 'REAL_VIDEO_REQUESTED'}; },
     };
     if (/\/videos\/scene[123]$/.test(url) && opts.method === 'POST') return {
       ok: true, async json() { return {status: 'MOCK_REQUESTED'}; },
@@ -419,5 +428,44 @@ test('all three real video buttons are independently wired but never call paid e
     assert.ok(h.els['generateRealScene' + n].listeners.click, 'Scene ' + n + ' must be wired');
     assert.match(h.els['scene' + n + 'PaidStatus'].textContent, /locked/);
   }
+  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
+});
+
+test('approved Scene 1 click submits only Scene 1 once with exact consent', async () => {
+  const h = setup({paidScenes: {scene1: true, scene2: true, scene3: true}});
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  await h.nextTimer();
+  await h.nextTimer();
+  await h.flush();
+  assert.equal(h.els.generateRealScene1.hidden, false);
+  assert.equal(h.els.generateRealScene2.hidden, false);
+  assert.equal(h.els.generateRealScene3.hidden, false);
+  await h.els.generateRealScene1.listeners.click();
+  await h.flush();
+  assert.equal(h.els.generateRealScene1.hidden, true);
+  assert.equal(h.els.generateRealScene2.hidden, false);
+  assert.equal(h.els.generateRealScene3.hidden, false);
+  const submitted = h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url));
+  assert.equal(submitted.length, 1);
+  assert.match(submitted[0].url, /\/real-videos\/scene1$/);
+  assert.equal(submitted[0].opts.method, 'POST');
+  assert.deepEqual(JSON.parse(submitted[0].opts.body), {confirmPaidScene: 'scene1'});
+  await h.els.generateRealScene1.listeners.click();
+  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 1,
+    'Second click must never resubmit Scene 1');
+});
+
+test('read-only workflow review status does not re-open a paid button', async () => {
+  const h = setup({paidScenes: {scene1: false, scene2: false, scene3: false},
+    realVideos: {scene1: {mode:'REAL', status:'REVIEW_REQUIRED', errorCode:'WORKFLOW_FAILED'}}});
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  await h.nextTimer();
+  await h.nextTimer();
+  assert.match(h.els.scene1PaidStatus.textContent, /Manual review required/);
+  assert.equal(h.els.generateRealScene1.hidden, true);
   assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
 });
