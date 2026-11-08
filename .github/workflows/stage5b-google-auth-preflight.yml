@@ -1,0 +1,88 @@
+name: Stage 5B free Google worker authentication preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/stage5b-google-auth-preflight.yml'
+      - 'src/google_video_worker/handler.py'
+      - 'tests/test_google_video_stage5a.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-google-video-stage5b-preflight
+  cancel-in-progress: false
+jobs:
+  authenticate-without-generating-video:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate locked adapter and offline regressions
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'cfn-lint>=1,<2'
+          python -m py_compile src/google_video_worker/handler.py src/api/video_prompts.py
+          python -m unittest discover -s tests -p 'test_google_video_stage5a.py' -v
+          cfn-lint infrastructure/app/google-video.yaml --regions ap-southeast-2
+          grep -Fq "PAID_GENERATION_ENABLED: 'false'" infrastructure/app/google-video.yaml
+          grep -Fq 'GOOGLE_VIDEO_MODEL: UNCONFIGURED' infrastructure/app/google-video.yaml
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Require existing isolated adapter stack
+        run: |
+          set -euo pipefail
+          state=$(aws cloudformation describe-stacks --stack-name afl-app-dev-google-video \
+            --query 'Stacks[0].StackStatus' --output text)
+          test "$state" = CREATE_COMPLETE -o "$state" = UPDATE_COMPLETE
+      - name: Package locked adapter and dependencies
+        run: |
+          set -euo pipefail
+          mkdir -p dist/google-video
+          python -m pip install --disable-pip-version-check --target dist/google-video 'google-auth[requests]>=2.30,<3'
+          cp src/google_video_worker/handler.py src/api/video_prompts.py dist/google-video/
+          (cd dist/google-video && zip -q -r ../google-video.zip .)
+          aws s3 cp dist/google-video.zip \
+            "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/google-video/$GITHUB_SHA.zip" \
+            --region ap-southeast-2
+      - name: Update isolated worker only through hard-disabled CloudFormation template
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name afl-app-dev-google-video --output json > /tmp/existing.json
+          mapfile -t overrides < <(jq -r '.Stacks[0].Parameters[] | select(.ParameterKey != "GoogleWorkerArtifactKey") | "\(.ParameterKey)=\(.ParameterValue)"' /tmp/existing.json)
+          overrides+=("GoogleWorkerArtifactKey=google-video/$GITHUB_SHA.zip")
+          aws cloudformation deploy \
+            --stack-name afl-app-dev-google-video \
+            --region ap-southeast-2 \
+            --template-file infrastructure/app/google-video.yaml \
+            --parameter-overrides "${overrides[@]}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role \
+            --no-fail-on-empty-changeset
+          test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-google-video \
+            --query 'Stacks[0].Outputs[?OutputKey==`PaidGenerationMode`].OutputValue | [0]' --output text)" = DISABLED
+          aws lambda get-function-configuration \
+            --function-name afl-app-dev-google-omni-worker \
+            --query 'Environment.Variables.[PAID_GENERATION_ENABLED,GOOGLE_VIDEO_MODEL]' \
+            --output text | grep -F 'false' | grep -F 'UNCONFIGURED'
+      - name: Authenticate new AWS worker role to Google without video calls
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name afl-app-dev-google-omni-worker \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"op":"auth_check"}' \
+            --region ap-southeast-2 /tmp/auth-result.json > /tmp/invoke-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/invoke-meta.json'))
+          if meta.get('FunctionError'):
+              raise SystemExit('New worker IAM / runtime authentication preflight failed; no paid model called')
+          response=json.load(open('/tmp/auth-result.json'))
+          print('New worker WIF preflight status:',response.get('status','UNAVAILABLE'))
+          if response.get('status')!='AUTHENTICATED' or response.get('paidGenerationEnabled') is not False:
+              raise SystemExit('New worker Google IAM binding or WIF access not ready; paid generation remains locked')
+          print('Google WIF authenticated successfully. Paid generation remains disabled.')
+          PY
