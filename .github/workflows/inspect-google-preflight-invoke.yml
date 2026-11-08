@@ -1,0 +1,31 @@
+name: Inspect stuck Google preflight Lambda invocation
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/inspect-google-preflight-invoke.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Inspect CloudFormation and run safe Lambda health only if permitted
+        run: |
+          set -euo pipefail
+          for stack in afl-app-dev-google-wif-preflight afl-app-dev-google-wif-preflight-v2; do
+            echo "STACK: $stack"
+            aws cloudformation describe-stacks --stack-name "$stack" --query 'Stacks[0].{Status:StackStatus,Outputs:Outputs}' --output json || true
+            aws cloudformation describe-stack-events --stack-name "$stack" --query 'StackEvents[0:5].{Resource:LogicalResourceId,Status:ResourceStatus,Reason:ResourceStatusReason}' --output json || true
+          done
+          echo 'Attempt safe direct invocation of real Google worker contract_health (no external call)'
+          aws lambda invoke --function-name afl-app-dev-google-omni-worker --cli-binary-format raw-in-base64-out --payload '{"op":"contract_health"}' /tmp/google-worker-health.json --query '{FunctionError:FunctionError,StatusCode:StatusCode}' --output json && cat /tmp/google-worker-health.json || true
+          echo 'Attempt safe direct invocation of bounded preflight using deliberate invalid request (no Google token exchange)'
+          aws lambda invoke --function-name afl-app-dev-google-omni-preflight-v2 --cli-binary-format raw-in-base64-out --payload '{"RequestType":"Update","StackId":"diagnostic","RequestId":"diagnostic","LogicalResourceId":"diagnostic","ResponseURL":"https://example.invalid"}' /tmp/preflight-response.json --query '{FunctionError:FunctionError,StatusCode:StatusCode}' --output json && cat /tmp/preflight-response.json || true
