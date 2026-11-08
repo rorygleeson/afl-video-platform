@@ -24,6 +24,7 @@ VIDEO_WORKER_ARN = os.environ.get("VIDEO_WORKER_ARN")
 GOOGLE_WORKER_ARN = os.environ.get("GOOGLE_WORKER_ARN")
 GOOGLE_STATE_MACHINE_ARN = os.environ.get("GOOGLE_STATE_MACHINE_ARN")
 REAL_VIDEO_MODE = os.environ.get("REAL_VIDEO_MODE", "DISABLED")
+APPROVED_VIDEO_JOB_ID = os.environ.get("APPROVED_VIDEO_JOB_ID", "")
 SCENARIO_ASSET_BUCKET = os.environ.get("SCENARIO_ASSET_BUCKET")
 VIDEO_STATE_MACHINE_ARN = os.environ.get("VIDEO_STATE_MACHINE_ARN")
 VIDEO_MODE = os.environ.get("VIDEO_MODE", "DISABLED")
@@ -356,6 +357,8 @@ def start_real_scene1(job_id, event):
     if REAL_VIDEO_MODE != "APPROVED_SCENE1" or not GOOGLE_STATE_MACHINE_ARN:
         return response(503, {"status": "PAID_GENERATION_DISABLED",
                               "paidGenerationEnabled": False})
+    if not JOB_RE.fullmatch(APPROVED_VIDEO_JOB_ID) or job_id != APPROVED_VIDEO_JOB_ID:
+        return response(403, {"error": "Scene 1 job not explicitly approved for paid generation"})
     headers = {str(k).lower(): str(v) for k, v in (event.get("headers") or {}).items()}
     key = headers.get("idempotency-key", "")
     if not IDEMPOTENCY_RE.fullmatch(key):
