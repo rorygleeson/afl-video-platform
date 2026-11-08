@@ -8,7 +8,7 @@
       "operation": "image_edit",
       "model": "google/nano-banana-pro",
       "enabled": true,
-      "promptInstructions": "Replace central player face with selfie and central player's kit with selected team; preserve original running pose, ball and stadium."
+      "promptInstructions": "SCENE 1 — RUN-UP: Replace ONLY the central footballer's face with the actual SELFIE face, retaining exact recognisable proportions, features, hair and apparent age. Preserve the source image's tight three-quarter running pose and hands securing the red AFL football, original framing and floodlit stadium. Dress the central player in the selected team's guernsey without changing his identity. Keep a focused natural expression, not an exaggerated grimace or generic heroic face. Do not add a tackle or new player. If opposition players are visible in the background, they must wear Essendon Bombers BLACK with a BOLD RED DIAGONAL SASH; do not change their identities or generate other uniforms."
     },
     {
       "id": "scene2",
@@ -16,7 +16,7 @@
       "operation": "image_edit",
       "enabled": true,
       "model": "google/nano-banana-pro",
-      "promptInstructions": "Replace face of central player with selfie; keep original kicking preparation pose and ball placement. Change main player's kit to selected team."
+      "promptInstructions": "SCENE 2 — PRE-KICK RUN: Transfer the central player's exact SELFIE face without reshaping eyes, cheeks, mouth, nose, jawline, forehead or hair. Preserve the master scene's forward-running full-body pose, football held at chest height in BOTH hands, original camera angle, grass, packed floodlit stadium and the one trailing defender. The central player wears the selected team's guernsey. The trailing defender is ESSENDON BOMBERS, wearing an identical BLACK guernsey with a BOLD RED DIAGONAL SASH throughout; any other visible opposition player must wear exactly the same design. Do not add a kick, move the ball, change the opponent or introduce new goalposts into this still image. Keep the facial expression recognisable and natural."
     },
     {
       "id": "scene3",
@@ -24,7 +24,7 @@
       "operation": "image_edit",
       "model": "google/nano-banana-pro",
       "enabled": true,
-      "promptInstructions": "Replace ONLY the central athlete's facial identity with the precise face from the customer selfie; keep the same identifiable eyes, nose, cheeks, jawline, mouth proportions, hairline, skin and apparent age. The original master has an extreme open-mouth celebration: moderate that expression into a natural happy smile or slightly open mouth rather than distorting the selfie face. Preserve the original celebration pose, raised arms, teammate placement, and each surrounding teammate's distinct face. Change the central athlete and all existing teammates to the selected matching team guernsey; do not add new players. Selfie face fidelity takes priority over exaggerated shouting or a generic heroic face."
+      "promptInstructions": "SCENE 3 — PREMIERS CELEBRATION: Replace ONLY the central athlete's face with the actual customer SELFIE face, maintaining the same identifiable eye shape and spacing, nose, cheeks, jaw, mouth proportions, hairline, skin texture and apparent age. The original master shows a very wide open-mouthed shout: if recreating that expression would change the person's identity, reduce it to a natural excited smile or slightly open mouth while keeping the celebration energetic through raised fists, shoulders and surrounding teammates. Do not regenerate, exaggerate or beautify the face into a generic hero. Preserve the existing celebratory pose, hands, arm positions, each teammate's distinct face, placement, floodlit stadium and natural physical contact. Dress the central player and ALL existing celebrating teammates in matching selected-team guernseys. Do not introduce opposition players, extra teammates or new faces."
     }
   ],
   "teamGuernseys": {
@@ -46,5 +46,6 @@
     "sydney": "Sydney Swans: white and red guernsey",
     "west-coast": "West Coast Eagles: royal blue and gold guernsey",
     "western-bulldogs": "Western Bulldogs: royal blue with red and white horizontal chest stripes"
-  }
+  },
+  "sharedPrompt": "Photorealistic Australian rules football photographic IMAGE EDIT, not a new face generation. Image 1 is the MASTER COMPOSITION for the body, pose, ball, camera angle, perspective, grass, stadium, team kits and lighting. Image 2 is the CUSTOMER'S ORIGINAL SELFIE: the DEFINITIVE and ONLY facial identity source for the central player. Precisely transfer that person's actual face from Image 2 onto the central athlete in Image 1, as close to the real selfie as possible; never create a lookalike, generic athlete, beautified or heroic reinterpretation. Preserve distinctive eyes and eye spacing, eyebrows, nose, cheeks, lips and mouth proportions, chin, jawline, forehead, hairline, hair texture, skin detail and apparent age. Do not enlarge the jaw, masculinise, slim, age, smooth, stylise or invent facial details. When the master expression or angle differs, adapt only what is strictly necessary for the composition and natural stadium illumination; facial identity from the SELFIE takes priority over exaggerated expressions. Do not copy the selfie background. Preserve the master's realistic football pose and surrounding players without replacing the surrounding players' identities. Do not change the stadium or switch nighttime lighting to daytime. No sponsor marks, invented licensed logos, misleading lettering, watermarks or captions. Single high quality vertical photorealistic sports photograph, not a collage."
 }
