@@ -478,6 +478,23 @@ test('approved Scene 1 click submits only Scene 1 once with exact consent', asyn
     'Second click must never resubmit Scene 1');
 });
 
+test('paid POST outcome survives stale MOCK_ONLY status polling', async () => {
+  const h = setup({paidScenes:{scene1:true,scene2:true,scene3:true}});
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  await h.els.generateRealScene1.listeners.click();
+  await h.flush();
+  assert.match(h.els.videoDebugText1.textContent,/POST \\/jobs\\//);
+  assert.match(h.els.videoDebugText1.textContent,/API response: REAL_VIDEO_REQUESTED/);
+  await h.els.refresh.listeners.click();
+  await h.flush();
+  assert.match(h.els.videoDebugText1.textContent,/API response: REAL_VIDEO_REQUESTED/,
+     'Stale read-only status must not erase paid submission diagnostic');
+  assert.equal(h.els.generateRealScene1.hidden,true);
+  assert.equal(h.calls.filter(c=>/\\/real-videos\\/scene1$/.test(c.url)).length,1);
+});
+
 test('read-only workflow review status does not re-open a paid button', async () => {
   const h = setup({paidScenes: {scene1: false, scene2: false, scene3: false},
     realVideos: {scene1: {mode:'REAL', status:'REVIEW_REQUIRED', errorCode:'WORKFLOW_FAILED'}}});
