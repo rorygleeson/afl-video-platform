@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#172432">
-  <title>AFL Video Lab — video integration testing</title>
+  <title>AFL Video — Create your AFL moment</title>
   <style>
     :root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#172432;background:#f4f6f9}
     body{max-width:560px;margin:0 auto;padding:24px 16px 50px}
@@ -48,14 +48,14 @@
 </head>
 <body>
 <main>
-  <h1>AFL Video Lab</h1>
-  <p>Upload your selfie, then generate three personalised AFL scene images in parallel.</p>
-  <p class="note">The API URL is configured automatically. Your API key stays in this tab. Uploading a selfie does not incur an AI generation charge; generating three scene images is a separate, explicit action.</p>
+  <h1>Create your AFL video</h1>
+  <p>Upload a photo, create your three reference images, then make each video in order.</p>
+  <p class="poll-status">Each paid generation requires your confirmation. Nothing starts automatically.</p>
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off">
-  <button id="testApi" type="button">Test API connection</button>
-  <button id="testGoogle" type="button">Test Google Cloud connection (no video charge)</button>
-  <p id="googleStatus" role="status" aria-live="polite"></p>
+  <button id="testApi" type="button" hidden aria-hidden="true" tabindex="-1">Test API connection</button>
+  <button id="testGoogle" type="button" hidden aria-hidden="true" tabindex="-1">Test Google Cloud connection</button>
+  <p id="googleStatus" role="status" aria-live="polite" hidden></p>
   <label for="scenario">Scenario</label>
   <select id="scenario"><option value="afl-grand-final-winning-kick">AFL Grand Final — Winning Kick</option></select>
   <label for="team">Team</label>
@@ -77,12 +77,12 @@
   <label for="selfie">Selfie</label>
   <input id="selfie" type="file" accept="image/jpeg,image/png,image/webp,image/*">
   <img id="preview" alt="Selfie preview" hidden>
-  <button id="generate" type="button" disabled>Upload selfie &amp; create test job</button>
+  <button id="generate" type="button" disabled>Upload selfie &amp; create job</button>
   <button id="generateScene1" type="button" hidden>Generate 3 reference images with Replicate (paid API)</button>
   <button id="refresh" type="button" hidden aria-hidden="true" tabindex="-1" style="display:none">Refresh job status</button>
-  <button id="resumeLast" type="button" hidden>Resume Last Job (no AI charge)</button>
+  <button id="resumeLast" type="button" hidden>Resume your last job</button>
   <section id="jobProgressSection">
-    <h2>Reference image progress</h2>
+    <h2>Reference images</h2>
     <div id="jobIdPanel" hidden>
       <strong>Current Job ID</strong>
       <div class="job-id-row"><code id="currentJobIdText"></code><button id="copyJobId" type="button">Copy</button></div>
@@ -98,15 +98,14 @@
   </section>
   <section id="videoTestSection" hidden>
     <h2 style="margin-bottom:6px">Create your videos</h2>
-    <p class="poll-status" id="realVideoGate">Reference images are ready. Check Scene 1 before creating an MP4.</p>
+    <p class="poll-status" id="realVideoGate">Generate each scene in order. The next scene unlocks only when the previous MP4 is finished.</p>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 8 seconds</strong>
-      <p class="poll-status" style="margin:6px 0 12px">The app checks your image and prompt automatically. No charges.</p>
-      <button id="scene1Preflight" type="button">Recheck readiness (free)</button>
-      <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite">Scene 1 check runs automatically when reference images are ready.</p>
+      <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
+      <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite" hidden></p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
       <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 8 seconds)</button>
-      <button id="videoScene1" type="button" class="quiet-button">View exact video prompt</button>
+      <button id="videoScene1" type="button" hidden aria-hidden="true" tabindex="-1">View exact video prompt</button>
       <details id="videoPromptDetails1" class="scene-prompt" hidden>
         <summary>Video prompt and commentary</summary>
         <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
@@ -115,11 +114,11 @@
       <p id="videoStatus1" class="video-state" role="status" hidden>Real video not generated.</p>
       <div id="videoPlayer1"></div>
     </div>
-    <div class="video-scene" id="videoPanel2">
+    <div class="video-scene" id="videoPanel2" hidden>
       <strong>Scene 2 — Winning kick</strong>
       <button id="generateRealScene2" type="button" hidden>Generate Scene 2 MP4 (paid, 8 seconds)</button>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
-      <button id="videoScene2" type="button">Preview Scene 2 prompt (free)</button>
+      <button id="videoScene2" type="button" hidden aria-hidden="true" tabindex="-1">Preview Scene 2 prompt (free)</button>
       <details id="videoPromptDetails2" class="scene-prompt" hidden>
         <summary>Scene 2 prompt — show/hide</summary>
         <p id="videoPromptStatus2" class="video-state" role="status" aria-live="polite"></p>
@@ -128,11 +127,11 @@
       <p id="videoStatus2" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer2"></div>
     </div>
-    <div class="video-scene" id="videoPanel3">
+    <div class="video-scene" id="videoPanel3" hidden>
       <strong>Scene 3 — Celebration</strong>
       <button id="generateRealScene3" type="button" hidden>Generate Scene 3 MP4 (paid, 10 seconds)</button>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
-      <button id="videoScene3" type="button">Preview Scene 3 prompt (free)</button>
+      <button id="videoScene3" type="button" hidden aria-hidden="true" tabindex="-1">Preview Scene 3 prompt (free)</button>
       <details id="videoPromptDetails3" class="scene-prompt" hidden>
         <summary>Scene 3 prompt — show/hide</summary>
         <p id="videoPromptStatus3" class="video-state" role="status" aria-live="polite"></p>
@@ -274,6 +273,16 @@
       const data = await api('/jobs/' + jobId + '/videos');
       if (jobId !== currentJobId) return;
       const approvals = data.paidScenes || {};
+      const priorCompleted = n => {
+        if (n === 1) return true;
+        const prev = data.videos?.['scene' + (n - 1)] || {};
+        return prev.mode === 'REAL' && prev.status === 'COMPLETED' &&
+          typeof prev.url === 'string' && prev.url.length > 0 && !prev.mock;
+      };
+      // Never show the next paid scene before its predecessor has a real MP4.
+      for (const n of [1, 2, 3]) {
+        document.getElementById('videoPanel' + n).hidden = !priorCompleted(n);
+      }
       for (const n of [1, 2, 3]) {
         const id = 'scene' + n;
         const real = data.videos?.[id] || {};
@@ -289,7 +298,7 @@
                   : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
             : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
         document.getElementById('generateRealScene' + n).hidden =
-          !authorised || videoSubmittedScenes.has(id) || real.mode === 'REAL';
+          !priorCompleted(n) || !authorised || videoSubmittedScenes.has(id) || real.mode === 'REAL';
       }
       for (const n of [1, 2, 3]) {
         const item = data.videos?.['scene' + n] || {};
@@ -551,7 +560,7 @@
       const failed = record.job.failedScenes ?? 0;
       showStatus('Reference images: ' + completed + '/3 completed' +
         (failed ? '; ' + failed + ' failed' : '') + '. ' +
-        (referenceImagesReady ? 'You can preview all three scene prompts.' : 'Video prompts stay hidden until all three are ready.'));
+        (referenceImagesReady ? 'Scene 1 is available below.' : 'Preparing your videos…'));
       // Image cards keep their own status and retain thumbnails during polling.
       // Never reuse the image-job COMPLETED value to describe video generation.
       for (const n of [1,2,3]) {
