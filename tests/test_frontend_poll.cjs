@@ -36,7 +36,7 @@ function setup() {
                       'videoPromptText1','videoPromptText2','videoPromptText3',
                       'videoPromptDetails1','videoPromptDetails2','videoPromptDetails3',
                       'videoScene1', 'videoScene2', 'videoScene3',
-                      'scene1Preflight', 'scene1PreflightStatus', 'generateRealScene1',
+                      'scene1Preflight', 'scene1PreflightStatus', 'scene1PaidStatus', 'generateRealScene1',
                       'videoTestSection','videoTestMessage','assembleFinal','nextStageMessage',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
