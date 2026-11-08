@@ -69,6 +69,29 @@ def validate(event):
     return job, scene, request
 
 
+def safe_error_code(exc):
+    """Categorise Google auth failures without exposing token or response body."""
+    detail = str(exc).lower()
+    if ("iamcredentials.googleapis.com" in detail or
+            "iam.serviceaccounts.getaccesstoken" in detail):
+        if any(x in detail for x in ("disabled", "not been used", "service_disabled", "not enabled")):
+            return "GOOGLE_IAM_CREDENTIALS_API_DISABLED"
+        return "GOOGLE_SERVICE_ACCOUNT_IMPERSONATION_DENIED"
+    if "sts.googleapis.com" in detail:
+        if any(x in detail for x in ("disabled", "not been used", "service_disabled")):
+            return "GOOGLE_STS_API_DISABLED"
+        return "GOOGLE_FEDERATION_STS_REJECTED"
+    if "invalid_grant" in detail or "attribute_condition" in detail:
+        return "GOOGLE_FEDERATION_REJECTED"
+    if "permission_denied" in detail or "permission denied" in detail or "403" in detail:
+        return "GOOGLE_PERMISSION_DENIED"
+    if "timeout" in detail or "timed out" in detail:
+        return "GOOGLE_AUTH_TIMEOUT"
+    if "connection" in detail or "name resolution" in detail:
+        return "GOOGLE_AUTH_NETWORK_ERROR"
+    return "GOOGLE_AUTH_ERROR"
+
+
 def credentials():
     """Use existing AWS->Google WIF provider; new IAM role needs Google binding."""
     number = os.environ["GOOGLE_PROJECT_NUMBER"]
@@ -350,9 +373,10 @@ def lambda_handler(event, context):
         try:
             credentials()
         except Exception as exc:
-            LOG.warning("Google worker WIF preflight failed: %s", type(exc).__name__)
-            return {"status": "AUTHENTICATION_FAILED",
-                    "errorCode": "GOOGLE_WIF_PREFLIGHT_FAILED"}
+            code = safe_error_code(exc)
+            LOG.warning("Google worker WIF preflight failed: code=%s exception_type=%s",
+                        code, type(exc).__name__)
+            return {"status": "AUTHENTICATION_FAILED", "errorCode": code}
         return {"status": "AUTHENTICATED", "paidGenerationEnabled": False}
     job, scene, request = validate(event)
     if op == "claim":
