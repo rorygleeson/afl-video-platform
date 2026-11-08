@@ -1,10 +1,12 @@
 # Video generation implementation plan (approved design, not yet deployed)
 
-**Date:** 2026-11-08. **Stage:** 1 — documentation/design only. **Next gate:** verify the actual Gemini Omni 1.2 Flash Google Cloud API contract before any video deployment. **Repository:** `main`; CD uses the existing `deploy` marker branch and CloudFormation. No feature branch required.
+**Date:** 2026-11-08. **Stage:** 3 — isolated mock-only AWS video stack created; no real model integration, API routes or frontend video controls. **Next gate:** Stage 4 approval for additive API/frontend integration. **Repository:** `main`; CD uses the existing `deploy` marker branch and CloudFormation. No feature branch required.
 
-**Stage 2 official API research (8 November 2026):** [Google Omni Stage 2 API contract](GOOGLE_OMNI_STAGE2_API_CONTRACT.md). The model ID, documented JSON contract and S3-only feasibility are confirmed; authenticated model entitlement, quota and actual inline MP4 retrieval are untested.\n\n## Goal and current reality
+**Stage 2 official API research (8 November 2026):** [Google Omni Stage 2 API contract](GOOGLE_OMNI_STAGE2_API_CONTRACT.md). The model ID, documented JSON contract and S3-only feasibility are confirmed; authenticated model entitlement, quota and actual inline MP4 retrieval are untested.\n\n**Stage 3 implementation:** [video CloudFormation](../infrastructure/app/video.yaml), [mock-only worker](../src/video_mock_worker/handler.py), [offline unit tests](../tests/test_video_mock_stage3.py), [isolated deployment workflow](../.github/workflows/deploy-video.yml). AWS stack `afl-app-dev-video` was created by GitHub Actions; mock-only execution and playback are not yet end-to-end tested.
 
-Keep the **existing** selfie + team + first/last name -> three parallel Replicate personalised reference images -> private S3 workflow operational and unchanged. Existing Google Workload Identity Federation **auth check** and three **free S3 prompt preview** buttons are deployed. **No paid video generation, video state machine, FFmpeg assembly or video playback has been implemented.**
+## Goal and current reality
+
+Keep the **existing** selfie + team + first/last name -> three parallel Replicate personalised reference images -> private S3 workflow operational and unchanged. Existing Google Workload Identity Federation **auth check** and three **free S3 prompt preview** buttons are deployed. **A separate mock-only video state machine now exists, but no paid video generation, real video storage, FFmpeg assembly or frontend playback has been implemented.**
 
 Add three explicit **Generate Scene N Video** buttons (one per completed image), each using exactly that scene's `scenes.sceneN.resultKey` in the existing DynamoDB item, plus the scene-specific prompt from versioned S3 configuration. Each completion creates an MP4 in AWS S3. When all three complete, expose an **Assemble Final Video** button that invokes FFmpeg in a separate Lambda and stores `final.mp4`. No automatic quality-based reruns or assembly while testing. Later support up to three parallel provider generations and simplified consumer UX. Defer Solution -> Use Case hierarchy and payments.
 
@@ -58,7 +60,7 @@ Preserve existing `status`, `scenes` and image-worker writes. Add independent `v
 
 **Stage 2 — Google API contract:** verify real provider endpoint for current WIF credentials, model ID, request JSON, accepted image inputs, async polling, output retrieval, durations, size limits, pricing and optional GCS requirement. Produce sample requests/tests with no paid submit. **Stop for approval.**
 
-**Stage 3 — infrastructure:** new video CloudFormation stack, standalone worker, Step Functions, IAM, durable ledger/locks, safety flags, mock provider. Validate CloudFormation change sets show no unexpected replacements, no changes to image state machine. Review permissions boundaries and Google service-account federation for new role. No paid submissions. **Stop for approval.**
+**Stage 3 — infrastructure:** Created separate `afl-app-dev-video` CloudFormation stack, mock-only worker, Standard Step Functions state machine, IAM roles and a DynamoDB global slot. Existing image resources untouched. Six offline tests pass. Google WIF permissions for a real new role, execution-level smoke testing, and real provider code are deliberately deferred. No paid submissions. **Stage complete; stop for approval before Stage 4.**
 
 **Stage 4 — API and UI:** additive routes, video statuses, three independently enabled buttons, preview preserved, playback, retries/refresh safe. Regression test image flow. Note existing packaging bug: deploy script copies `src/api/video_prompts.py` but zips only `handler.py`; fix and smoke-test import **before** updating existing API Lambda. No paid submits. **Stop for approval.**
 
