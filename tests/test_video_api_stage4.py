@@ -55,7 +55,7 @@ class VideoStage4ApiTests(unittest.TestCase):
             "executionArn": "arn:aws:states:ap-southeast-2:123456789012:execution:video:mock"
         }
 
-    def invoke(self, method, path, idem="test-idempotency-key-1234"):
+    def invoke(self, method, path, idem="request-example-20261108"):
         event = {"httpMethod": method, "path": path, "headers": {"Idempotency-Key": idem}}
         reply = self.api.lambda_handler(event, None)
         return reply["statusCode"], json.loads(reply["body"])
@@ -74,7 +74,7 @@ class VideoStage4ApiTests(unittest.TestCase):
             scene = "scene" + str(n)
             event = {"httpMethod": "POST",
                      "path": "/jobs/" + self.jobid + "/real-videos/" + scene,
-                     "headers": {"Idempotency-Key": "test-idempotency-key-1234"},
+                     "headers": {"Idempotency-Key": "request-example-20261108"},
                      "body": json.dumps({"confirmPaidScene": scene})}
             self.states.reset_mock()
             self.ddb.reset_mock()
@@ -99,7 +99,7 @@ class VideoStage4ApiTests(unittest.TestCase):
         self.job["paidVideoApprovals"] = {"scene1": {"status": "REQUESTED"}}
         self.job["realVideos"] = {"scene1": {"status": "PROCESSING"}}
         event = {"httpMethod": "POST", "path": "/jobs/" + self.jobid + "/real-videos/scene2",
-                 "headers": {"Idempotency-Key": "test-idempotency-key-1234"},
+                 "headers": {"Idempotency-Key": "request-example-20261108"},
                  "body": json.dumps({"confirmPaidScene": "scene2"})}
         result = self.api.lambda_handler(event, None)
         self.assertEqual(result["statusCode"], 409)
