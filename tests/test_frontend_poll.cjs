@@ -604,8 +604,10 @@ test('existing uncertain paid Scene 1 auto-opens debug and displays its status',
   await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   assert.equal(h.els.videoDebugDetails1.open, true);
-  assert.equal(h.els.videoStatus1.hidden, false);
-  assert.match(h.els.videoStatus1.textContent,/submission unknown/i);
+  // One visible scene status only: hide the redundant player-status line.
+  assert.equal(h.els.videoStatus1.hidden, true);
+  assert.match(h.els.scene1PaidStatus.textContent,/submission/i);
+  assert.match(h.els.videoDebugText1.textContent,/SUBMISSION_UNKNOWN/);
   assert.equal(h.els.generateRealScene1.hidden, true);
   assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
 });
