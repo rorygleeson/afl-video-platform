@@ -32,7 +32,6 @@ jobs:
           c=Path('infrastructure/app/google-video.yaml').read_text()
           assert "PAID_GENERATION_ENABLED: 'false'" in c
           assert "GOOGLE_VIDEO_MODEL: UNCONFIGURED" in c
-          assert "StartAt":"PaidGate" # replaced by explicit check below
           assert '"StartAt":"PaidGate"' in c
           assert 'AWS::ApiGateway::' not in c
           PY
