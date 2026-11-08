@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: One-off FREE Google WIF probe using same role as locked Google Omni worker.
+Parameters:
+  ArtifactBucketName:
+    Type: String
+  PreflightArtifactKey:
+    Type: String
+  GoogleWorkerRoleArn:
+    Type: String
+    Default: arn:aws:iam::134387458447:role/afl-app-dev-google-omni-role
+Resources:
+  WifPreflight:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: afl-app-dev-google-omni-preflight
+      Description: One-shot Google IAM token exchange only; no Vertex/model calls.
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      Role: !Ref GoogleWorkerRoleArn
+      MemorySize: 256
+      Timeout: 90
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref PreflightArtifactKey
+      Environment:
+        Variables:
+          GOOGLE_PROJECT_NUMBER: '345956846110'
+          GOOGLE_WIF_POOL_ID: afl-video-aws
+          GOOGLE_WIF_PROVIDER_ID: afl-aws-dev
+          GOOGLE_SERVICE_ACCOUNT: afl-video-worker@afl-video-platform.iam.gserviceaccount.com
+  ExecuteWifPreflight:
+    Type: Custom::GoogleWifProbe
+    Properties:
+      ServiceToken: !GetAtt WifPreflight.Arn
+      CheckVersion: 1
+Outputs:
+  AuthenticationStatus:
+    Value: !GetAtt ExecuteWifPreflight.AuthStatus
+  ErrorCode:
+    Value: !GetAtt ExecuteWifPreflight.ErrorCode
