@@ -259,10 +259,11 @@ def images_for_job(job):
 def video_scene_public(job, scene_id):
     """Mock states never pretend to contain playable MP4s."""
     real = job.get("realVideos", {}).get(scene_id, {})
-    item = real or job.get("videos", {}).get(scene_id, {})
+    approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
+    item = real or ({"status": "REQUESTED"} if approval else job.get("videos", {}).get(scene_id, {}))
     status = item.get("status", "NOT_REQUESTED")
     result = {"sceneId": scene_id, "status": status,
-              "mode": "REAL" if real else ("MOCK_ONLY" if VIDEO_MODE == "MOCK_ONLY" else "DISABLED")}
+              "mode": "REAL" if (real or approval) else ("MOCK_ONLY" if VIDEO_MODE == "MOCK_ONLY" else "DISABLED")}
     if status in ("MOCK_CLAIMED", "MOCK_GENERATING", "MOCK_COMPLETED", "MOCK_FAILED"):
         result["mock"] = True
     if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED"):
