@@ -351,7 +351,9 @@
         const item = data.videos?.['scene' + n] || {};
         const player = document.getElementById('videoPlayer' + n);
         const state = document.getElementById('videoStatus' + n);
-        state.hidden = false;
+        // The paid-status element already shows this scene's state; keep this
+        // secondary status for internal updates but never display it twice.
+        state.hidden = true;
         if (item.status === 'COMPLETED' && item.url && !item.mock) {
           state.textContent = 'Real MP4 completed.';
           // Polling regenerates short-lived S3 URLs. Do not replace a playing
