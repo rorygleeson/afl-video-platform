@@ -590,7 +590,7 @@ test('existing uncertain paid Scene 1 auto-opens debug and displays its status',
   assert.equal(h.els.videoStatus1.hidden, false);
   assert.match(h.els.videoStatus1.textContent,/submission unknown/i);
   assert.equal(h.els.generateRealScene1.hidden, true);
-  assert.equal(h.calls.filter(c => /\\/real-videos\\/scene[123]$/.test(c.url)).length, 0);
+  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
 });
 
 test('per-scene debug shows status and live GET polling does not submit paid requests', async () => {
