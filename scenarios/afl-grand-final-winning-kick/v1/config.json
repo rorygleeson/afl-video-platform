@@ -24,7 +24,7 @@
       "operation": "image_edit",
       "model": "google/nano-banana-pro",
       "enabled": true,
-      "promptInstructions": "Replace central athlete face only with the selfie; retain teammates' distinct faces. Change central athlete and all visible teammates into matching selected team playing guernseys; preserve celebration poses."
+      "promptInstructions": "Replace ONLY the central athlete's facial identity with the precise face from the customer selfie; keep the same identifiable eyes, nose, cheeks, jawline, mouth proportions, hairline, skin and apparent age. The original master has an extreme open-mouth celebration: moderate that expression into a natural happy smile or slightly open mouth rather than distorting the selfie face. Preserve the original celebration pose, raised arms, teammate placement, and each surrounding teammate's distinct face. Change the central athlete and all existing teammates to the selected matching team guernsey; do not add new players. Selfie face fidelity takes priority over exaggerated shouting or a generic heroic face."
     }
   ],
   "teamGuernseys": {
