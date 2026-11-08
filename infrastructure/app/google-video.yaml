@@ -89,6 +89,12 @@ Resources:
           JOBS_TABLE: !Ref JobsTableName
           ADMISSION_TABLE: !Ref AdmissionTableName
           SCENARIO_ASSET_BUCKET: !Ref ScenarioAssetBucketName
+  DeveloperPreflightInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt GoogleWorkerLambda.Arn
+      Principal: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/afl-video-github-deploy-role'
   GoogleWorkerLogs:
     Type: AWS::Logs::LogGroup
     Properties:
