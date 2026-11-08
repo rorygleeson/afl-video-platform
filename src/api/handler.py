@@ -386,6 +386,13 @@ def start_real_scene(job_id, scene_id, event):
                                         ConsistentRead=True).get("Item"):
         return response(409, {"error": "Another paid or mock scene owns the only concurrency slot"})
     name = "real-" + job_id + "-" + scene_id
+    # Ensure the map exists. No paid request is submitted by this initialisation.
+    DDB.update_item(
+        Key={"jobId": job_id},
+        UpdateExpression="SET paidVideoApprovals = if_not_exists(paidVideoApprovals, :empty)",
+        ConditionExpression="attribute_exists(jobId)",
+        ExpressionAttributeValues={":empty": {}},
+    )
     # Reserve the scene atomically BEFORE starting the workflow. An ambiguous
     # Step Functions response never authorises a second chargeable attempt.
     try:
