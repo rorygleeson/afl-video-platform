@@ -25,12 +25,15 @@ jobs:
           aws cloudformation describe-stack-events --stack-name afl-app-dev-backend --output json > /tmp/events.json
           echo "Most recent API resource events:"
           jq -r '[.StackEvents[]|select(.LogicalResourceId|test("Api|UsagePlan|Deployment|Proxy"))][:25][]|[.Timestamp,.LogicalResourceId,.ResourceStatus,.ResourceStatusReason//""]|@tsv' /tmp/events.json
-          echo "Frontend config URL (public, no key):"
+          echo "Frontend runtime API target:"
           python - <<'PY'
           import urllib.request,re
           try:
-              u=urllib.request.urlopen('https://d9i3mlqvt0ks6.cloudfront.net/',timeout=12).read().decode()
-              matches=re.findall(r'apiBaseUrl[^;\\n]*',u)
-              for line in matches[:3]: print(line[:240])
-          except Exception as exc: print('Frontend fetch unavailable:',type(exc).__name__)
+              u=urllib.request.urlopen('https://d9i3mlqvt0ks6.cloudfront.net/config.js',timeout=12).read().decode()
+              for url in re.findall(r'https://[a-zA-Z0-9.-]+/dev',u):
+                  print('Config target:',url)
+          except Exception as exc:
+              print('Frontend config unavailable:',type(exc).__name__)
           PY
+          echo "All recorded key/usage-plan/deployment resource events:"
+          jq -r '[.StackEvents[]|select(.LogicalResourceId|test("ApiKey|ApiUsagePlan|UsagePlanKey|ApiDeployment|RestApi"))][:60][]|[.Timestamp,.LogicalResourceId,.ResourceStatus,.ResourceStatusReason//""]|@tsv' /tmp/events.json
