@@ -580,6 +580,19 @@ test('prompt preview toggles closed and open without repeating API calls', async
   assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene2/preview')).length,1);
 });
 
+test('existing uncertain paid Scene 1 auto-opens debug and displays its status', async () => {
+  const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
+    realVideos:{scene1:{mode:'REAL',status:'SUBMISSION_UNKNOWN'}}});
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.videoDebugDetails1.open, true);
+  assert.equal(h.els.videoStatus1.hidden, false);
+  assert.match(h.els.videoStatus1.textContent,/submission unknown/i);
+  assert.equal(h.els.generateRealScene1.hidden, true);
+  assert.equal(h.calls.filter(c => /\\/real-videos\\/scene[123]$/.test(c.url)).length, 0);
+});
+
 test('per-scene debug shows status and live GET polling does not submit paid requests', async () => {
   const h = setup({paidScenes: {scene1:false,scene2:false,scene3:false},
     realVideos:{scene1:{mode:'REAL',status:'PROCESSING',workflowStatus:'RUNNING'}}});
