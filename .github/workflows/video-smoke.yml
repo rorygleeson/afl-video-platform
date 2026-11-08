@@ -1,0 +1,84 @@
+name: Stage 3 live AWS video mock smoke test
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/video-smoke.yml'
+      - 'infrastructure/app/video-smoke.yaml'
+      - 'tests/aws_video_smoke/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-video-stage3-smoke
+  cancel-in-progress: false
+jobs:
+  live-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate disposable smoke stack and runner
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'cfn-lint>=1,<2'
+          cfn-lint infrastructure/app/video-smoke.yaml --regions ap-southeast-2
+          python -m py_compile tests/aws_video_smoke/handler.py
+          ! grep -RE 'aiplatform.googleapis.com|generativelanguage.googleapis.com|replicate.com' tests/aws_video_smoke
+      - name: Assume existing GitHub deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Verify existing Stage 3 stack and absence of test stack
+        id: verify
+        run: |
+          set -euo pipefail
+          state=$(aws cloudformation describe-stacks --stack-name afl-app-dev-video --query 'Stacks[0].StackStatus' --output text)
+          test "$state" = "CREATE_COMPLETE"
+          arn=$(aws cloudformation describe-stacks --stack-name afl-app-dev-video --query 'Stacks[0].Outputs[?OutputKey==`VideoStateMachineArn`].OutputValue | [0]' --output text)
+          test -n "$arn" && test "$arn" != "None"
+          if aws cloudformation describe-stacks --stack-name afl-app-dev-video-smoke >/dev/null 2>&1; then
+            echo "Existing smoke stack detected; aborting rather than overwriting."
+            exit 1
+          fi
+          echo "state_machine_arn=$arn" >> "$GITHUB_OUTPUT"
+      - name: Package disposable smoke runner
+        run: |
+          set -euo pipefail
+          mkdir -p dist/video-smoke
+          cp tests/aws_video_smoke/handler.py dist/video-smoke/handler.py
+          (cd dist/video-smoke && zip -q ../video-smoke.zip handler.py)
+          aws s3 cp dist/video-smoke.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/video-smoke/$GITHUB_SHA.zip" --region ap-southeast-2
+      - name: Launch live AWS smoke test via isolated CloudFormation stack
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name afl-app-dev-video-smoke \
+            --region ap-southeast-2 \
+            --template-file infrastructure/app/video-smoke.yaml \
+            --parameter-overrides \
+              ArtifactBucketName=afl-video-bootstrap-artifactbucket-xiuriidgyft4 \
+              SmokeRunnerArtifactKey=video-smoke/$GITHUB_SHA.zip \
+              VideoStateMachineArn="${{ steps.verify.outputs.state_machine_arn }}" \
+              PermissionsBoundaryArn=arn:aws:iam::134387458447:policy/afl-video-app-permissions-boundary \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role
+      - name: Assert live smoke result
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name afl-app-dev-video-smoke --query 'Stacks[0].Outputs' --output table
+          outputs=$(aws cloudformation describe-stacks --stack-name afl-app-dev-video-smoke --query 'Stacks[0].Outputs' --output json)
+          OUTPUTS="$outputs" python - <<'PY'
+          import json,os
+          values={x["OutputKey"]:x["OutputValue"] for x in json.loads(os.environ["OUTPUTS"])}
+          expected={"Results":"MOCK_COMPLETED","BlockedExecution":"FAILED","SuccessfulExecution":"SUCCEEDED","SlotReleased":"true"}
+          assert all(values.get(k)==v for k,v in expected.items()), (values,expected)
+          print("PASS: real Step Functions, DynamoDB, S3 and admission controls.")
+          PY
+      - name: Remove disposable smoke-test stack (no changes to existing video stack)
+        run: |
+          set -euo pipefail
+          aws cloudformation delete-stack --stack-name afl-app-dev-video-smoke
+          aws cloudformation wait stack-delete-complete --stack-name afl-app-dev-video-smoke
+          echo "Disposable smoke test stack deleted successfully."
