@@ -43,7 +43,9 @@ function setup(options = {}) {
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
                       'videoPlayer1','videoPlayer2','videoPlayer3',
-                      'videoPanel1','videoPanel2','videoPanel3']) {
+                      'videoPanel1','videoPanel2','videoPanel3',
+                      'videoDebugDetails1','videoDebugDetails2','videoDebugDetails3',
+                      'videoDebugText1','videoDebugText2','videoDebugText3']) {
     els[name] = el();
     // Keep the basic DOM simulation intact for the new reference image cards.
   }
@@ -254,7 +256,7 @@ test('Google Cloud auth-check button never invokes paid generation', async () =>
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 0);
 });
 
-test('production screen hides prompt tests and only shows first video scene', async () => {
+test('test buttons and three collapsible prompts appear after reference images finish', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
   assert.equal(h.els.videoPromptSection.hidden, true);
@@ -265,13 +267,13 @@ test('production screen hides prompt tests and only shows first video scene', as
   assert.equal(h.els.videoPromptSection.hidden, false);
   assert.equal(h.els.videoTestSection.hidden, false);
   assert.equal(h.els.videoPanel1.hidden, false);
-  assert.equal(h.els.videoPanel2.hidden, true);
-  assert.equal(h.els.videoPanel3.hidden, true);
-  assert.match(html, /id="testApi"[^>]*hidden/);
-  assert.match(html, /id="testGoogle"[^>]*hidden/);
+  assert.equal(h.els.videoPanel2.hidden, false);
+  assert.equal(h.els.videoPanel3.hidden, false);
+  assert.match(html, /id="testApi" type="button">Test x-api-key/);
+  assert.match(html, /id="testGoogle" type="button">Test Google connectivity/);
   assert.match(html, /id="scene1Preflight"[^>]*hidden/);
   for (const n of [1, 2, 3]) {
-    assert.match(html, new RegExp('id="videoScene' + n + '"[^>]*hidden'));
+    assert.match(html, new RegExp('id="videoScene' + n + '" type="button"'));
     await h.els['videoScene'+n].listeners.click();
     assert.match(h.els['videoPromptText'+n].textContent, /Alex Tonelli/);
     assert.match(h.els['videoPromptText'+n].textContent, /Geelong Cats/);
@@ -328,8 +330,9 @@ test('reference images gate all video prompt sections, existing mock records do 
   h.mockStatuses.scene3 = 'MOCK_COMPLETED';
   h.doc.listeners.visibilitychange();
   await h.flush();
-  assert.equal(h.els.videoPanel2.hidden, true, 'Mock result must not unlock Scene 2');
-  assert.equal(h.els.videoPanel3.hidden, true, 'Mock result must not unlock Scene 3');
+  assert.equal(h.els.videoPanel2.hidden, false, 'Prompt for Scene 2 remains available');
+  assert.equal(h.els.videoPanel3.hidden, false, 'Prompt for Scene 3 remains available');
+  assert.equal(h.els.generateRealScene2.hidden, true, 'Mock result cannot authorize paid scene');
   assert.match(h.els.videoStatus1.textContent, /Real video not generated/);
   assert.equal(h.els.assembleFinal.hidden, true);
   assert.equal(h.calls.filter(c => /\/videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0);
@@ -457,8 +460,8 @@ test('approved Scene 1 click submits only Scene 1 once with exact consent', asyn
   await h.nextTimer();
   await h.flush();
   assert.equal(h.els.generateRealScene1.hidden, false);
-  assert.equal(h.els.generateRealScene2.hidden, true);
-  assert.equal(h.els.generateRealScene3.hidden, true);
+  assert.equal(h.els.generateRealScene2.hidden, false);
+  assert.equal(h.els.generateRealScene3.hidden, false);
   await h.els.generateRealScene1.listeners.click();
   await h.flush();
   assert.equal(h.els.generateRealScene1.hidden, true);
@@ -488,18 +491,18 @@ test('read-only workflow review status does not re-open a paid button', async ()
   assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
 });
 
-test('Scene 2 unlocks only after real Scene 1 MP4; Scene 3 only after real Scene 2 MP4', async () => {
+test('all three prompts and independent paid actions are available after reference images', async () => {
   const h = setup({paidScenes: {scene1: false, scene2: true, scene3: true}});
   await h.els.generate.listeners.click();
   await h.els.generateScene1.listeners.click();
   await h.flush();
   await h.nextTimer(); await h.nextTimer(); await h.flush();
-  assert.equal(h.els.videoPanel2.hidden, true);
-  assert.equal(h.els.videoPanel3.hidden, true);
-  // A mock completion and a real completion without a playable URL are NOT enough.
+  assert.equal(h.els.videoPanel2.hidden, false);
+  assert.equal(h.els.videoPanel3.hidden, false);
+  // Mock completion must never count as a real MP4 or paid authorization.
   h.mockStatuses.scene1 = 'MOCK_COMPLETED';
   await h.els.refresh.listeners.click(); await h.flush();
-  assert.equal(h.els.videoPanel2.hidden, true);
+  assert.equal(h.els.videoPanel2.hidden, false);
   const options = {mode:'REAL', status:'COMPLETED', url:'https://example.invalid/video1.mp4'};
   // Fetch override is handled by setup options, so use a new independent job simulation.
   const h2 = setup({paidScenes: {scene1:false, scene2:true, scene3:true},
@@ -510,7 +513,7 @@ test('Scene 2 unlocks only after real Scene 1 MP4; Scene 3 only after real Scene
   assert.equal(h2.els.videoPanel1.hidden, false);
   assert.equal(h2.els.videoPanel2.hidden, false);
   assert.equal(h2.els.generateRealScene2.hidden, false);
-  assert.equal(h2.els.videoPanel3.hidden, true);
+  assert.equal(h2.els.videoPanel3.hidden, false);
   const h3 = setup({paidScenes: {scene1:false,scene2:false,scene3:true},
     realVideos:{
       scene1:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/video1.mp4'},
@@ -524,16 +527,19 @@ test('Scene 2 unlocks only after real Scene 1 MP4; Scene 3 only after real Scene
   assert.equal(h3.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length,0);
 });
 
-test('uncertain Scene 1 submission locks Scenes 2 and 3', async () => {
+test('uncertain Scene 1 keeps all three prompts visible but locks paid retries', async () => {
   const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
     realVideos:{scene1:{mode:'REAL',status:'SUBMISSION_UNKNOWN'}}});
   await h.els.generate.listeners.click();
   await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   assert.equal(h.els.generateRealScene1.hidden, true);
-  assert.equal(h.els.videoPanel2.hidden, true);
-  assert.equal(h.els.videoPanel3.hidden, true);
+  assert.equal(h.els.videoPanel2.hidden, false);
+  assert.equal(h.els.videoPanel3.hidden, false);
+  assert.equal(h.els.generateRealScene2.hidden, true);
+  assert.equal(h.els.generateRealScene3.hidden, true);
   assert.match(h.els.scene1PaidStatus.textContent,/do not retry/i);
+  assert.match(h.els.videoDebugText1.textContent,/SUBMISSION_UNKNOWN/);
 });
 
 test('upload checks API access automatically and preserves any existing job on 403', async () => {
@@ -557,4 +563,33 @@ test('valid API key is checked before initiating signed selfie upload', async ()
             calls.indexOf('https://api.example.com/uploads'));
   assert.match(h.els.apiConnectionStatus.textContent, /API connected/);
   assert.equal(h.els.jobIdPanel.hidden, false);
+});
+
+test('prompt preview toggles closed and open without repeating API calls', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  await h.els.videoScene2.listeners.click();
+  assert.equal(h.els.videoPromptDetails2.open, true);
+  assert.equal(h.els.videoPromptDetails2.hidden, false);
+  await h.els.videoScene2.listeners.click();
+  assert.equal(h.els.videoPromptDetails2.open, false);
+  await h.els.videoScene2.listeners.click();
+  assert.equal(h.els.videoPromptDetails2.open, true);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene2/preview')).length,1);
+});
+
+test('per-scene debug shows status and live GET polling does not submit paid requests', async () => {
+  const h = setup({paidScenes: {scene1:false,scene2:false,scene3:false},
+    realVideos:{scene1:{mode:'REAL',status:'PROCESSING',workflowStatus:'RUNNING'}}});
+  await h.els.generate.listeners.click();
+  await h.els.generateScene1.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.match(h.els.videoDebugText1.textContent,/PROCESSING/);
+  assert.match(h.els.videoDebugText1.textContent,/RUNNING/);
+  const start = h.calls.filter(c => c.url.endsWith('/videos')).length;
+  await h.nextTimer(); await h.flush();
+  assert.ok(h.calls.filter(c => c.url.endsWith('/videos')).length > start);
+  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length,0);
 });
