@@ -281,8 +281,12 @@
         document.getElementById('scene' + n + 'PaidStatus').textContent =
           real.mode === 'REAL'
             ? (real.status === 'REVIEW_REQUIRED'
-                ? 'Manual review required — generation status uncertain. Do not retry.'
-                : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
+                ? 'Generation needs review' +
+                  (real.failureCode ? ' (' + real.failureCode.replaceAll('_', ' ') + ')' : '') +
+                  '. Google may have charged; do not retry.'
+                : real.status === 'SUBMISSION_UNKNOWN'
+                  ? 'Checking original Google submission. Please do not retry or start another scene.'
+                  : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
             : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
         document.getElementById('generateRealScene' + n).hidden =
           !authorised || videoSubmittedScenes.has(id) || real.mode === 'REAL';
