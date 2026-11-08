@@ -131,6 +131,7 @@
   let videoBusy = false;
   let lastImageScenes = {};
   const videoPending = new Set();
+  const pendingStarted = new Map();
 
   function clearPollTimer() {
     if (pollTimer !== null) {
@@ -150,6 +151,7 @@
       videoTimer = null;
     }
     videoPending.clear();
+    pendingStarted.clear();
   }
 
   function resetVideoUi() {
@@ -182,7 +184,13 @@
         const player = document.getElementById('videoPlayer' + n);
         const statusText = document.getElementById('videoStatus' + n);
         const pending = videoPending.has(sceneId);
-        button.disabled = !imageReady || state !== 'NOT_REQUESTED' || pending;
+        if (pending && state === 'NOT_REQUESTED' &&
+            Date.now() - (pendingStarted.get(sceneId) || 0) > 20000) {
+          videoPending.delete(sceneId);
+          pendingStarted.delete(sceneId);
+          videoTestMessage.textContent = 'Scene ' + n + ' did not claim the slot. Refresh status or check Step Functions before retrying.';
+        }
+        button.disabled = !imageReady || state !== 'NOT_REQUESTED' || videoPending.has(sceneId);
         if (state === 'NOT_REQUESTED') {
           statusText.textContent = imageReady ? 'Ready for mock workflow (no charge).' : 'Waiting for reference image.';
         } else {
@@ -203,7 +211,10 @@
         }
         if (['MOCK_CLAIMED', 'MOCK_GENERATING', 'MOCK_REQUESTED'].includes(state) || pending) {
           active = true;
-          if (state !== 'NOT_REQUESTED') videoPending.delete(sceneId);
+          if (state !== 'NOT_REQUESTED') {
+            videoPending.delete(sceneId);
+            pendingStarted.delete(sceneId);
+          }
         }
       }
       videoTestMessage.textContent = active
@@ -492,6 +503,7 @@
           '? No Google video will be created or charged.')) return;
       button.disabled = true;
       videoPending.add(sceneId);
+      pendingStarted.set(sceneId, Date.now());
       document.getElementById('videoStatus' + n).textContent = 'Starting mock video workflow…';
       try {
         const res = await api('/jobs/' + jobId + '/videos/' + sceneId, {
@@ -504,6 +516,7 @@
         void refreshVideos();
       } catch (error) {
         videoPending.delete(sceneId);
+        pendingStarted.delete(sceneId);
         if (jobId === currentJobId) {
           document.getElementById('videoStatus' + n).textContent =
             'Mock start failed: ' + error.message;
