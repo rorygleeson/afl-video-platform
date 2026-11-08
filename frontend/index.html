@@ -162,6 +162,7 @@
   if (/^[0-9a-f]{32}$/.test(savedJob)) resumeLast.hidden = false;
   let videoTimer = null;
   let videoBusy = false;
+  let realVideoTracking = false;
   let lastImageScenes = {};
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
 
@@ -186,6 +187,7 @@
 
   function resetVideoUi() {
     stopVideoPoll();
+    realVideoTracking = false;
     lastImageScenes = {};
     videoPromptSection.hidden = true;
     videoTestSection.hidden = true;
@@ -216,8 +218,8 @@
       if (jobId !== currentJobId) return;
       const realScene = data.videos?.scene1 || {};
       document.getElementById('generateRealScene1').hidden = !(
-        data.scene1PaidApproved === true && realScene.mode !== 'REAL' &&
-        realScene.status !== 'COMPLETED');
+        data.scene1PaidApproved === true && !realVideoTracking &&
+        realScene.mode !== 'REAL' && realScene.status !== 'COMPLETED');
       for (const n of [1, 2, 3]) {
         const item = data.videos?.['scene' + n] || {};
         const player = document.getElementById('videoPlayer' + n);
@@ -233,13 +235,29 @@
             player.dataset.url = item.url;
           }
         } else {
-          // Existing MOCK_COMPLETED records must not appear as real MP4 results.
-          state.textContent = 'Real video not generated.';
+          // Never present mock JSON as a real MP4, but show genuine progress.
+          state.textContent = item.mode === 'REAL'
+            ? 'Real video: ' + item.status.replaceAll('_', ' ').toLowerCase() + '.'
+            : 'Real video not generated.';
           player.replaceChildren();
           delete player.dataset.url;
         }
       }
-      videoTestMessage.textContent = '';
+      const state = data.videos?.scene1 || {};
+      if (state.mode === 'REAL') {
+        realVideoTracking = !['COMPLETED', 'FAILED'].includes(state.status);
+      }
+      // Poll only while a real submission is potentially active. Never POST from polling.
+      stopVideoPoll();
+      if (realVideoTracking && !document.hidden && jobId === currentJobId) {
+        videoTimer = setTimeout(() => {
+          videoTimer = null;
+          void refreshVideos();
+        }, POLL_INTERVAL_MS);
+      }
+      if (state.mode === 'REAL' && ['COMPLETED', 'FAILED'].includes(state.status)) {
+        videoTestMessage.textContent = 'Scene 1: ' + state.status + '.';
+      }
     } catch (error) {
       if (jobId === currentJobId) videoTestMessage.textContent = 'Video status unavailable: ' + error.message;
     } finally {
@@ -599,6 +617,7 @@
     if (!window.confirm('This will request one real 8-second Scene 1 video and incur a Google charge. Continue?')) return;
     button.disabled = true;
     button.hidden = true;
+    realVideoTracking = true;
     videoTestMessage.textContent = 'Submitting approved Scene 1 request…';
     try {
       const request = await api('/jobs/' + jobId + '/real-videos/scene1', {
