@@ -331,10 +331,10 @@
           'Last checked: ' + new Date().toLocaleTimeString(),
           'Status checks are read-only. No paid retries.',
         ];
-        if (pendingAttempt && real.mode !== 'REAL') {
+        if (pendingAttempt) {
           lines.push('— Paid submission attempt —');
           lines.push(...pendingAttempt.events);
-          lines.push('Waiting for backend confirmation. No automatic retry.');
+          if (real.mode !== 'REAL') lines.push('Waiting for backend confirmation. No automatic retry.');
         }
         document.getElementById('videoDebugText' + n).textContent = lines.join('\n');
         const debugDetails = document.getElementById('videoDebugDetails' + n);
