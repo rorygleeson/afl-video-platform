@@ -1,0 +1,61 @@
+name: Free Stage 5A Google WIF preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/google-wif-preflight.yml
+      - infrastructure/app/google-wif-preflight.yaml
+      - tests/aws_google_wif_preflight/**
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-google-wif-preflight
+  cancel-in-progress: false
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate preflight safety
+        run: |
+          set -euo pipefail
+          python -m pip install 'cfn-lint>=1,<2'
+          cfn-lint infrastructure/app/google-wif-preflight.yaml --regions ap-southeast-2
+          python -m py_compile tests/aws_google_wif_preflight/handler.py
+          ! grep -Ei 'aiplatform.googleapis.com|generativelanguage.googleapis.com|gemini-omni-1.2-flash' tests/aws_google_wif_preflight/handler.py
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Confirm paid adapter locked, preflight absent
+        run: |
+          set -euo pipefail
+          test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-google-video --query 'Stacks[0].Outputs[?OutputKey==`PaidGenerationMode`].OutputValue | [0]' --output text)" = DISABLED
+          if aws cloudformation describe-stacks --stack-name afl-app-dev-google-wif-preflight >/dev/null 2>&1; then
+            echo 'Preflight stack already exists; refusing replacement.'
+            exit 1
+          fi
+      - name: Bundle token-exchange-only Lambda
+        run: |
+          set -euo pipefail
+          mkdir -p dist/preflight
+          python -m pip install --target dist/preflight 'google-auth[requests]>=2.30,<3'
+          cp tests/aws_google_wif_preflight/handler.py dist/preflight/handler.py
+          (cd dist/preflight && zip -q -r ../preflight.zip .)
+          aws s3 cp dist/preflight.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/google-wif-preflight/$GITHUB_SHA.zip"
+      - name: Create one-off token-exchange preflight
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name afl-app-dev-google-wif-preflight \
+            --template-file infrastructure/app/google-wif-preflight.yaml \
+            --parameter-overrides ArtifactBucketName=afl-video-bootstrap-artifactbucket-xiuriidgyft4 PreflightArtifactKey=google-wif-preflight/$GITHUB_SHA.zip \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role
+      - name: Display only auth status and sanitised reason
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks --stack-name afl-app-dev-google-wif-preflight --query 'Stacks[0].Outputs' --output table
+          auth=$(aws cloudformation describe-stacks --stack-name afl-app-dev-google-wif-preflight --query 'Stacks[0].Outputs[?OutputKey==`AuthenticationStatus`].OutputValue | [0]' --output text)
+          echo "Authenticated new role? $auth"
