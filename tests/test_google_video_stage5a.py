@@ -213,7 +213,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         movie = b"\x00\x00\x00\x18ftypisom" + b"z" * 200
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
-        w.JOBS.get_item.return_value = {"Item": {"videos": {"scene1": {
+        w.JOBS.get_item.return_value = {"Item": {"realVideos": {"scene1": {
             "status": "PROCESSING", "requestId": self.event["requestId"],
             "interactionId": "interact-12345"
         }}}}
