@@ -122,9 +122,14 @@ function setup(options = {}) {
         },
       }; },
     };
-    if (/\/real-videos\/scene[123]$/.test(url) && opts.method === 'POST') return {
-      ok: true, async json() { return {status: 'REAL_VIDEO_REQUESTED'}; },
-    };
+    if (/\/real-videos\/scene[123]$/.test(url) && opts.method === 'POST') {
+      const scene = url.match(/scene[123]$/)[0];
+      // Mimic DynamoDB reservation becoming visible in subsequent GET status.
+      options.paidScenes = {scene1: false, scene2: false, scene3: false};
+      options.realVideos = {...(options.realVideos || {}),
+        [scene]: {mode: 'REAL', status: 'REQUESTED'}};
+      return {ok: true, async json() { return {status: 'REAL_VIDEO_REQUESTED'}; }};
+    }
     if (/\/videos\/scene[123]$/.test(url) && opts.method === 'POST') return {
       ok: true, async json() { return {status: 'MOCK_REQUESTED'}; },
     };
