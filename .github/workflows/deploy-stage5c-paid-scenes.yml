@@ -11,6 +11,7 @@ on:
       - 'infrastructure/app/google-video.yaml'
       - 'scenarios/afl-grand-final-winning-kick/v1/video/**'
       - 'tests/test_google_video_stage5a.py'
+      - 'tests/test_frontend_poll.cjs'
   workflow_dispatch:
 permissions:
   contents: read
