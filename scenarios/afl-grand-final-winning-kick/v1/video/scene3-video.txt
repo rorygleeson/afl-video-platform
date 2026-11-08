@@ -1,11 +1,23 @@
 # AFL Grand Final — Scene 3: PREMIERS CELEBRATION
-# Variables: $firstName, $lastName, $fullName, $teamName, $guernsey, $commentary
-# AWS substitutes all variables before the paid API submission.
+# AWS substitutes $fullName, $teamName, $guernsey and $commentary.
+# Animate the provided PERSONALISED Scene 3 celebration image, not the master.
 
-START FRAME: Use the provided personalised Scene 3 celebration image. The central player is $fullName, playing for $teamName in $guernsey. Preserve the central player's facial identity and the distinct faces of the surrounding teammates. All team guernseys must retain the same selected team design and colours.
+FORMAT AND PURPOSE: 10-second portrait 9:16 photorealistic LIVE AFL Grand Final television broadcast. Winning goal and final siren have already occurred in Scene 2. Show one spontaneous, energetic, physically believable premiership celebration, not a staged slow-motion montage.
 
-MOTION: Portrait 9:16. From the supplied starting pose, teammates rush in and embrace. The central player celebrates the winning goal, throwing arms up and smiling as the stadium erupts. Fast, natural body movement with slight broadcast camera motion; no slow motion, swapped identities, duplicates or uncanny faces. Keep the action readable around the central player.
+EXACT OPENING FRAME: Continue directly from the provided Scene 3 image. $fullName in $teamName's $guernsey is ALREADY celebrating with both fists raised, mouth open, surrounded and embraced by existing teammates immediately on either side. Do not restart the celebration or invent another raised-fists entrance. Preserve the personalised central player's exact face, hair, age, body and guernsey, and every visible teammate's distinct identity, position, anatomy, hands and contact points. Keep the SAME packed floodlit NIGHT stadium, grass, colours and light direction.
 
-AUDIO / COMMENTARY: Sustained stadium roar. The commentator enthusiastically says exactly: "$commentary". The full final call must be audible and clearly state that $teamName are the AFL Grand Final champions.
+WINNING-TEAM UNIFORM — CRITICAL: Every teammate surrounding and celebrating with the central player wears the SAME $teamName uniform, consistently matching $guernsey in colours and design. Do not create mismatching team strips or switch designs as bodies turn. ESSENDON BOMBERS are the opposition for the wider match; their consistent kit is BLACK with a BOLD RED DIAGONAL SASH. NO Essendon players appear in this celebration and no opponent joins the team huddle. No third team.
 
-NO TEXT: No subtitles, titles, text overlays, additional logos or watermarks.
+REAL-TIME CELEBRATION:
+0–2s: Immediately animate existing joy: the central player shouts, smiles and drives his raised arms in a spontaneous celebratory movement while existing teammates shout and clutch shoulders, consistent with their original positions. Immediate enormous crowd roar.
+2–5s: Existing teammates jostle and lean in with realistic body weight, grips, short energetic bounces and enthusiastic shoulder/torso embraces. Keep hands connected to plausible shoulders, not passing through bodies. The central player's face remains clear and stable.
+5–8s: The central player briefly turns toward a nearby existing teammate, smiling and shouting; teammates continue their genuine, varied football celebrations without spawning new people or duplicating movements.
+8–10s: Continue natural exuberant embraces; hold a clear live broadcast view of the central player and the group as the stadium cheers. Do not freeze the last frame or repeat identical arm movements.
+
+CAMERA: Start at exactly the given composition. Handheld live sports-broadcast feel with small responsive reframing and modest lateral tracking to keep the central player's face visible. No dramatic camera orbit, abrupt cut, excessive zoom or change to a different crowd scene. Keep hands, faces, clothing and physical contact visually continuous.
+
+SPEED AND REALISM: Natural REAL-TIME celebration with visibly energetic movements; not exaggerated frantic flailing, floating figures, robotic repeated gestures or slow motion. Maintain anatomically correct arms and hands and realistic reactions to embraces.
+
+AUDIO: A packed stadium's sustained premiership roar, player shouts and applause. One excited Australian AFL commentator says exactly: "$commentary". The entire call must fit intelligibly within the 10-second clip, with a few seconds for crowd response if possible. The spoken call must make clear $teamName won the Grand Final. Do not restart the final siren; it already sounded in Scene 2. No music.
+
+NEGATIVE CONSTRAINTS: No new foreground teammates or opponents; no Essendon celebration players; no changing winning-team guernseys, swapped faces, duplicated limbs, extra people materialising, slow motion, fake trophy appearance, fireworks, pyrotechnics, confetti, smoke, subtitles, titles, watermarks or invented sponsor lettering. Night stadium lighting stays consistent.
