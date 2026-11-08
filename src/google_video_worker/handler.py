@@ -341,6 +341,19 @@ def lambda_handler(event, context):
     if op == "contract_health":
         return {"status": "LOCKED" if PAID_ENABLED != "true" else "CONFIGURED",
                 "model": MODEL, "paidGenerationEnabled": PAID_ENABLED == "true"}
+    if op == "auth_check":
+        # Non-billable diagnostic; the new worker role must successfully
+        # exchange its AWS identity for the configured Google service account.
+        # No model API endpoint or job can be accessed through this operation.
+        if PAID_ENABLED != "false" or MODEL != "UNCONFIGURED":
+            raise PermissionError("PREFLIGHT_REQUIRES_HARD_DISABLED_VIDEO")
+        try:
+            credentials()
+        except Exception as exc:
+            LOG.warning("Google worker WIF preflight failed: %s", type(exc).__name__)
+            return {"status": "AUTHENTICATION_FAILED",
+                    "errorCode": "GOOGLE_WIF_PREFLIGHT_FAILED"}
+        return {"status": "AUTHENTICATED", "paidGenerationEnabled": False}
     job, scene, request = validate(event)
     if op == "claim":
         return claim(job, scene, request)
