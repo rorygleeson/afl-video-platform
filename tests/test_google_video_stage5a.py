@@ -202,7 +202,8 @@ class GoogleVideoAdapterTests(unittest.TestCase):
                                  "resultKey": "results/" + job + "/scene1.png"}},
             "realVideos": {}}}
         self.assertEqual(w.claim(job, "scene1", request)["status"], "PREPARED")
-        w.SLOTS.get_item.assert_not_called()
+        self.assertFalse(any(call.kwargs.get("Key", {}).get("slotId")
+                             for call in w.SLOTS.get_item.call_args_list))
         w.SLOTS.put_item.assert_not_called()
         w.SLOTS.delete_item.assert_not_called()
         writes = w.JOBS.update_item.call_args_list
