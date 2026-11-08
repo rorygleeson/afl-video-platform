@@ -21,8 +21,7 @@ jobs:
           aws cloudformation describe-stacks --stack-name afl-app-dev-backend --output json > /tmp/stack.json
           echo "Stack status: $(jq -r '.Stacks[0].StackStatus' /tmp/stack.json)"
           echo "API Base URL: $(jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ApiBaseUrl") | .OutputValue' /tmp/stack.json)"
-          aws cloudformation describe-stack-resources --stack-name afl-app-dev-backend --output json > /tmp/resources.json
-          jq -r '.StackResources[]|select(.LogicalResourceId|test("Api|UsagePlan|Deployment|Proxy"))|[.LogicalResourceId,.PhysicalResourceId,.ResourceStatus]|@tsv' /tmp/resources.json
+          echo "Current API key ID (not secret): $(jq -r '.Stacks[0].Outputs[] | select(.OutputKey=="ApiKeyId") | .OutputValue' /tmp/stack.json)"
           aws cloudformation describe-stack-events --stack-name afl-app-dev-backend --output json > /tmp/events.json
           echo "Most recent API resource events:"
           jq -r '[.StackEvents[]|select(.LogicalResourceId|test("Api|UsagePlan|Deployment|Proxy"))][:25][]|[.Timestamp,.LogicalResourceId,.ResourceStatus,.ResourceStatusReason//""]|@tsv' /tmp/events.json
