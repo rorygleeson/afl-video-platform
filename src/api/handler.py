@@ -22,6 +22,9 @@ FRONTEND_ORIGIN = os.environ["FRONTEND_ORIGIN"]
 IMAGE_STATE_MACHINE_ARN = os.environ["IMAGE_STATE_MACHINE_ARN"]
 VIDEO_WORKER_ARN = os.environ.get("VIDEO_WORKER_ARN")
 SCENARIO_ASSET_BUCKET = os.environ.get("SCENARIO_ASSET_BUCKET")
+VIDEO_STATE_MACHINE_ARN = os.environ.get("VIDEO_STATE_MACHINE_ARN")
+VIDEO_MODE = os.environ.get("VIDEO_MODE", "DISABLED")
+VIDEO_SCENES = ("scene1", "scene2", "scene3")
 
 # Presigned browser POSTs must target the bucket's regional endpoint and use
 # Signature Version 4. The default client can generate a global endpoint with
@@ -247,6 +250,80 @@ def images_for_job(job):
                           "scenes": public_job(job)["scenes"], "images": images})
 
 
+def video_scene_public(job, scene_id):
+    """Mock states never pretend to contain playable MP4s."""
+    item = job.get("videos", {}).get(scene_id, {})
+    status = item.get("status", "NOT_REQUESTED")
+    result = {"sceneId": scene_id, "status": status,
+              "mode": "MOCK_ONLY" if VIDEO_MODE == "MOCK_ONLY" else "DISABLED"}
+    if status in ("MOCK_CLAIMED", "MOCK_GENERATING", "MOCK_COMPLETED", "MOCK_FAILED"):
+        result["mock"] = True
+    if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED"):
+        result["errorCode"] = item["errorCode"]
+    # Future real-provider stage may record MP4 metadata, but NEVER expose mock JSON as video.
+    if status == "COMPLETED" and item.get("resultKey"):
+        key = item["resultKey"]
+        if key == f"videos/{job['jobId']}/{scene_id}.mp4":
+            result["url"] = S3.generate_presigned_url(
+                "get_object", Params={"Bucket": UPLOAD_BUCKET, "Key": key}, ExpiresIn=300)
+    return result
+
+
+def video_status(job_id, scene_id=None):
+    job = get_job(job_id)
+    if not job:
+        return response(404, {"error": "Job not found"})
+    if scene_id:
+        return response(200, {"jobId": job_id, "video": video_scene_public(job, scene_id)})
+    return response(200, {"jobId": job_id, "videoGenerationMode": VIDEO_MODE,
+                          "videos": {scene: video_scene_public(job, scene) for scene in VIDEO_SCENES},
+                          "assembly": {"status": "NOT_IMPLEMENTED", "enabled": False}})
+
+
+def start_mock_video(job_id, scene_id, event):
+    """Stage 4 is strictly mock-only. Named execution enforces once-per-scene."""
+    if VIDEO_MODE != "MOCK_ONLY" or not VIDEO_STATE_MACHINE_ARN:
+        return response(503, {"error": "Video mock integration is disabled"})
+    headers = {str(k).lower(): str(v) for k, v in (event.get("headers") or {}).items()}
+    token = headers.get("idempotency-key", "")
+    if not IDEMPOTENCY_RE.fullmatch(token):
+        return response(400, {"error": "Idempotency-Key required (12-128 characters)"})
+    job = get_job(job_id)
+    if not job:
+        return response(404, {"error": "Job not found"})
+    scene = job.get("scenes", {}).get(scene_id, {})
+    key = scene.get("resultKey")
+    if scene.get("status") != "COMPLETED" or not isinstance(key, str) or not key.startswith(
+            f"results/{job_id}/{scene_id}."):
+        return response(409, {"error": "Complete the matching reference image first"})
+    try:
+        S3.head_object(Bucket=UPLOAD_BUCKET, Key=key)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+            return response(409, {"error": "Reference image has expired or is missing"})
+        raise
+    current = job.get("videos", {}).get(scene_id)
+    if current:
+        return response(200, {"jobId": job_id, "video": video_scene_public(job, scene_id),
+                              "message": "Scene already requested; no new execution created"})
+    # This Stage 4 test has a SINGLE fixed execution name for each job/scene,
+    # irrespective of client token. It cannot accidentally create a second run.
+    execution_name = f"v-{job_id}-{scene_id}"
+    try:
+        STATES.start_execution(
+            stateMachineArn=VIDEO_STATE_MACHINE_ARN,
+            name=execution_name,
+            input=json.dumps({"jobId": job_id, "sceneId": scene_id}, separators=(",", ":")),
+        )
+    except STATES.exceptions.ExecutionAlreadyExists:
+        return response(202, {"jobId": job_id, "sceneId": scene_id,
+                              "status": "ALREADY_REQUESTED",
+                              "message": "Same mock execution already submitted"})
+    return response(202, {"jobId": job_id, "sceneId": scene_id,
+                          "status": "MOCK_REQUESTED",
+                          "message": "Mock execution started. No paid generation."})
+
+
 def preview_video_prompt(job_id, scene_id):
     """No paid video API call. Resolve exact versioned prompt from private S3."""
     job = get_job(job_id)
@@ -332,6 +409,15 @@ def lambda_handler(event, context):
         preview_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/video/(scene[123])/preview", path)
         if method == "GET" and preview_match:
             return preview_video_prompt(preview_match.group(1), preview_match.group(2))
+        video_scene_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/videos/(scene[123])", path)
+        if video_scene_match:
+            if method == "POST":
+                return start_mock_video(video_scene_match.group(1), video_scene_match.group(2), event)
+            if method == "GET":
+                return video_status(video_scene_match.group(1), video_scene_match.group(2))
+        video_all_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/videos", path)
+        if method == "GET" and video_all_match:
+            return video_status(video_all_match.group(1))
         generate_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/generate", path)
         if method == "POST" and generate_match:
             return start_images(generate_match.group(1))
