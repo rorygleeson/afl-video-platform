@@ -102,7 +102,7 @@
   </section>
   <section id="videoTestSection" hidden>
     <h2 style="margin-bottom:6px">Create your videos</h2>
-    <p class="poll-status" id="realVideoGate">Review each prompt, then generate an individual MP4. Paid requests require confirmation and run one at a time.</p>
+    <p class="poll-status" id="realVideoGate">Review each prompt, then generate an individual MP4. Each paid request requires confirmation and is protected against duplicate submissions.</p>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 8 seconds</strong>
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
@@ -800,7 +800,7 @@
         'Job: ' + jobId + '\nScene: ' + sceneId +
         '\nSubmitting one paid request…\nNo automatic retry.';
       // Hide all paid controls until the server confirms which scene owns
-      // the single global generation slot. No other scene is auto-submitted.
+      // the current click is being acknowledged. No other scene is auto-submitted.
       for (const idx of [1, 2, 3]) {
         document.getElementById('generateRealScene' + idx).hidden = true;
       }
