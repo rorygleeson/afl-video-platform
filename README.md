@@ -1,31 +1,30 @@
 # AFL Video Platform
 
-Serverless AWS prototype for personalised AFL-themed reference images, with a separately planned video-generation and assembly stage.
+AWS serverless pilot for personalised AFL Grand Final videos.
 
-**Current milestone (7 November 2026):** three parallel, personalised reference images generated from a customer's selfie, selected AFL team and three versioned scene masters. Jobs are independently tracked per scene and the phone page polls progress automatically. **Google Omni video generation, stitching and payments are not yet implemented.**
+**Status (8 November 2026):** selfie upload, **three personalised reference images** (Replicate/Nano Banana Pro), three independently generated **real Google MP4s** (8 / 8 / 10 seconds), free prompt previews, browser playback and signed downloads have been implemented. All three paid MP4 scenes succeeded in a controlled test. Native audio quality and mobile downloads still need validation.
 
-**Approved staged video design (8 November 2026):** [Video implementation plan](docs/VIDEO_IMPLEMENTATION_PLAN.md). This is documentation only; video generation has not been deployed. Each stage requires user approval before proceeding.\n\n## Architecture
+**Not built:** final three-clip assembly, consumer login, payments, per-customer entitlements and production-scale cost controls.
 
-**[Read the deployed AWS architecture, diagrams and end-to-end workflow](docs/ARCHITECTURE.md)**
+## Start here
 
-The architecture document contains:
+- [Architecture and simple end-to-end flow](docs/ARCHITECTURE.md) — current, no Mermaid diagrams
+- [Complete API endpoint inventory](docs/API_ENDPOINTS.md) — browser contract for a future replacement frontend
+- [Prioritised bug/risk review](docs/CODE_REVIEW_2026-11-08.md) — what to fix and what not to overbuild
 
-- A simple Mermaid AWS component diagram (website, API, processing, storage and Replicate).
-- The step-by-step selfie upload and parallel image generation sequence.
-- Essential API endpoints, job states, retries and failure handling.
-- A short deployment diagram and a clear distinction between deployed services and the future Omni Flash video stage.
+## Code map
 
-Video preparation: [versioned S3 prompt templates, name/team substitution and cost limits](docs/VIDEO_PROMPTS.md).
+- `frontend/index.html` — **temporary** mobile web test client
+- `src/api/handler.py` — API Gateway Lambda, jobs, paid approvals, signed media links
+- `src/image_worker/handler.py` — parallel Replicate image creation
+- `src/google_video_worker/handler.py` — paid Google interactions/polling/MP4 save
+- `src/api/video_prompts.py` — server-rendered personalised prompts
+- `scenarios/afl-grand-final-winning-kick/v1/` — versioned masters and config
+- `infrastructure/` — CloudFormation stacks
+- `.github/workflows/` — GitHub Actions CI/deploy; legacy stage workflows remain
 
-Additional technical notes: [Parallel scene processing](docs/PARALLEL_SCENES.md) and [the earlier single-scene proof of concept](docs/SCENE1_REPLICATE_PILOT.md).
+The frontend uses REST APIs for all job actions and state, plus **presigned S3 upload/download URLs** for large files. This separation is intentional: future Android/iOS/web frontends can reuse the backend without copying the current test page.
 
-## Development reference
+**Security:** `x-api-key` is a development key, **not** consumer authentication. Do not publish the paid endpoint before adding user/job ownership and payment entitlement enforcement.
 
-- [Mobile test frontend](https://d9i3mlqvt0ks6.cloudfront.net)
-- Application deployment workflow: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
-- CloudFormation templates: [`infrastructure/`](infrastructure/)
-- API handler: [`src/api/handler.py`](src/api/handler.py)
-- Image worker: [`src/image_worker/handler.py`](src/image_worker/handler.py)
-- Scenario and team configuration: [`scenarios/afl-grand-final-winning-kick/v1/config.json`](scenarios/afl-grand-final-winning-kick/v1/config.json)
-
-The current API key is for developer testing only; do not use it as consumer authentication.
+Older stage-specific docs remain as implementation history; use the three current docs above for the present state.
