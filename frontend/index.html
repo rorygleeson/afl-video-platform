@@ -156,6 +156,7 @@
     stopVideoPoll();
     lastImageScenes = {};
     videoTestSection.hidden = true;
+    document.getElementById('assembleFinal').disabled = true;
     videoTestMessage.textContent = '';
     for (const n of [1, 2, 3]) {
       document.getElementById('generateVideo' + n).disabled = true;
@@ -477,6 +478,10 @@
   });
 
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden && videoTimer !== null) {
+      clearTimeout(videoTimer);
+      videoTimer = null;
+    }
     if (!document.hidden && currentJobId) void refreshVideos();
   });
   for (const n of [1, 2, 3]) {
