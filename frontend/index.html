@@ -54,9 +54,6 @@
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off" aria-describedby="apiConnectionStatus">
   <p id="apiConnectionStatus" class="poll-status" role="status" aria-live="polite">API access is checked automatically before uploading.</p>
-  <button id="testApi" type="button">Test x-api-key</button>
-  <button id="testGoogle" type="button">Test Google connectivity (free)</button>
-  <p id="googleStatus" role="status" aria-live="polite"></p>
   <label for="scenario">Scenario</label>
   <select id="scenario"><option value="afl-grand-final-winning-kick">AFL Grand Final — Winning Kick</option></select>
   <label for="team">Team</label>
@@ -136,6 +133,12 @@
       <button id="downloadFinal" type="button" class="quiet-button" hidden>Download Final Video MP4</button>
     </div>
     <p id="videoTestMessage" class="poll-status" role="status" aria-live="polite"></p>
+  </section>
+  <section id="diagnosticsSection" aria-label="Connection diagnostics" style="margin-top:32px;padding-top:16px;border-top:1px solid #d4dce5">
+    <h2 style="font-size:1.1rem;margin-bottom:4px">Connection diagnostics</h2>
+    <button id="testApi" type="button">Test x-api-key</button>
+    <button id="testGoogle" type="button">Test Google connectivity (free)</button>
+    <p id="googleStatus" role="status" aria-live="polite"></p>
   </section>
 </main>
 <script src="./config.js"></script>
