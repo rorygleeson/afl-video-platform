@@ -13,6 +13,7 @@ function setup(options = {}) {
   let statusPolls = 0;
   const mockStatuses = {scene1: 'NOT_REQUESTED', scene2: 'NOT_REQUESTED', scene3: 'NOT_REQUESTED'};
   const calls = [];
+  const pendingVideoPosts = new Map();
   const timers = new Map();
   let timerId = 0;
   const els = {};
@@ -134,6 +135,9 @@ function setup(options = {}) {
     };
     if (/\/real-videos\/scene[123]$/.test(url) && opts.method === 'POST') {
       const scene = url.match(/scene[123]$/)[0];
+      if (options.deferPaidVideoResponses) {
+        return new Promise(resolve => pendingVideoPosts.set(scene, resolve));
+      }
       // Mimic DynamoDB reservation becoming visible in subsequent GET status.
       options.paidScenes = {...(options.paidScenes || {}), [scene]: false};
       options.realVideos = {...(options.realVideos || {}),
@@ -193,7 +197,7 @@ function setup(options = {}) {
     await flush();
     return scheduled.delay;
   }
-  return {els, doc, calls, timers, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses};
+  return {els, doc, calls, timers, pendingVideoPosts, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses};
 }
 
 test('auto polls every 5 seconds, adds each image once and stops when complete', async () => {
@@ -485,6 +489,28 @@ test('one confirmed click submits three Google scenes concurrently, once each', 
     assert.match(h.els['videoDebugText'+n].textContent,/API response: REAL_VIDEO_REQUESTED/);
   assert.equal(h.els.generateAllVideos.hidden,true);
   await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,3);
+});
+
+test('all three paid requests are simultaneously in flight; failure does not cancel or retry siblings', async () => {
+  const h = setup({paidScenes:{scene1:true,scene2:true,scene3:true}, deferPaidVideoResponses:true});
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  const batch = h.els.generateAllVideos.listeners.click();
+  assert.equal(h.pendingVideoPosts.size, 3, 'three independent POSTs must begin before any response');
+  assert.equal(h.els.generateAllVideos.hidden,true);
+  await h.els.generateAllVideos.listeners.click();
+  assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,3,
+    'double click cannot add paid requests while requests are in flight');
+  h.pendingVideoPosts.get('scene2')({ok:false,status:503, async json(){return {error:'Provider unavailable'};}});
+  h.pendingVideoPosts.get('scene3')({ok:true,status:202,async json(){return {status:'REAL_VIDEO_REQUESTED'};}});
+  h.pendingVideoPosts.get('scene1')({ok:true,status:202,async json(){return {status:'REAL_VIDEO_REQUESTED'};}});
+  await batch;
+  await h.flush();
+  assert.match(h.els.scene2PaidStatus.textContent,/Submission needs review/);
+  assert.match(h.els.videoDebugText2.textContent,/will NOT be retried/);
+  assert.match(h.els.videoDebugText1.textContent,/REAL_VIDEO_REQUESTED/);
+  assert.match(h.els.videoDebugText3.textContent,/REAL_VIDEO_REQUESTED/);
   assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,3);
 });
 
