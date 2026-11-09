@@ -6,8 +6,11 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 const html = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
-const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)[1];
-new vm.Script(script, {filename: 'frontend/index.html'});
+const script = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app.js'), 'utf8');
+const css = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'styles.css'), 'utf8');
+assert.match(html, /<script src="\.\/app\.js"><\/script>/);
+assert.match(html, /<link rel="stylesheet" href="\.\/styles\.css">/);
+new vm.Script(script, {filename: 'frontend/app.js'});
 
 function setup(options = {}) {
   let statusPolls = 0;
@@ -642,14 +645,14 @@ test('per-scene debug shows status and live GET polling does not submit paid req
 
 test('four requested cosmetic changes keep progress and scene headings consistent', () => {
   assert.doesNotMatch(html, /Preparing your reference images…|Scene 1 is available below\./);
-  assert.match(html, /'Reference images: ' \+ completed \+ '\/3 completed'/);
+  assert.match(script, /'Reference images: ' \+ completed \+ '\/3 completed'/);
   assert.doesNotMatch(html, /Preparing your videos…/);
   for (const [n, seconds] of [[1, 5], [2, 8], [3, 10]]) {
     assert.match(html, new RegExp('<strong>Scene ' + n + '[^<]*' + seconds + ' seconds</strong>'));
   }
   assert.doesNotMatch(html, /Download Scene [123] MP4/);
   assert.doesNotMatch(html, /scene-download/);
-  assert.match(html, /controlsList', 'nodownload'/);
+  assert.match(script, /controlsList', 'nodownload'/);
   assert.match(html, /id="downloadFinal"/);
 });
 
@@ -705,7 +708,7 @@ test('reference image cards show clean status, green completion and animated gen
   await h.nextTimer();
   assert.equal(progressFor(3).textContent, 'Completed');
   assert.equal(progressFor(3).className, 'reference-progress completed');
-  assert.match(html, /reference-progress\.generating::before\{content:"⚙"/);
-  assert.match(html, /@keyframes reference-gear-spin/);
-  assert.match(html, /prefers-reduced-motion:reduce/);
+  assert.match(css, /reference-progress\.generating::before\{content:"⚙"/);
+  assert.match(css, /@keyframes reference-gear-spin/);
+  assert.match(css, /prefers-reduced-motion:reduce/);
 });
