@@ -415,6 +415,78 @@ def finalize(job, scene, request):
     return release(job, scene, request)
 
 
+
+def diagnose_failed_interaction(job, scene):
+    """Read an existing failed Google interaction; never create or retry video.
+
+    The provider response may contain user prompts or binary media, so return
+    only bounded, allowlisted diagnostic fields. The Google interaction ID
+    always comes from our own DynamoDB record, never from caller input.
+    """
+    if not isinstance(job, str) or not JOB_RE.fullmatch(job) or scene not in SCENES:
+        raise ContractError("Invalid job or scene")
+    item = get_job(job)
+    approval = item.get("paidVideoApprovals", {}).get(scene, {})
+    record = item.get("realVideos", {}).get(scene, {})
+    if not approval or record.get("status") not in ("FAILED", "REVIEW_REQUIRED"):
+        raise ContractError("Only existing failed paid video attempts can be inspected")
+    interaction = record.get("interactionId")
+    if not isinstance(interaction, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", interaction):
+        return {"status": "UNAVAILABLE", "reason": "NO_RECORDED_INTERACTION"}
+    try:
+        reply = google_json("GET", BASE + "/" + interaction, max_bytes=256 * 1024)
+    except Exception as exc:
+        LOG.warning("Existing Google interaction lookup failed scene=%s error_type=%s",
+                    scene, type(exc).__name__)
+        return {"status": "UNAVAILABLE", "reason": "GOOGLE_LOOKUP_FAILED",
+                "errorType": type(exc).__name__}
+    if not isinstance(reply, dict):
+        return {"status": "UNAVAILABLE", "reason": "INVALID_PROVIDER_RESPONSE"}
+    provider_status = reply.get("status")
+    if provider_status not in ("failed", "cancelled", "incomplete", "budget_exceeded",
+                               "queued", "in_progress", "completed"):
+        provider_status = "unknown"
+
+    # Interactions API may expose top-level error or an errors[] list.
+    errors = reply.get("errors")
+    candidates = ([reply.get("error")] +
+                  (errors[:5] if isinstance(errors, list) else []))
+    code = None
+    category = "UNSPECIFIED"
+    message_present = False
+    for entry in candidates:
+        if not isinstance(entry, dict):
+            continue
+        raw_code = entry.get("code")
+        if isinstance(raw_code, str) and re.fullmatch(r"[A-Za-z0-9_.:/-]{1,100}", raw_code):
+            code = raw_code[:100]
+        msg = entry.get("message")
+        if isinstance(msg, str) and msg.strip():
+            message_present = True
+        searchable = " ".join([str(raw_code or ""), str(msg or "")]).lower()
+        for pattern, label in (
+            (r"safe|policy|blocked|prohibit|moderation", "SAFETY_OR_POLICY"),
+            (r"quota|rate.limit|resource.exhaust", "QUOTA_OR_RATE_LIMIT"),
+            (r"budget|billing|payment", "BILLING_OR_BUDGET"),
+            (r"capacity|overload|busy|unavailable", "CAPACITY_OR_UNAVAILABLE"),
+            (r"internal|server.error|temporar", "PROVIDER_INTERNAL_ERROR"),
+            (r"invalid|unsupported|bad.request", "INVALID_INPUT"),
+            (r"timeout|deadline", "TIMEOUT"),
+        ):
+            if re.search(pattern, searchable):
+                category = label
+                break
+        if code or category != "UNSPECIFIED":
+            break
+    return {"status": "READ_ONLY_DIAGNOSTIC",
+            "providerStatus": provider_status,
+            "errorCode": code,
+            "errorCategory": category,
+            "providerMessagePresent": message_present,
+            "reason": ("DETAILS_AVAILABLE" if code or category != "UNSPECIFIED"
+                       else "GOOGLE_DID_NOT_SUPPLY_A_CLASSIFIABLE_REASON"),
+            "paidGenerationStarted": False}
+
 def lambda_handler(event, context):
     op = event.get("op")
     # Gate is first in state machine; also independently enforce this for all
@@ -425,6 +497,8 @@ def lambda_handler(event, context):
     if op == "contract_health":
         return {"status": "LOCKED" if PAID_ENABLED != "true" else "CONFIGURED",
                 "model": MODEL, "paidGenerationEnabled": PAID_ENABLED == "true"}
+    if op == "diagnose_failed_interaction":
+        return diagnose_failed_interaction(event.get("jobId"), event.get("sceneId"))
     if op == "scene_preflight":
         job, scene, _ = validate(event)
         return scene_preflight(job, scene)
