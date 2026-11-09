@@ -36,9 +36,6 @@
     .scene-prompt summary{cursor:pointer;font-weight:650;color:#1261a0}
     .scene-prompt pre{max-height:350px;overflow-y:auto}
     .video-result{margin-top:12px;padding:10px;border-top:1px solid #d4dce5}
-    .job-id-row{display:flex;align-items:center;gap:8px;border:1px solid #d4dce5;padding:9px;border-radius:9px;margin:10px 0 14px}
-    .job-id-row code{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.85rem}
-    .job-id-row button{width:auto;min-width:66px;margin:0;background:#1261a0;min-height:38px;padding:7px 10px}
     .video-scene .quiet-button{background:transparent;border:1px solid #cbd5df;color:#1261a0;font-weight:600;min-height:40px;margin-top:4px}
     #videoPanel1{padding:16px}
     #videoPanel1 .video-state{line-height:1.45}
@@ -87,34 +84,19 @@
   <button id="resumeLast" type="button" hidden>Resume your last job</button>
   <section id="jobProgressSection">
     <h2>Reference images</h2>
-    <div id="jobIdPanel" hidden>
-      <strong>Current Job ID</strong>
-      <div class="job-id-row"><code id="currentJobIdText"></code><button id="copyJobId" type="button">Copy</button></div>
-      <p id="copyJobStatus" class="poll-status" role="status" aria-live="polite"></p>
-    </div>
     <p id="status" role="status">Loading backend configuration…</p>
     <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
     <div id="results" aria-label="Reference images"></div>
   </section>
-  <section id="videoPromptSection" hidden>
-    <p id="videoPromptStatus" hidden></p>
-    <pre id="videoPromptText" hidden></pre>
-  </section>
   <section id="videoTestSection" hidden>
     <h2 style="margin-bottom:6px">Create your videos</h2>
-    <p class="poll-status" id="realVideoGate">Review each prompt, then generate an individual MP4. Each paid request requires confirmation and is protected against duplicate submissions.</p>
+    <p class="poll-status" id="realVideoGate">Generate each MP4 individually. Each paid request requires confirmation and is protected against duplicate submissions.</p>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 5 seconds</strong>
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite" hidden></p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
       <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 5 seconds)</button>
-      <button id="videoScene1" type="button">Show / hide Scene 1 prompt (free)</button>
-      <details id="videoPromptDetails1" class="scene-prompt" hidden>
-        <summary>Video prompt and commentary</summary>
-        <p id="videoPromptStatus1" class="video-state" role="status" aria-live="polite"></p>
-        <pre id="videoPromptText1" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
-      </details>
       <p id="videoStatus1" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer1"></div>
       <details id="videoDebugDetails1" class="video-debug">
@@ -127,12 +109,6 @@
       <strong>Scene 2 — Winning kick</strong>
       <button id="generateRealScene2" type="button" hidden>Generate Scene 2 MP4 (paid, 8 seconds)</button>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
-      <button id="videoScene2" type="button">Show / hide Scene 2 prompt (free)</button>
-      <details id="videoPromptDetails2" class="scene-prompt" hidden>
-        <summary>Scene 2 prompt — show/hide</summary>
-        <p id="videoPromptStatus2" class="video-state" role="status" aria-live="polite"></p>
-        <pre id="videoPromptText2" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
-      </details>
       <p id="videoStatus2" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer2"></div>
       <details id="videoDebugDetails2" class="video-debug">
@@ -145,12 +121,6 @@
       <strong>Scene 3 — Celebration</strong>
       <button id="generateRealScene3" type="button" hidden>Generate Scene 3 MP4 (paid, 10 seconds)</button>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
-      <button id="videoScene3" type="button">Show / hide Scene 3 prompt (free)</button>
-      <details id="videoPromptDetails3" class="scene-prompt" hidden>
-        <summary>Scene 3 prompt — show/hide</summary>
-        <p id="videoPromptStatus3" class="video-state" role="status" aria-live="polite"></p>
-        <pre id="videoPromptText3" style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:.85rem"></pre>
-      </details>
       <p id="videoStatus3" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer3"></div>
       <details id="videoDebugDetails3" class="video-debug">
@@ -182,15 +152,8 @@
   const resumeLast = document.getElementById('resumeLast');
   const generateScene1 = document.getElementById('generateScene1');
   const status = document.getElementById('status');
-  const jobIdPanel = document.getElementById('jobIdPanel');
-  const currentJobIdText = document.getElementById('currentJobIdText');
-  const copyJobId = document.getElementById('copyJobId');
-  const copyJobStatus = document.getElementById('copyJobStatus');
   const results = document.getElementById('results');
   const pollStatus = document.getElementById('pollStatus');
-  const videoPromptSection = document.getElementById('videoPromptSection');
-  const videoPromptStatus = document.getElementById('videoPromptStatus');
-  const videoPromptText = document.getElementById('videoPromptText');
   const videoTestSection = document.getElementById('videoTestSection');
   const videoTestMessage = document.getElementById('videoTestMessage');
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
@@ -234,27 +197,6 @@
     }
   }
 
-  function syncJobIdPanel() {
-    const valid = typeof currentJobId === 'string' && /^[0-9a-f]{32}$/.test(currentJobId);
-    jobIdPanel.hidden = !valid;
-    currentJobIdText.textContent = valid ? currentJobId : '';
-    if (!valid) copyJobStatus.textContent = '';
-  }
-
-  copyJobId.addEventListener('click', async () => {
-    if (!/^[0-9a-f]{32}$/.test(currentJobId || '')) return;
-    try {
-      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(currentJobId);
-        copyJobStatus.textContent = 'Job ID copied.';
-      } else {
-        copyJobStatus.textContent = 'Select the Job ID above to copy it.';
-      }
-    } catch {
-      copyJobStatus.textContent = 'Select the Job ID above to copy it.';
-    }
-  });
-
   function resetVideoUi() {
     stopVideoPoll();
     videoRefreshRequested = false;
@@ -263,7 +205,6 @@
     videoSubmissionLog.clear();
     preflightCheckedJobId = null;
     lastImageScenes = {};
-    videoPromptSection.hidden = true;
     videoTestSection.hidden = true;
     videoTestMessage.textContent = '';
     document.getElementById('scene1PreflightStatus').textContent = 'Scene 1 check runs automatically when reference images are ready.';
@@ -272,14 +213,7 @@
       document.getElementById('generateRealScene' + n).hidden = true;
       document.getElementById('scene' + n + 'PaidStatus').textContent = 'MP4 generation: locked (not charged)';
     }
-    videoPromptStatus.textContent = '';
-    videoPromptText.textContent = '';
     for (const n of [1, 2, 3]) {
-      document.getElementById('videoPromptStatus' + n).textContent = '';
-      document.getElementById('videoPromptText' + n).textContent = '';
-      const details = document.getElementById('videoPromptDetails' + n);
-      details.open = false;
-      details.hidden = true;
       document.getElementById('videoStatus' + n).textContent = 'Real video not generated.';
       document.getElementById('videoPlayer' + n).replaceChildren();
     }
@@ -561,16 +495,13 @@
     if (currentJobId) {
       stopPolling();
       currentJobId = null;
-      syncJobIdPanel();
       generate.hidden = false;
       generateScene1.hidden = true;
       refresh.hidden = true;
       window.sessionStorage?.removeItem('aflLastJobId');
       resumeLast.hidden = true;
-      videoPromptSection.hidden = true;
-      resetVideoUi();
-      videoPromptText.textContent = '';
-      results.replaceChildren();
+        resetVideoUi();
+        results.replaceChildren();
       showStatus('Selection changed. Upload selfie and create a new job before generating.');
     }
   }
@@ -678,17 +609,13 @@
       generateScene1.hidden = pollingEnabled || record.job.status !== 'AWAITING_IMAGE_PIPELINE';
       const scenes = record.job.scenes || {};
       lastImageScenes = scenes;
-      // Keep all prompt previews hidden until the full set of
-      // three personalised reference images has completed successfully.
+      // Only show video controls after all three reference images are complete.
       const referenceImagesReady = ['scene1', 'scene2', 'scene3']
         .every(id => scenes[id]?.status === 'COMPLETED' && (sceneResults.images || []).some(image => image.sceneId === id && image.url));
-      videoPromptSection.hidden = !referenceImagesReady;
       videoTestSection.hidden = !referenceImagesReady;
       if (!referenceImagesReady) {
         stopVideoPoll();
-        videoPromptText.textContent = '';
-        videoPromptStatus.textContent = '';
-      }
+              }
       const completed = record.job.completedScenes ?? sceneResults.images.length;
       const failed = record.job.failedScenes ?? 0;
       showStatus('Reference images: ' + completed + '/3 completed' +
@@ -791,10 +718,8 @@
       const found = await api('/jobs/' + jobId);
       if (!found.job || found.job.jobId !== jobId) throw new Error('Saved job is unavailable.');
       currentJobId = jobId;
-      syncJobIdPanel();
       generate.hidden = true;
-      videoPromptSection.hidden = true;
-      videoTestSection.hidden = true;
+        videoTestSection.hidden = true;
       refresh.hidden = true;
       resumeLast.hidden = true;
       results.replaceChildren();
@@ -813,44 +738,6 @@
     void refreshVideos();
   });
 
-
-  for (const n of [1, 2, 3]) {
-    const button = document.getElementById('videoScene' + n);
-    button.addEventListener('click', async () => {
-      if (!currentJobId) return;
-      const promptDetails = document.getElementById('videoPromptDetails' + n);
-      if (!promptDetails.hidden) {
-        promptDetails.open = !promptDetails.open;
-        return;
-      }
-      const jobToPreview = currentJobId;
-      button.disabled = true;
-      videoPromptStatus.textContent = 'Loading Scene ' + n + ' prompt from private S3…';
-      document.getElementById('videoPromptStatus' + n).textContent = 'Loading personalised prompt…';
-      document.getElementById('videoPromptText' + n).textContent = '';
-      videoPromptText.textContent = '';
-      try {
-        const data = await api('/jobs/' + jobToPreview + '/video/scene' + n + '/preview');
-        if (jobToPreview !== currentJobId) return;
-        videoPromptStatus.textContent = data.playerName + ' — ' + data.teamName +
-          ' | Scene ' + n + ' | ' + data.durationSeconds + ' seconds | no charge';
-        videoPromptText.textContent = 'SCENE ' + n + ' — ' + SCENE_LABELS[n-1] + '\\n\\n' + data.prompt;
-        document.getElementById('videoPromptStatus' + n).textContent =
-          data.playerName + ' — ' + data.teamName + ' | ' + data.durationSeconds + ' seconds';
-        document.getElementById('videoPromptText' + n).textContent = data.prompt;
-        promptDetails.hidden = false;
-        promptDetails.open = true; // First preview opens; native summary can collapse/reopen.
-        // Preview only: never start mock or paid video generation from this page.
-      } catch (error) {
-        if (jobToPreview === currentJobId) {
-          videoPromptStatus.textContent = 'Could not preview Scene ' + n + ': ' + error.message;
-          document.getElementById('videoPromptStatus' + n).textContent = videoPromptStatus.textContent;
-        }
-      } finally {
-        button.disabled = false;
-      }
-    });
-  }
 
   for (const n of [1, 2, 3]) {
     const sceneId = 'scene' + n;
@@ -1030,18 +917,15 @@
       stopPolling();
       resetVideoUi();
       currentJobId = created.job.jobId;
-      syncJobIdPanel();
       generateScene1.disabled = false;
       results.replaceChildren();
       generate.hidden = true;
       window.sessionStorage?.setItem('aflLastJobId', currentJobId);
       resumeLast.hidden = true;
       refresh.hidden = true;
-      videoPromptSection.hidden = true;
-      videoTestSection.hidden = true;
+        videoTestSection.hidden = true;
       generateScene1.hidden = false;
-      showStatus('Selfie uploaded and job created.\nJob: ' + currentJobId +
-        '\nStatus: ' + created.job.status +
+      showStatus('Selfie uploaded and job created.\nStatus: ' + created.job.status +
         '\nTap Generate 3 reference images to start paid edits.');
     } catch (error) {
       apiConnectionStatus.textContent = /API Gateway refused access/.test(error.message)
