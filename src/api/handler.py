@@ -501,6 +501,38 @@ def preview_video_prompt(job_id, scene_id):
     return response(200, result)
 
 
+
+def failed_video_diagnostic(job_id, scene_id):
+    """Read-only Google interaction lookup. No Step Functions or paid POST."""
+    if not GOOGLE_WORKER_ARN:
+        return response(503, {"error": "Google diagnostic worker unavailable"})
+    job = get_job(job_id)
+    if not job:
+        return response(404, {"error": "Job not found"})
+    record = job.get("realVideos", {}).get(scene_id, {})
+    if (record.get("status") not in ("FAILED", "REVIEW_REQUIRED") or
+            not job.get("paidVideoApprovals", {}).get(scene_id)):
+        return response(409, {"error": "No failed paid attempt to inspect"})
+    try:
+        invocation = LAMBDA.invoke(
+            FunctionName=GOOGLE_WORKER_ARN,
+            InvocationType="RequestResponse",
+            Payload=json.dumps({"op": "diagnose_failed_interaction",
+                                "jobId": job_id, "sceneId": scene_id}).encode(),
+        )
+        if invocation.get("FunctionError"):
+            return response(502, {"error": "Read-only Google diagnostic failed"})
+        details = json.loads(invocation["Payload"].read())
+        if not isinstance(details, dict) or details.get("status") not in (
+                "READ_ONLY_DIAGNOSTIC", "UNAVAILABLE"):
+            return response(502, {"error": "Invalid read-only diagnostic response"})
+        return response(200, {"jobId": job_id, "sceneId": scene_id,
+                              "diagnostic": details})
+    except Exception:
+        LOG.exception("Read-only Google failure diagnostic unavailable")
+        return response(502, {"error": "Read-only diagnostic unavailable"})
+
+
 def start_real_scene(job_id, scene_id, event):
     """Explicit, atomic, one-attempt-per-scene paid submission for this job."""
     if REAL_VIDEO_MODE != "ENABLED" or not GOOGLE_STATE_MACHINE_ARN:
@@ -682,6 +714,11 @@ def lambda_handler(event, context):
                 if not job:
                     return response(404, {"error": "Job not found"})
                 return response(200, {"jobId": job["jobId"], "assembly": assembly_public(job)})
+        diagnostic_match = re.fullmatch(
+            r"/jobs/([0-9a-f]{32})/real-videos/(scene[123])/diagnostics", path)
+        if method == "GET" and diagnostic_match:
+            return failed_video_diagnostic(diagnostic_match.group(1),
+                                           diagnostic_match.group(2))
         real_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/(scene[123])", path)
         if method == "POST" and real_match:
             return start_real_scene(real_match.group(1), real_match.group(2), event)
