@@ -76,7 +76,6 @@
   <input id="selfie" type="file" accept="image/jpeg,image/png,image/webp,image/*">
   <img id="preview" alt="Selfie preview" hidden>
   <button id="generate" type="button" disabled>Upload selfie &amp; create job</button>
-  <button id="generateScene1" type="button" hidden>Generate 3 reference images with Replicate (paid API)</button>
   <button id="refresh" type="button" hidden aria-hidden="true" tabindex="-1" style="display:none">Refresh job status</button>
   <section id="jobProgressSection">
     <h2>Reference images</h2>
@@ -151,7 +150,6 @@
   const testGoogle = document.getElementById('testGoogle');
   const googleStatus = document.getElementById('googleStatus');
   const refresh = document.getElementById('refresh');
-  const generateScene1 = document.getElementById('generateScene1');
   const status = document.getElementById('status');
   const results = document.getElementById('results');
   const pollStatus = document.getElementById('pollStatus');
@@ -159,6 +157,7 @@
   const videoTestMessage = document.getElementById('videoTestMessage');
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
   let previewUrl, currentJobId, currentPhase = 'Initialising';
+  let uploadInProgress = false;
   const POLL_INTERVAL_MS = 5000;
   const POLL_ERROR_BACKOFF_MS = 15000;
   const TERMINAL_STATUSES = new Set(['COMPLETED', 'PARTIAL_SUCCESS', 'FAILED']);
@@ -495,7 +494,6 @@
       stopPolling();
       currentJobId = null;
       generate.hidden = false;
-      generateScene1.hidden = true;
       refresh.hidden = true;
         resetVideoUi();
         results.replaceChildren();
@@ -603,7 +601,6 @@
       ]);
       if (requestedJobId !== currentJobId || generation !== pollGeneration) return;
       pollErrors = 0;
-      generateScene1.hidden = pollingEnabled || record.job.status !== 'AWAITING_IMAGE_PIPELINE';
       const scenes = record.job.scenes || {};
       lastImageScenes = scenes;
       // Only show video controls after all three reference images are complete.
@@ -678,31 +675,6 @@
       }
     }
   }
-  generateScene1.addEventListener('click', async () => {
-    if (!currentJobId) return;
-    if (!window.confirm(
-      'Start THREE parallel paid Replicate image-edit requests? ' +
-      'Each scene uses your uploaded selfie and selected team guernsey.'
-    )) return;
-    generateScene1.disabled = true;
-    const jobToGenerate = currentJobId;
-    try {
-      setPhase('Submitting three scene image edits to Step Functions');
-      const result = await api('/jobs/' + jobToGenerate + '/generate', {
-        method: 'POST',
-      });
-      if (currentJobId !== jobToGenerate) return;
-      showStatus('Three image generations requested.\nStatus: ' + (result.status || result.job?.status || 'STARTING') +
-        '\nStatus now updates automatically.');
-      generateScene1.hidden = true;
-      startPolling();
-    } catch (error) {
-      showStatus(describeError(error, currentPhase));
-    } finally {
-      generateScene1.disabled = false;
-    }
-  });
-
   refresh.addEventListener('click', () => {
     void refreshJob();
     void refreshVideos();
@@ -832,6 +804,9 @@
   });
 
   generate.addEventListener('click', async () => {
+    // Single-flight guard protects against rapid double taps, including
+    // programmatic event dispatch while the button is disabled.
+    if (uploadInProgress || currentJobId) return;
     const file = input.files[0];
     if (!apiBaseUrl) return;
     if (!document.getElementById('key').value.trim()) {
@@ -849,10 +824,11 @@
       showStatus('Choose a JPEG, PNG or WebP image up to 10 MB.');
       return;
     }
+    uploadInProgress = true;
     generate.disabled = true;
+    let jobCreated = false;
     try {
-      // Verify the same API key and gateway URL before requesting a signed
-      // upload. A 403 is handled here without clearing or replacing a job.
+      // No S3 upload or paid generation before authentication succeeds.
       setPhase('Connecting to API Gateway');
       apiConnectionStatus.textContent = 'Checking API access…';
       await api('/scenarios');
@@ -882,31 +858,46 @@
           lastName,
         }),
       });
-      // Switch jobs only after upload AND job creation have succeeded.
-      // Failed authentication/network/S3 requests leave the old job intact.
+      if (!/^[0-9a-f]{32}$/.test(created.job?.jobId || '')) {
+        throw new Error('Job creation response missing a valid job ID. Check status before trying again.');
+      }
+      // Only one confirmed job can be selected. Do not enable a second upload.
+      jobCreated = true;
       stopPolling();
       resetVideoUi();
       currentJobId = created.job.jobId;
-      generateScene1.disabled = false;
       results.replaceChildren();
       generate.hidden = true;
       refresh.hidden = true;
-        videoTestSection.hidden = true;
-      generateScene1.hidden = false;
-      showStatus('Selfie uploaded and job created.\nStatus: ' + created.job.status +
-        '\nTap Generate 3 reference images to start paid edits.');
+      videoTestSection.hidden = true;
+
+      // This is the same existing server-side image workflow, submitted once
+      // after successful S3 upload AND successful job creation.
+      setPhase('Starting three Replicate reference images');
+      showStatus('Selfie uploaded. Starting three reference images…');
+      try {
+        const result = await api('/jobs/' + currentJobId + '/generate', {method:'POST'});
+        showStatus('Generating 3 reference images. Status: ' +
+          (result.status || result.job?.status || 'STARTING') +
+          '\\nStatus updates automatically below.');
+      } catch (error) {
+        // The POST may already have started work; never retry it blindly.
+        showStatus('Selfie uploaded and job created, but image generation status is uncertain: ' +
+          error.message + '\\nChecking the existing job; no second paid request will be submitted.');
+      }
+      // Existing three scene cards, status polling, images and video gate.
+      startPolling();
     } catch (error) {
       apiConnectionStatus.textContent = /API Gateway refused access/.test(error.message)
-        ? 'API access denied. Check x-api-key — no selfie upload or paid request was made.'
-        : 'API connection or upload failed. Your existing job has not been replaced.';
-      // Keep any previously selected/resumed job and its video state.
-      if (!currentJobId) {
-        generateScene1.hidden = true;
-        generate.hidden = false;
-      }
-      showStatus(describeError(error, currentPhase));
+        ? 'API access denied. Check x-api-key — no paid request was made.'
+        : 'Selfie upload or job creation did not finish successfully.';
+      showStatus(describeError(error, currentPhase) +
+        '\\nReference image generation was not started.');
     } finally {
-      generate.disabled = false;
+      uploadInProgress = false;
+      // Do not re-enable a potentially ambiguous job creation submission
+      // in the same view; explicit user edits can recover an upload-stage error.
+      generate.disabled = !apiBaseUrl || jobCreated || !!currentJobId;
     }
   });
 </script>
