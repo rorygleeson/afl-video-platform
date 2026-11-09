@@ -120,7 +120,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         w.S3.get_object.return_value = {
             "ContentType": "image/png", "Body": __import__("io").BytesIO(b"real-image-bytes")}
         with patch.object(w, "render_scene", return_value={
-            "durationSeconds": 8, "videoGenerationEnabled": False, "prompt": "Ready to run"
+            "durationSeconds": 5, "videoGenerationEnabled": False, "prompt": "Ready to run"
         }), patch.object(w, "google_json") as paid:
             data = w.lambda_handler({"op": "scene_preflight", "jobId": job,
                                     "sceneId": "scene1", "requestId": "freepreflight"}, None)
@@ -164,7 +164,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
             "resultKey": f"results/{job}/scene1.png"}}}}
         w.S3.get_object.side_effect = RuntimeError("NoSuchKey")
         with patch.object(w, "render_scene", return_value={
-            "durationSeconds": 8, "videoGenerationEnabled": False, "prompt": "Safe"
+            "durationSeconds": 5, "videoGenerationEnabled": False, "prompt": "Safe"
         }), patch.object(w, "google_json") as paid:
             with self.assertRaises(RuntimeError):
                 w.scene_preflight(job, "scene1")
@@ -257,7 +257,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
                 "ContentType": "image/png",
                 "Body": __import__("io").BytesIO(b"img")}
             with (patch.object(w, "render_scene", return_value={
-                      "durationSeconds": 10 if scene == "scene3" else 8,
+                      "durationSeconds": 10 if scene == "scene3" else (5 if scene == "scene1" else 8),
                       "videoGenerationEnabled": True, "prompt": "Test"}),
                   patch.object(w, "google_json",
                       side_effect=w.ContractError("Google POST HTTP 403")) as google,
@@ -280,7 +280,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertEqual(result["generation_config"]["video_config"]["task"], "image_to_video")
         self.assertEqual(result["input"][1]["data"], base64.b64encode(b"png-data").decode())
         self.assertEqual(result["response_format"][0]["delivery"], "inline")
-        self.assertEqual(result["response_format"][0]["duration"], "8s")
+        self.assertEqual(result["response_format"][0]["duration"], "5s")
         self.assertNotIn("gcs_uri", result["response_format"][0])
 
     def test_scene3_duration_and_image_limit(self):
