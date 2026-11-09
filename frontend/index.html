@@ -615,7 +615,7 @@
       videoTestSection.hidden = !referenceImagesReady;
       if (!referenceImagesReady) {
         stopVideoPoll();
-              }
+      }
       const completed = record.job.completedScenes ?? sceneResults.images.length;
       const failed = record.job.failedScenes ?? 0;
       showStatus('Reference images: ' + completed + '/3 completed' +
@@ -695,8 +695,7 @@
         method: 'POST',
       });
       if (currentJobId !== jobToGenerate) return;
-      showStatus('Three image generations requested.\nJob: ' + jobToGenerate +
-        '\nStatus: ' + (result.status || result.job?.status || 'STARTING') +
+      showStatus('Three image generations requested.\nStatus: ' + (result.status || result.job?.status || 'STARTING') +
         '\nStatus now updates automatically.');
       generateScene1.hidden = true;
       startPolling();
