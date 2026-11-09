@@ -9,8 +9,8 @@
     {
       "id": "scene1",
       "template": "scene1-video.txt",
-      "durationSeconds": 8,
-      "commentaryTemplate": "$lastName breaks into the clear! He's charging towards goal! Ten seconds left!"
+      "durationSeconds": 5,
+      "commentaryTemplate": "$lastName breaks clear! He's charging towards goal!"
     },
     {
       "id": "scene2",
