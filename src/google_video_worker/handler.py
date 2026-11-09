@@ -167,6 +167,56 @@ def google_json(method, url, payload=None, max_bytes=MAX_RESPONSE_BYTES):
         raise ContractError(f"Google {method} HTTP {exc.code}") from None
 
 
+
+def extract_provider_failure(reply):
+    """Allowlisted, bounded failure metadata: never copy provider message or media."""
+    category = "UNSPECIFIED"
+    code = None
+    message_present = False
+    candidates = [reply.get("error")]
+    errors = reply.get("errors")
+    if isinstance(errors, list):
+        candidates.extend(errors[:5])
+    for entry in candidates:
+        if not isinstance(entry, dict):
+            continue
+        raw_code = entry.get("code")
+        if isinstance(raw_code, (str, int)):
+            candidate = str(raw_code)
+            if re.fullmatch(r"[A-Za-z0-9_.:/-]{1,100}", candidate):
+                code = candidate
+        msg = entry.get("message")
+        message_present |= isinstance(msg, str) and bool(msg.strip())
+        searchable = (str(raw_code or "") + " " + (msg if isinstance(msg, str) else "")[:2000]).lower()
+        for pattern, label in (
+            (r"safe|policy|blocked|prohibit|moderation", "SAFETY_OR_POLICY"),
+            (r"quota|rate.limit|resource.exhaust", "QUOTA_OR_RATE_LIMIT"),
+            (r"budget|billing|payment", "BILLING_OR_BUDGET"),
+            (r"capacity|overload|busy|unavailable", "CAPACITY_OR_UNAVAILABLE"),
+            (r"internal|server.error|temporar", "PROVIDER_INTERNAL_ERROR"),
+            (r"invalid|unsupported|bad.request", "INVALID_INPUT"),
+            (r"timeout|deadline", "TIMEOUT"),
+        ):
+            if re.search(pattern, searchable):
+                category = label
+                break
+        if code or category != "UNSPECIFIED":
+            break
+    return {"providerErrorCategory": category, "providerMessagePresent": message_present,
+            **({"providerErrorCode": code} if code else {})}
+
+
+def read_stored_failure(record):
+    """Return only stored diagnostic fields created by the worker."""
+    result = {"recordedStatus": record.get("status", "UNKNOWN"),
+              "recordedErrorCode": record.get("errorCode", "NOT_RECORDED"),
+              "errorCategory": record.get("providerErrorCategory", "UNSPECIFIED"),
+              "providerMessagePresent": record.get("providerMessagePresent", False)}
+    if record.get("providerErrorCode"):
+        result["errorCode"] = record["providerErrorCode"]
+    return result
+
+
 def image_payload(blob, content_type, prompt, duration):
     if content_type not in {"image/png", "image/jpeg", "image/webp"}:
         raise ContractError("Unsupported reference image MIME type")
@@ -392,7 +442,10 @@ def poll(job, scene, request):
     if state in ("queued", "in_progress", "requires_action"):
         return {"status": "WAITING", "providerStatus": state}
     if state in ("failed", "cancelled", "incomplete", "budget_exceeded"):
-        transition(job, scene, request, "PROCESSING", "FAILED", {"errorCode": "GOOGLE_" + state.upper()})
+        transition(job, scene, request, "PROCESSING", "FAILED",
+                   {"errorCode": "GOOGLE_" + state.upper(),
+                    "providerFinalStatus": state,
+                    **extract_provider_failure(reply)})
         return {"status": "FAILED"}
     if state != "completed":
         raise ContractError("Unknown provider status, manual review")
@@ -417,11 +470,10 @@ def finalize(job, scene, request):
 
 
 def diagnose_failed_interaction(job, scene):
-    """Read an existing failed Google interaction; never create or retry video.
+    """Read-only explanation of previously submitted Google video; never POST.
 
-    The provider response may contain user prompts or binary media, so return
-    only bounded, allowlisted diagnostic fields. The Google interaction ID
-    always comes from our own DynamoDB record, never from caller input.
+    Existing stored evidence is always returned, even when Google has expired
+    the interaction or GET is rejected. No raw provider messages or media.
     """
     if not isinstance(job, str) or not JOB_RE.fullmatch(job) or scene not in SCENES:
         raise ContractError("Invalid job or scene")
@@ -430,59 +482,48 @@ def diagnose_failed_interaction(job, scene):
     record = item.get("realVideos", {}).get(scene, {})
     if not approval or record.get("status") not in ("FAILED", "REVIEW_REQUIRED"):
         raise ContractError("Only existing failed paid video attempts can be inspected")
+    stored = read_stored_failure(record)
     interaction = record.get("interactionId")
     if not isinstance(interaction, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", interaction):
-        return {"status": "UNAVAILABLE", "reason": "NO_RECORDED_INTERACTION"}
+        return {"status": "UNAVAILABLE", "reason": "NO_RECORDED_INTERACTION",
+                "source": "DYNAMODB", **stored, "paidGenerationStarted": False}
     try:
+        # Unlike ordinary polling, diagnostic GET is deliberately bounded.
+        # A completed interaction may contain inline MP4; reject oversized data
+        # safely and preserve the stored reason rather than parsing private media.
         reply = google_json("GET", BASE + "/" + interaction, max_bytes=256 * 1024)
     except Exception as exc:
-        LOG.warning("Existing Google interaction lookup failed scene=%s error_type=%s",
-                    scene, type(exc).__name__)
-        return {"status": "UNAVAILABLE", "reason": "GOOGLE_LOOKUP_FAILED",
-                "errorType": type(exc).__name__}
+        detail = str(exc)
+        http = re.fullmatch(r"Google GET HTTP ([1-5][0-9]{2})", detail)
+        if http:
+            reason = "GOOGLE_GET_HTTP_" + http.group(1)
+        elif "exceeds safety limit" in detail:
+            reason = "GOOGLE_RESPONSE_TOO_LARGE"
+        elif isinstance(exc, (TimeoutError, urllib.error.URLError)):
+            reason = "GOOGLE_GET_NETWORK_FAILURE"
+        else:
+            reason = safe_error_code(exc) if not isinstance(exc, ContractError) else "GOOGLE_LOOKUP_ERROR"
+        LOG.warning("Existing Google interaction lookup failed scene=%s reason=%s type=%s",
+                    scene, reason, type(exc).__name__)
+        return {"status": "UNAVAILABLE", "reason": reason, "source": "DYNAMODB",
+                **stored, "paidGenerationStarted": False}
     if not isinstance(reply, dict):
-        return {"status": "UNAVAILABLE", "reason": "INVALID_PROVIDER_RESPONSE"}
+        return {"status": "UNAVAILABLE", "reason": "INVALID_PROVIDER_RESPONSE",
+                "source": "DYNAMODB", **stored, "paidGenerationStarted": False}
     provider_status = reply.get("status")
     if provider_status not in ("failed", "cancelled", "incomplete", "budget_exceeded",
-                               "queued", "in_progress", "completed"):
+                               "queued", "in_progress", "completed", "requires_action"):
         provider_status = "unknown"
-
-    # Interactions API may expose top-level error or an errors[] list.
-    errors = reply.get("errors")
-    candidates = ([reply.get("error")] +
-                  (errors[:5] if isinstance(errors, list) else []))
-    code = None
-    category = "UNSPECIFIED"
-    message_present = False
-    for entry in candidates:
-        if not isinstance(entry, dict):
-            continue
-        raw_code = entry.get("code")
-        if isinstance(raw_code, str) and re.fullmatch(r"[A-Za-z0-9_.:/-]{1,100}", raw_code):
-            code = raw_code[:100]
-        msg = entry.get("message")
-        if isinstance(msg, str) and msg.strip():
-            message_present = True
-        searchable = " ".join([str(raw_code or ""), str(msg or "")]).lower()
-        for pattern, label in (
-            (r"safe|policy|blocked|prohibit|moderation", "SAFETY_OR_POLICY"),
-            (r"quota|rate.limit|resource.exhaust", "QUOTA_OR_RATE_LIMIT"),
-            (r"budget|billing|payment", "BILLING_OR_BUDGET"),
-            (r"capacity|overload|busy|unavailable", "CAPACITY_OR_UNAVAILABLE"),
-            (r"internal|server.error|temporar", "PROVIDER_INTERNAL_ERROR"),
-            (r"invalid|unsupported|bad.request", "INVALID_INPUT"),
-            (r"timeout|deadline", "TIMEOUT"),
-        ):
-            if re.search(pattern, searchable):
-                category = label
-                break
-        if code or category != "UNSPECIFIED":
-            break
-    return {"status": "READ_ONLY_DIAGNOSTIC",
+    extracted = extract_provider_failure(reply)
+    category = extracted["providerErrorCategory"]
+    code = extracted.get("providerErrorCode")
+    return {"status": "READ_ONLY_DIAGNOSTIC", "source": "GOOGLE",
             "providerStatus": provider_status,
-            "errorCode": code,
+            "recordedStatus": stored["recordedStatus"],
+            "recordedErrorCode": stored["recordedErrorCode"],
             "errorCategory": category,
-            "providerMessagePresent": message_present,
+            "errorCode": code,
+            "providerMessagePresent": extracted["providerMessagePresent"],
             "reason": ("DETAILS_AVAILABLE" if code or category != "UNSPECIFIED"
                        else "GOOGLE_DID_NOT_SUPPLY_A_CLASSIFIABLE_REASON"),
             "paidGenerationStarted": False}
