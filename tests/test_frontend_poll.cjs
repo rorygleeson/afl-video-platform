@@ -680,3 +680,31 @@ test('final download fetches existing MP4 only and saves a timestamped filename'
     assert.equal(player.children[0].getAttribute?.('controlsList'), 'nodownload');
   }
 });
+
+test('reference image cards show clean status, green completion and animated generating cog', async () => {
+  const h = setup();
+  await h.els.generate.listeners.click();
+  await h.flush();
+  function progressFor(n) {
+    const card = h.els.results.children.find(c => c.id === 'imageCard' + n);
+    assert.ok(card, 'Scene ' + n + ' reference card exists');
+    return card.querySelector('p');
+  }
+  const initial = progressFor(1);
+  assert.equal(initial.textContent, 'Completed');
+  assert.equal(initial.className, 'reference-progress completed');
+  const generating = progressFor(2);
+  assert.equal(generating.textContent, 'Generating…');
+  assert.equal(generating.className, 'reference-progress generating');
+  assert.doesNotMatch(generating.textContent, /Reference image:/);
+  await h.nextTimer();
+  assert.equal(progressFor(2).textContent, 'Completed');
+  assert.equal(progressFor(2).className, 'reference-progress completed');
+  assert.equal(progressFor(3).textContent, 'Generating…');
+  await h.nextTimer();
+  assert.equal(progressFor(3).textContent, 'Completed');
+  assert.equal(progressFor(3).className, 'reference-progress completed');
+  assert.match(html, /reference-progress\.generating::before\{content:"⚙"/);
+  assert.match(html, /@keyframes reference-gear-spin/);
+  assert.match(html, /prefers-reduced-motion:reduce/);
+});
