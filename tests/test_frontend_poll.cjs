@@ -39,7 +39,7 @@ function setup(options = {}) {
                       'videoScene1', 'videoScene2', 'videoScene3',
                       'scene1Preflight', 'scene1PreflightStatus', 'scene1PaidStatus', 'generateRealScene1',
                       'scene2PaidStatus', 'scene3PaidStatus', 'generateRealScene2', 'generateRealScene3',
-                      'videoTestSection','videoTestMessage','assembleFinal','nextStageMessage',
+                      'videoTestSection','videoTestMessage','assembleFinal','assemblyPanel','assemblyStatus','assemblyPlayer','downloadFinal','nextStageMessage',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
                       'videoPlayer1','videoPlayer2','videoPlayer3',
