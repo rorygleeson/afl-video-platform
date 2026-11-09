@@ -94,6 +94,8 @@
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite" hidden></p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
+      <button id="diagnoseScene1" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
+      <p id="diagnoseResult1" class="video-state" role="status" aria-live="polite"></p>
       <p id="videoStatus1" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer1"></div>
       <details id="videoDebugDetails1" class="video-debug">
@@ -105,6 +107,8 @@
     <div class="video-scene" id="videoPanel2">
       <strong>Scene 2 — Winning kick</strong>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
+      <button id="diagnoseScene2" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
+      <p id="diagnoseResult2" class="video-state" role="status" aria-live="polite"></p>
       <p id="videoStatus2" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer2"></div>
       <details id="videoDebugDetails2" class="video-debug">
@@ -116,6 +120,8 @@
     <div class="video-scene" id="videoPanel3">
       <strong>Scene 3 — Celebration</strong>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
+      <button id="diagnoseScene3" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
+      <p id="diagnoseResult3" class="video-state" role="status" aria-live="polite"></p>
       <p id="videoStatus3" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer3"></div>
       <details id="videoDebugDetails3" class="video-debug">
@@ -211,6 +217,12 @@
     generateAllVideos.hidden = true;
     generateAllVideos.disabled = true;
     generateAllVideos.textContent = 'Generate All 3 Videos (paid)';
+    for (const n of [1, 2, 3]) {
+      const button = document.getElementById('diagnoseScene' + n);
+      button.hidden = true;
+      button.disabled = false;
+      document.getElementById('diagnoseResult' + n).textContent = '';
+    }
     videoSubmissionLog.clear();
     preflightCheckedJobId = null;
     lastImageScenes = {};
@@ -269,6 +281,8 @@
         const real = data.videos?.[id] || {};
         const authorised = approvals[id] === true;
         const pendingAttempt = videoSubmissionLog.get(id);
+        document.getElementById('diagnoseScene' + n).hidden =
+          real.status !== 'FAILED' && real.status !== 'REVIEW_REQUIRED';
         document.getElementById('scene' + n + 'PaidStatus').textContent =
           real.mode !== 'REAL' && pendingAttempt
             ? pendingAttempt.status
@@ -765,6 +779,35 @@
       void refreshVideos();
     }
   });
+
+  for (const n of [1, 2, 3]) {
+    const button = document.getElementById('diagnoseScene' + n);
+    button.addEventListener('click', async () => {
+      if (!currentJobId || button.hidden || button.disabled) return;
+      const requestedJob = currentJobId;
+      const output = document.getElementById('diagnoseResult' + n);
+      button.disabled = true;
+      output.textContent = 'Checking existing Google interaction (read-only)…';
+      try {
+        const data = await api('/jobs/' + requestedJob + '/real-videos/scene' + n +
+                               '/diagnostics');
+        if (currentJobId !== requestedJob) return;
+        const detail = data.diagnostic || {};
+        output.textContent = detail.status === 'READ_ONLY_DIAGNOSTIC'
+          ? 'Google status: ' + (detail.providerStatus || 'unknown') +
+            '. Reason: ' + (detail.errorCategory || 'UNSPECIFIED').replaceAll('_', ' ').toLowerCase() +
+            (detail.errorCode ? ' (' + detail.errorCode + ')' : '') +
+            (detail.reason === 'GOOGLE_DID_NOT_SUPPLY_A_CLASSIFIABLE_REASON'
+              ? '. Google did not provide a specific reason.' : '')
+          : 'Google failure details unavailable: ' + (detail.reason || 'unknown') + '.';
+      } catch (error) {
+        if (currentJobId === requestedJob)
+          output.textContent = 'Read-only diagnostic unavailable. No video was restarted.';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
 
   document.getElementById('assembleFinal').addEventListener('click', async () => {
     const button = document.getElementById('assembleFinal');
