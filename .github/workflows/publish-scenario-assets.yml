@@ -1,4 +1,4 @@
-name: Publish AFL scenario prompts to S3
+name: Publish AFL prompts and template images to S3
 # Independent of the legacy 'deploy' branch and application/CloudFormation deployment.
 on:
   push:
@@ -6,6 +6,9 @@ on:
     paths:
       - '.github/workflows/publish-scenario-assets.yml'
       - 'scenarios/afl-grand-final-winning-kick/v1/config.json'
+      - 'scenarios/afl-grand-final-winning-kick/v1/scene1-start.png'
+      - 'scenarios/afl-grand-final-winning-kick/v1/scene2-start.png'
+      - 'scenarios/afl-grand-final-winning-kick/v1/scene3-start.png'
       - 'scenarios/afl-grand-final-winning-kick/v1/video/config.json'
       - 'scenarios/afl-grand-final-winning-kick/v1/video/scene1-video.txt'
       - 'scenarios/afl-grand-final-winning-kick/v1/video/scene2-video.txt'
@@ -77,6 +80,31 @@ jobs:
           print("Validated Replicate configuration and three Google video templates.")
           PY
 
+      - name: Validate optional PNG template images (before AWS writes)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import struct
+          from pathlib import Path
+
+          base = Path("scenarios/afl-grand-final-winning-kick/v1")
+          for name in ("scene1-start.png", "scene2-start.png", "scene3-start.png"):
+              path = base / name
+              if not path.exists():
+                  print(f"{name}: not in GitHub; leaving existing S3 image unchanged")
+                  continue
+              payload_size = path.stat().st_size
+              assert 100_000 <= payload_size <= 15_000_000, f"{name}: invalid file size"
+              with path.open("rb") as stream:
+                  header = stream.read(24)
+              assert header[:8] == b"\\x89PNG\\r\\n\\x1a\\n", f"{name}: not a PNG"
+              assert header[12:16] == b"IHDR", f"{name}: invalid PNG header"
+              width, height = struct.unpack(">II", header[16:24])
+              assert width >= 720 and height >= 1280, f"{name}: insufficient resolution"
+              assert abs(width * 16 - height * 9) <= max(width, height) // 50, f"{name}: must be vertical 9:16"
+              print(f"{name}: validated PNG {width}x{height}, {payload_size} bytes")
+          PY
+
       - name: Assume existing GitHub OIDC deploy role (S3 actions only)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -84,7 +112,7 @@ jobs:
           aws-region: ap-southeast-2
           role-session-name: afl-prompt-publisher
 
-      - name: Publish only five allowlisted prompt/config objects and verify bytes
+      - name: Publish five configs/prompts and any available PNG templates; verify bytes
         shell: bash
         run: |
           set -euo pipefail
@@ -112,4 +140,15 @@ jobs:
             upload_and_verify "video/${name}-video.txt" "text/plain"
           done
 
-          echo "All five prompt/config objects published and byte-verified. No PNGs or application code touched."
+          # PNGs are optional: when committed to the same GitHub folder,
+          # publish them; otherwise do NOT overwrite existing S3 templates.
+          for scene in scene1 scene2 scene3; do
+            rel="${scene}-start.png"
+            if [ -f "$base/$rel" ]; then
+              upload_and_verify "$rel" "image/png"
+            else
+              echo "Skipped $rel (not stored in GitHub); S3 original retained"
+            fi
+          done
+
+          echo "Scenario files published and byte-verified. No application code or infrastructure deployed."
