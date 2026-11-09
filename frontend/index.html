@@ -78,8 +78,7 @@
   <button id="generate" type="button" disabled>Upload selfie &amp; create job</button>
   <button id="refresh" type="button" hidden aria-hidden="true" tabindex="-1" style="display:none">Refresh job status</button>
   <section id="jobProgressSection">
-    <h2>Reference images</h2>
-    <p id="status" role="status">Loading backend configuration…</p>
+    <p id="status" role="status"></p>
     <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
     <div id="results" aria-label="Reference images"></div>
   </section>
@@ -470,9 +469,7 @@
     }
   });
 
-  status.textContent = apiBaseUrl
-    ? 'Backend ready. Enter the API key and choose a selfie.'
-    : 'Backend configuration missing. Contact the developer.';
+  status.textContent = apiBaseUrl ? '' : 'Backend configuration missing. Contact the developer.';
   generate.disabled = !apiBaseUrl;
 
   testGoogle.addEventListener('click', async () => {
