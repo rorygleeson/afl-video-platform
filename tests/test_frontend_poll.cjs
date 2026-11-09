@@ -20,7 +20,7 @@ function setup(options = {}) {
   const els = {};
   function el() {
     return {
-      hidden: false, disabled: false, value: '', textContent: '', dataset: {},
+      hidden: false, disabled: false, value: '', textContent: '', dataset: {}, style: {},
       listeners: {},
       children: [],
       appendChild(child) { this.children.push(child); },
