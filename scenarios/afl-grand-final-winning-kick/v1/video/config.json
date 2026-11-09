@@ -9,24 +9,24 @@
     {
       "id": "scene1",
       "template": "scene1-video.txt",
-      "durationSeconds": 5,
-      "commentaryTemplate": "$lastName breaks clear! He's charging towards goal!"
+      "durationSeconds": 4,
+      "commentaryTemplate": "$lastName breaks free! SIX SECONDS LEFT!"
     },
     {
       "id": "scene2",
       "template": "scene2-video.txt",
       "durationSeconds": 8,
-      "commentaryTemplate": "He goes for goal! What a kick! He's scored!"
+      "commentaryTemplate": "He kicks… IT'S A GOAL!"
     },
     {
       "id": "scene3",
       "template": "scene3-video.txt",
-      "durationSeconds": 10,
-      "commentaryTemplate": "$lastName wins it for $teamName! They're the premiers!"
+      "durationSeconds": 5,
+      "commentaryTemplate": "$fullName has won the premiership for $teamName!"
     }
   ],
   "maxPaidScenesPerRequest": 1,
-  "notes": "Paid video requires explicit per-scene consent and a conditional per-job DynamoDB approval; no global concurrency slot or implicit generation.",
+  "notes": "Paid video requires explicit per-scene consent and conditional per-job DynamoDB approval; no global concurrency slot or implicit generation.",
   "requiredVariables": [
     "firstName",
     "lastName",
