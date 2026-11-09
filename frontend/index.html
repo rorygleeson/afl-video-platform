@@ -32,6 +32,11 @@
     .reference-card{min-width:0;border:1px solid #d4dce5;border-radius:9px;padding:6px}
     .reference-card strong{display:block;font-size:.8rem}
     .reference-card p{font-size:.75rem;margin:4px 0}
+    .reference-progress.completed{color:#16733b;font-weight:700}
+    .reference-progress.generating::before{content:"⚙";display:inline-block;margin-right:5px;font-size:1rem;line-height:1;vertical-align:-1px;animation:reference-gear-spin 2s linear infinite}
+    @keyframes reference-gear-spin{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion:reduce){.reference-progress.generating::before{animation:none}}
+
     .reference-card img{display:block;width:100%;height:auto;aspect-ratio:9/16;object-fit:cover}
     .video-scene .video-state{margin:8px 0}
     .step-heading{font-weight:700;margin-top:10px}
@@ -656,10 +661,15 @@
           card.appendChild(progress);
           results.appendChild(card);
         }
-        card.querySelector('p').textContent = 'Reference image: ' +
-          (scenes[id]?.status === 'COMPLETED' ? 'Completed' :
-           scenes[id]?.status === 'FAILED' ? 'Failed — ' + (scenes[id].errorCode || 'retry required') :
-           scenes[id]?.status === 'GENERATING' ? 'Generating…' : 'Waiting');
+        const progress = card.querySelector('p');
+        const imageStatus = scenes[id]?.status;
+        progress.className = 'reference-progress' +
+          (imageStatus === 'COMPLETED' ? ' completed' :
+           imageStatus === 'GENERATING' ? ' generating' : '');
+        progress.textContent =
+          imageStatus === 'COMPLETED' ? 'Completed' :
+          imageStatus === 'FAILED' ? 'Failed — ' + (scenes[id].errorCode || 'retry required') :
+          imageStatus === 'GENERATING' ? 'Generating…' : 'Waiting';
         const image = (sceneResults.images || []).find(item => item.sceneId === id && item.url);
         if (image && !card.querySelector('img')) {
           const img = document.createElement('img');
