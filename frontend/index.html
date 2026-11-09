@@ -642,8 +642,7 @@
       const completed = record.job.completedScenes ?? sceneResults.images.length;
       const failed = record.job.failedScenes ?? 0;
       showStatus('Reference images: ' + completed + '/3 completed' +
-        (failed ? '; ' + failed + ' failed' : '') + '. ' +
-        (referenceImagesReady ? 'Scene 1 is available below.' : 'Preparing your reference images…'));
+        (failed ? '; ' + failed + ' failed' : '') + '.');
       // Image cards keep their own status and retain thumbnails during polling.
       // Never reuse the image-job COMPLETED value to describe video generation.
       for (const n of [1,2,3]) {
