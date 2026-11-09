@@ -1,0 +1,136 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AFL Stage 6 - independent FFmpeg final-video assembly, no Google calls.
+Parameters:
+  ArtifactBucketName:
+    Type: String
+  AssemblyWorkerArtifactKey:
+    Type: String
+  FfmpegLayerArtifactKey:
+    Type: String
+  PermissionsBoundaryArn:
+    Type: String
+  UploadsBucketName:
+    Type: String
+    Default: afl-app-dev-uploads-134387458447-ap-southeast-2
+  JobsTableName:
+    Type: String
+    Default: afl-app-dev-jobs
+Resources:
+  FfmpegLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: afl-app-dev-ffmpeg
+      Description: Statically built FFmpeg and ffprobe with pinned SHA256 archive
+      CompatibleRuntimes: [python3.13]
+      CompatibleArchitectures: [x86_64]
+      Content:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref FfmpegLayerArtifactKey
+  AssemblyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-assembly-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AssemblyOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ReadActualSceneClips
+                Effect: Allow
+                Action: [s3:GetObject]
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/videos/*/scene*.mp4'
+              - Sid: WriteFinalMp4
+                Effect: Allow
+                Action: [s3:PutObject, s3:GetObject]
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/videos/*/final.mp4'
+              - Sid: AssemblyJobStatus
+                Effect: Allow
+                Action: [dynamodb:GetItem, dynamodb:UpdateItem]
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${JobsTableName}'
+              - Sid: Logging
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/afl-app-dev-assembly:*'
+  AssemblyWorker:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: afl-app-dev-assembly
+      Description: Stitch three previously generated real videos. No model calls.
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      Role: !GetAtt AssemblyRole.Arn
+      Architectures: [x86_64]
+      MemorySize: 2048
+      Timeout: 600
+      EphemeralStorage:
+        Size: 2048
+      Layers: [!Ref FfmpegLayer]
+      Code:
+        S3Bucket: !Ref ArtifactBucketName
+        S3Key: !Ref AssemblyWorkerArtifactKey
+      Environment:
+        Variables:
+          UPLOAD_BUCKET: !Ref UploadsBucketName
+          JOBS_TABLE: !Ref JobsTableName
+          FFMPEG_PATH: /opt/bin/ffmpeg
+          FFPROBE_PATH: /opt/bin/ffprobe
+  AssemblyLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/afl-app-dev-assembly
+      RetentionInDays: 14
+  AssemblyStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-assembly-sfn-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeAssemblyOnly
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [lambda:InvokeFunction]
+                Resource: !GetAtt AssemblyWorker.Arn
+  AssemblyStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: afl-app-dev-assembly
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt AssemblyStateMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "StartAt": "Stitch",
+          "States": {
+            "Stitch": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${AssemblyWorker.Arn}",
+                "Payload": { "jobId.$": "$.jobId" }
+              },
+              "ResultPath": "$.result",
+              "End": true
+            }
+          }
+        }
+Outputs:
+  AssemblyStateMachineArn:
+    Value: !Ref AssemblyStateMachine
+  AssemblyWorkerArn:
+    Value: !GetAtt AssemblyWorker.Arn
