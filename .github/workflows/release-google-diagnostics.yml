@@ -78,6 +78,9 @@ jobs:
           aws s3 cp dist/diagnostic-api.zip "s3://$bucket/api-diagnostics/$GITHUB_SHA.zip" --only-show-errors
           aws s3 cp dist/diagnostic-google.zip "s3://$bucket/google-diagnostics/$GITHUB_SHA.zip" --only-show-errors
 
+      - name: Install CloudFormation inspection dependency
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+
       - name: CloudFormation changesets — reject every change except Lambda Code
         shell: bash
         env:
