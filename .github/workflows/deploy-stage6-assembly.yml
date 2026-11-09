@@ -54,13 +54,21 @@ jobs:
       - name: Deploy dedicated assembly stack
         run: |
           set -euo pipefail
+          # A fresh Stage 6 stack can be ROLLBACK_COMPLETE after a failed
+          # first creation; only delete that disposable failed stack.
+          state=$(aws cloudformation describe-stacks --stack-name afl-app-dev-assembly \
+            --query 'Stacks[0].StackStatus' --output text 2>/dev/null || true)
+          if [ "$state" = ROLLBACK_COMPLETE ]; then
+            aws cloudformation delete-stack --stack-name afl-app-dev-assembly
+            aws cloudformation wait stack-delete-complete --stack-name afl-app-dev-assembly
+          fi
           aws cloudformation deploy \
             --stack-name afl-app-dev-assembly \
             --region ap-southeast-2 \
             --template-file infrastructure/app/assembly.yaml \
             --parameter-overrides \
               ArtifactBucketName=afl-video-bootstrap-artifactbucket-xiuriidgyft4 \
-              AssemblyWorkerArtifactKey=assembly/worker/$GITHUB_SHA.zip \
+              AssemblyWorkerArtifactKey=assembly/worker-$GITHUB_SHA.zip \
               FfmpegLayerArtifactKey=assembly/ffmpeg-$GITHUB_SHA.zip \
               PermissionsBoundaryArn=arn:aws:iam::134387458447:policy/afl-video-app-permissions-boundary \
               UploadsBucketName=afl-app-dev-uploads-134387458447-ap-southeast-2 \
