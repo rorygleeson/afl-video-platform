@@ -46,13 +46,18 @@ function setup(options = {}) {
                       'videoPlayer1','videoPlayer2','videoPlayer3',
                       'videoPanel1','videoPanel2','videoPanel3',
                       'videoDebugDetails1','videoDebugDetails2','videoDebugDetails3',
-                      'videoDebugText1','videoDebugText2','videoDebugText3']) {
+                      'videoDebugText1','videoDebugText2','videoDebugText3',
+                       'diagnoseScene1','diagnoseScene2','diagnoseScene3',
+                       'diagnoseResult1','diagnoseResult2','diagnoseResult3']) {
     els[name] = el();
     // Keep the basic DOM simulation intact for the new reference image cards.
   }
   els.assembleFinal.disabled = true;
   els.assembleFinal.hidden = true; // Matches the HTML hidden attribute.
   els.generateAllVideos.hidden = true;
+  for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
+  for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
+  for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
   els.jobIdPanel.hidden = true;
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
