@@ -1,0 +1,46 @@
+name: Validate Google video diagnostics
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/google_video_worker/handler.py'
+      - 'src/api/handler.py'
+      - 'frontend/index.html'
+      - '.github/workflows/validate-google-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Python worker and API
+        run: python3 -m py_compile src/google_video_worker/handler.py src/api/handler.py
+      - name: Check frontend inline JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          source = Path('frontend/index.html').read_text()
+          scripts = re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>', source)
+          assert scripts, 'No inline frontend scripts found'
+          Path('/tmp/afl-frontend-check.js').write_text('\n'.join(scripts))
+          PY
+          node --check /tmp/afl-frontend-check.js
+      - name: Confirm diagnostics are read-only and preserve failure evidence
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          code = Path('src/google_video_worker/handler.py').read_text()
+          diag = code.split('def diagnose_failed_interaction(job, scene):')[1].split('def lambda_handler(event, context):')[0]
+          assert 'google_json("GET"' in diag
+          assert 'google_json("POST"' not in diag
+          assert 'read_stored_failure(record)' in diag
+          assert 'GOOGLE_RESPONSE_TOO_LARGE' in diag
+          assert 'GOOGLE_GET_HTTP_' in diag
+          assert '"providerFinalStatus": state' in code
+          print('Diagnostic contract checks passed.')
+          PY
