@@ -189,7 +189,11 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue | [0]" --output text)
           test -n "$bucket" && test "$bucket" != None
           test -n "$dist" && test "$dist" != None
+          aws s3 cp frontend/styles.css "s3://$bucket/styles.css" \
+            --content-type 'text/css; charset=utf-8' --cache-control 'max-age=60, must-revalidate' --only-show-errors
+          aws s3 cp frontend/app.js "s3://$bucket/app.js" \
+            --content-type 'application/javascript; charset=utf-8' --cache-control 'max-age=60, must-revalidate' --only-show-errors
           aws s3 cp frontend/index.html "s3://$bucket/index.html" \
             --content-type 'text/html; charset=utf-8' --cache-control 'max-age=60, must-revalidate' --only-show-errors
-          aws cloudfront create-invalidation --distribution-id "$dist" --paths /index.html /
+          aws cloudfront create-invalidation --distribution-id "$dist" --paths /index.html /styles.css /app.js /
           echo "Diagnostics release complete. No paid POST, no Step Functions changes."
