@@ -88,12 +88,12 @@
   <section id="videoTestSection" hidden>
     <h2 style="margin-bottom:6px">Create your videos</h2>
     <p class="poll-status" id="realVideoGate">Generate each MP4 individually. Each paid request requires confirmation and is protected against duplicate submissions.</p>
+    <button id="generateAllVideos" type="button" hidden disabled>Generate All 3 Videos (paid)</button>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 5 seconds</strong>
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite" hidden></p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
-      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 5 seconds)</button>
       <p id="videoStatus1" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer1"></div>
       <details id="videoDebugDetails1" class="video-debug">
@@ -104,7 +104,6 @@
     </div>
     <div class="video-scene" id="videoPanel2">
       <strong>Scene 2 — Winning kick</strong>
-      <button id="generateRealScene2" type="button" hidden>Generate Scene 2 MP4 (paid, 8 seconds)</button>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <p id="videoStatus2" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer2"></div>
@@ -116,7 +115,6 @@
     </div>
     <div class="video-scene" id="videoPanel3">
       <strong>Scene 3 — Celebration</strong>
-      <button id="generateRealScene3" type="button" hidden>Generate Scene 3 MP4 (paid, 10 seconds)</button>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <p id="videoStatus3" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer3"></div>
@@ -158,6 +156,7 @@
   const results = document.getElementById('results');
   const pollStatus = document.getElementById('pollStatus');
   const videoTestSection = document.getElementById('videoTestSection');
+  const generateAllVideos = document.getElementById('generateAllVideos');
   const videoTestMessage = document.getElementById('videoTestMessage');
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
   let previewUrl, currentJobId, currentPhase = 'Initialising';
@@ -176,6 +175,8 @@
   let videoRefreshRequested = false;
   let realVideoTracking = false;
   const videoSubmittedScenes = new Set();
+  let videoBatchSubmitting = false;
+  let availablePaidScenes = [];
   const videoSubmissionLog = new Map();
   let lastImageScenes = {};
   let preflightCheckedJobId = null;
@@ -205,6 +206,11 @@
     videoRefreshRequested = false;
     realVideoTracking = false;
     videoSubmittedScenes.clear();
+    videoBatchSubmitting = false;
+    availablePaidScenes = [];
+    generateAllVideos.hidden = true;
+    generateAllVideos.disabled = true;
+    generateAllVideos.textContent = 'Generate All 3 Videos (paid)';
     videoSubmissionLog.clear();
     preflightCheckedJobId = null;
     lastImageScenes = {};
@@ -213,7 +219,6 @@
     document.getElementById('scene1PreflightStatus').textContent = 'Scene 1 check runs automatically when reference images are ready.';
     document.getElementById('scene1PaidStatus').textContent = 'MP4 generation: locked (not charged)';
     for (const n of [1, 2, 3]) {
-      document.getElementById('generateRealScene' + n).hidden = true;
       document.getElementById('scene' + n + 'PaidStatus').textContent = 'MP4 generation: locked (not charged)';
     }
     for (const n of [1, 2, 3]) {
@@ -243,8 +248,19 @@
       const data = await api('/jobs/' + jobId + '/videos');
       if (jobId !== currentJobId) return;
       const approvals = data.paidScenes || {};
-      // All prompts and paid actions appear after the three reference
-      // images complete. The server allows only one paid request at a time.
+      // Each real scene is independently reserved by the API; all three
+      // approved requests may be submitted concurrently after one confirmation.
+      availablePaidScenes = [1, 2, 3].filter(n => {
+        const id = 'scene' + n;
+        return approvals[id] === true && !videoSubmittedScenes.has(id) &&
+          data.videos?.[id]?.mode !== 'REAL';
+      });
+      generateAllVideos.hidden = videoBatchSubmitting || availablePaidScenes.length === 0;
+      generateAllVideos.disabled = videoBatchSubmitting || availablePaidScenes.length === 0;
+      generateAllVideos.textContent = availablePaidScenes.length === 3
+        ? 'Generate All 3 Videos (paid)'
+        : 'Generate ' + availablePaidScenes.length + ' Remaining Video' +
+          (availablePaidScenes.length === 1 ? '' : 's') + ' (paid)';
       for (const n of [1, 2, 3]) {
         document.getElementById('videoPanel' + n).hidden = false;
       }
@@ -265,8 +281,6 @@
                   ? 'Checking original Google submission. Please do not retry or start another scene.'
                   : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
             : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
-        document.getElementById('generateRealScene' + n).hidden =
-          !authorised || videoSubmittedScenes.has(id) || real.mode === 'REAL';
         const lines = [
           'Job: ' + jobId,
           'Scene: ' + id,
@@ -693,62 +707,64 @@
   });
 
 
-  for (const n of [1, 2, 3]) {
-    const sceneId = 'scene' + n;
-    const duration = n === 3 ? 10 : (n === 1 ? 5 : 8);
-    const button = document.getElementById('generateRealScene' + n);
-    button.addEventListener('click', async () => {
-      if (!currentJobId || videoTestSection.hidden || button.hidden ||
-          videoSubmittedScenes.has(sceneId)) return;
-      const jobId = currentJobId;
-      if (!window.confirm('Generate a real ' + duration + '-second video for Scene ' +
-                          n + '? This will incur a Google charge. Only this scene will run.')) return;
+  generateAllVideos.addEventListener('click', async () => {
+    if (!currentJobId || videoTestSection.hidden || generateAllVideos.hidden ||
+        generateAllVideos.disabled || videoBatchSubmitting) return;
+    const jobId = currentJobId;
+    const scenes = [...availablePaidScenes];
+    if (scenes.length === 0) return;
+    if (!window.confirm('Generate ' + scenes.length + ' paid Google video' +
+      (scenes.length === 1 ? '' : 's') + ' in parallel? ' +
+      'Each scene is billed separately. No automatic retries.')) return;
+
+    // Lock all scene attempts synchronously before the first network await.
+    videoBatchSubmitting = true;
+    generateAllVideos.hidden = true;
+    generateAllVideos.disabled = true;
+    for (const n of scenes) {
+      const sceneId = 'scene' + n;
       videoSubmittedScenes.add(sceneId);
-      const submission = {status: 'Submitting paid request…',
+      const submission = {
+        status: 'Submitting paid request…',
         events: ['Confirmed by user: ' + new Date().toLocaleTimeString(),
-                 'POST /jobs/' + jobId + '/real-videos/' + sceneId + ' started']};
+                 'POST /jobs/' + jobId + '/real-videos/' + sceneId + ' started']
+      };
       videoSubmissionLog.set(sceneId, submission);
-      document.getElementById('videoDebugDetails' + n).open = true;
-      document.getElementById('videoDebugText' + n).textContent =
-        'Job: ' + jobId + '\nScene: ' + sceneId +
-        '\nSubmitting one paid request…\nNo automatic retry.';
-      // Hide all paid controls until the server confirms which scene owns
-      // the current click is being acknowledged. No other scene is auto-submitted.
-      for (const idx of [1, 2, 3]) {
-        document.getElementById('generateRealScene' + idx).hidden = true;
-      }
-      button.disabled = true;
-      document.getElementById('scene' + n + 'PaidStatus').textContent =
-        'Requesting real MP4 — do not submit this scene again.';
+      document.getElementById('scene' + n + 'PaidStatus').textContent = submission.status;
+      document.getElementById('videoDebugText' + n).textContent = submission.events.join('\\n');
+    }
+    realVideoTracking = true;
+
+    // Independent requests: a failure or ambiguous reply in one scene does not
+    // cancel the other two, nor trigger any paid retry.
+    const results = await Promise.allSettled(scenes.map(async n => {
+      const sceneId = 'scene' + n;
+      const submission = videoSubmissionLog.get(sceneId);
       try {
         const result = await api('/jobs/' + jobId + '/real-videos/' + sceneId, {
           method: 'POST',
           headers: {'Idempotency-Key': crypto.randomUUID()},
           body: JSON.stringify({confirmPaidScene: sceneId}),
         });
-        if (jobId !== currentJobId) return;
         submission.status = 'Paid request accepted (' + result.status + '). Checking AWS status…';
         submission.events.push('API response: ' + (result.status || 'ACCEPTED') +
                                ' at ' + new Date().toLocaleTimeString());
-        document.getElementById('scene' + n + 'PaidStatus').textContent = submission.status;
-        document.getElementById('videoDebugText' + n).textContent = submission.events.join('\n');
-        realVideoTracking = true;
-        void refreshVideos();
       } catch (error) {
-        if (jobId === currentJobId) {
-          submission.status = 'Paid request error: ' + error.message + ' Do not retry until checked.';
-          submission.events.push('API error: ' + error.message);
-          submission.events.push('Result may be uncertain; paid request will NOT be retried.');
-          document.getElementById('scene' + n + 'PaidStatus').textContent = submission.status;
-          document.getElementById('videoDebugText' + n).textContent = submission.events.join('\n');
-          void refreshVideos();
-        }
-        // Fail closed: do not automatically re-enable after any uncertain request.
-      } finally {
-        button.disabled = false;
+        submission.status = 'Submission needs review: ' + error.message + ' Do not retry until checked.';
+        submission.events.push('API error: ' + error.message);
+        submission.events.push('Result may be uncertain; paid request will NOT be retried.');
       }
-    });
-  }
+      if (jobId === currentJobId) {
+        document.getElementById('scene' + n + 'PaidStatus').textContent = submission.status;
+        document.getElementById('videoDebugText' + n).textContent = submission.events.join('\\n');
+      }
+    }));
+    // All promises settle; failures are retained in each scene's diagnostic state.
+    if (jobId === currentJobId) {
+      videoBatchSubmitting = false;
+      void refreshVideos();
+    }
+  });
 
   document.getElementById('assembleFinal').addEventListener('click', async () => {
     const button = document.getElementById('assembleFinal');
