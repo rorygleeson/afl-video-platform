@@ -25,6 +25,21 @@ class AssemblyContractTests(unittest.TestCase):
         self.assertNotIn("google_json", source)
         self.assertNotIn("replicate.com", source)
 
+    def test_assembly_is_gated_and_never_auto_runs_paid_generation(self):
+        api = API.read_text(encoding="utf-8")
+        front = FRONTEND.read_text(encoding="utf-8")
+        infra = (ROOT / "infrastructure/app/backend.yaml").read_text(encoding="utf-8")
+        self.assertIn("def start_assembly(job_id):", api)
+        self.assertIn("attribute_not_exists(assembly)", api)
+        self.assertIn("def assembly_public(job):", api)
+        self.assertIn('"ASSEMBLY_STATE_MACHINE_ARN"', api)
+        self.assertIn("AssemblyEnabled:", infra)
+        self.assertIn("AssemblyOn:", infra)
+        self.assertIn("readyForAssembly = realStates.every", front)
+        self.assertIn("st.mode === 'REAL' && st.status === 'COMPLETED'", front)
+        self.assertIn("POST", front)
+        self.assertIn("Download Final Video MP4", front)
+
     def test_existing_scene_download_contract_preserved(self):
         api = API.read_text(encoding="utf-8")
         self.assertIn('f"videos/{job[\'jobId\']}/{scene_id}.mp4"', api)
