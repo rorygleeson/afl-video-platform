@@ -106,7 +106,7 @@
 
     </div>
     <div class="video-scene" id="videoPanel2">
-      <strong>Scene 2 — Winning kick</strong>
+      <strong>Scene 2 — Winning kick · 8 seconds</strong>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <button id="diagnoseScene2" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
       <p id="diagnoseResult2" class="video-state" role="status" aria-live="polite"></p>
@@ -115,7 +115,7 @@
 
     </div>
     <div class="video-scene" id="videoPanel3">
-      <strong>Scene 3 — Celebration</strong>
+      <strong>Scene 3 — Celebration · 10 seconds</strong>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <button id="diagnoseScene3" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
       <p id="diagnoseResult3" class="video-state" role="status" aria-live="polite"></p>
@@ -348,40 +348,13 @@
           if (!player.querySelector('video')) {
             const video = document.createElement('video');
             video.controls = true;
+            video.setAttribute('controlsList', 'nodownload');
             video.preload = 'metadata';
             video.src = item.url;
             player.replaceChildren(video);
             player.dataset.url = item.url;
           }
-          // Native video-menu downloads can use a cached, expired S3 URL.
-          // Always fetch a fresh, attachment-signed URL when a user downloads.
-          if (!player.querySelector('.scene-download')) {
-            const download = document.createElement('button');
-            download.type = 'button';
-            download.className = 'scene-download quiet-button';
-            download.textContent = 'Download Scene ' + n + ' MP4';
-            download.addEventListener('click', async () => {
-              const requestedJob = currentJobId;
-              download.disabled = true;
-              download.textContent = 'Preparing fresh download link…';
-              try {
-                const latest = await api('/jobs/' + requestedJob + '/videos');
-                if (currentJobId !== requestedJob) return;
-                const current = latest.videos?.['scene' + n] || {};
-                if (current.status !== 'COMPLETED' || !current.downloadUrl)
-                  throw new Error('Download link unavailable. Please check deployment.');
-                // Content-Disposition=attachment makes the browser download,
-                // rather than replacing this page with a video.
-                window.location.assign(current.downloadUrl);
-              } catch (error) {
-                videoTestMessage.textContent = 'Scene ' + n + ' download failed: ' + error.message;
-              } finally {
-                download.disabled = false;
-                download.textContent = 'Download Scene ' + n + ' MP4';
-              }
-            });
-            player.appendChild(download);
-          }
+
         } else {
           // Never present mock JSON as a real MP4, but show genuine progress.
           state.textContent = item.mode === 'REAL'
@@ -665,7 +638,7 @@
       const failed = record.job.failedScenes ?? 0;
       showStatus('Reference images: ' + completed + '/3 completed' +
         (failed ? '; ' + failed + ' failed' : '') + '. ' +
-        (referenceImagesReady ? 'Scene 1 is available below.' : 'Preparing your videos…'));
+        (referenceImagesReady ? 'Scene 1 is available below.' : 'Preparing your reference images…'));
       // Image cards keep their own status and retain thumbnails during polling.
       // Never reuse the image-job COMPLETED value to describe video generation.
       for (const n of [1,2,3]) {
@@ -847,9 +820,39 @@
     try {
       const result = await api('/jobs/' + jobId + '/assembly');
       if (jobId !== currentJobId) return;
-      if (result.assembly?.status !== 'COMPLETED' || !result.assembly.downloadUrl)
+      if (result.assembly?.status !== 'COMPLETED' || !result.assembly.url)
         throw new Error('Final MP4 is not ready.');
-      window.location.assign(result.assembly.downloadUrl);
+      // S3's attachment-signed URL fixes the filename to afl-grand-final.mp4.
+      // Download through the existing CORS-enabled read URL instead, so the
+      // browser can apply a fresh local filename without changing S3 or the API.
+      const fileResponse = await fetch(result.assembly.url);
+      if (!fileResponse.ok) throw new Error('Unable to retrieve the final MP4.');
+      if (jobId !== currentJobId) return;
+      const blob = await fileResponse.blob();
+      if (jobId !== currentJobId) return;
+      const now = new Date();
+      const stamp = [now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0'),
+        String(now.getHours()).padStart(2, '0'),
+        String(now.getMinutes()).padStart(2, '0'),
+        String(now.getSeconds()).padStart(2, '0')].join('');
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = 'afl-grand-final-' + stamp + '.mp4';
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        try {
+          link.click();
+        } finally {
+          link.remove();
+        }
+      } finally {
+        // Let the browser start saving before releasing the Blob URL.
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+      }
     } catch (error) {
       if (jobId === currentJobId)
         document.getElementById('assemblyStatus').textContent = 'Download failed: ' + error.message;
