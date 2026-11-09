@@ -641,7 +641,8 @@ test('per-scene debug shows status and live GET polling does not submit paid req
 });
 
 test('four requested cosmetic changes keep progress and scene headings consistent', () => {
-  assert.match(html, /Preparing your reference images…/);
+  assert.doesNotMatch(html, /Preparing your reference images…|Scene 1 is available below\./);
+  assert.match(html, /'Reference images: ' \+ completed \+ '\/3 completed'/);
   assert.doesNotMatch(html, /Preparing your videos…/);
   for (const [n, seconds] of [[1, 5], [2, 8], [3, 10]]) {
     assert.match(html, new RegExp('<strong>Scene ' + n + '[^<]*' + seconds + ' seconds</strong>'));
