@@ -29,7 +29,7 @@ class AssemblyContractTests(unittest.TestCase):
         api = API.read_text(encoding="utf-8")
         self.assertIn('f"videos/{job[\'jobId\']}/{scene_id}.mp4"', api)
         self.assertIn('item.get("resultKey")', api)
-        self.assertIn('"assembly": {"status": "NOT_IMPLEMENTED"', api)
+        self.assertIn('"assembly": assembly_public(job)', api)
         self.assertIn('id="assembleFinal"', FRONTEND.read_text(encoding="utf-8"))
 
 
