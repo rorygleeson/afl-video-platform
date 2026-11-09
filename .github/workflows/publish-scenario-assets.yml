@@ -1,0 +1,115 @@
+name: Publish AFL scenario prompts to S3
+# Independent of the legacy 'deploy' branch and application/CloudFormation deployment.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-scenario-assets.yml'
+      - 'scenarios/afl-grand-final-winning-kick/v1/config.json'
+      - 'scenarios/afl-grand-final-winning-kick/v1/video/config.json'
+      - 'scenarios/afl-grand-final-winning-kick/v1/video/scene1-video.txt'
+      - 'scenarios/afl-grand-final-winning-kick/v1/video/scene2-video.txt'
+      - 'scenarios/afl-grand-final-winning-kick/v1/video/scene3-video.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: afl-scenario-prompts-s3
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Validate scenario and rendered video prompts BEFORE any AWS write
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          from string import Template
+
+          base = Path("scenarios/afl-grand-final-winning-kick/v1")
+          image_config = json.loads((base / "config.json").read_text())
+          video_config = json.loads((base / "video/config.json").read_text())
+
+          assert image_config["scenarioId"] == "afl-grand-final-winning-kick"
+          assert image_config["version"] == "v1"
+          assert video_config["scenarioId"] == "afl-grand-final-winning-kick"
+          assert video_config["version"] == "v1"
+          assert video_config["model"] == "gemini-omni-1.2-flash"
+          assert video_config["requireExplicitPaidAction"] is True
+          assert video_config["maxPaidScenesPerRequest"] == 1
+          assert isinstance(image_config["sharedPrompt"], str) and 100 <= len(image_config["sharedPrompt"]) <= 8000
+          assert len(image_config["teamGuernseys"]) == 18
+
+          image_scenes = image_config["scenes"]
+          video_scenes = video_config["scenes"]
+          assert [x["id"] for x in image_scenes] == ["scene1", "scene2", "scene3"]
+          assert [x["id"] for x in video_scenes] == ["scene1", "scene2", "scene3"]
+          for scene in image_scenes:
+              assert scene["enabled"] is True
+              assert scene["model"] == "google/nano-banana-pro"
+              assert scene["masterKey"] == f"scenarios/afl-grand-final-winning-kick/v1/{scene['id']}-start.png"
+              assert 100 <= len(scene["promptInstructions"]) <= 5000
+
+          expected_durations = {"scene1": 4, "scene2": 8, "scene3": 5}
+          values = {
+              "firstName": "Test", "lastName": "Player",
+              "fullName": "Test Player", "teamName": "Carlton Blues",
+              "guernsey": "deep navy blue guernsey", "commentary": "Test commentary"
+          }
+          for scene in video_scenes:
+              scene_id = scene["id"]
+              assert scene["template"] == f"{scene_id}-video.txt"
+              assert scene["durationSeconds"] == expected_durations[scene_id]
+              Template(scene["commentaryTemplate"]).substitute(values)
+              rendered = Template((base / "video" / scene["template"]).read_text()).substitute(values)
+              assert 100 <= len(rendered) <= 12000
+              assert "9:16" in rendered
+          assert video_config["requiredVariables"] == ["firstName", "lastName", "fullName", "teamName", "guernsey", "commentary"]
+          print("Validated Replicate configuration and three Google video templates.")
+          PY
+
+      - name: Assume existing GitHub OIDC deploy role (S3 actions only)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-prompt-publisher
+
+      - name: Publish only five allowlisted prompt/config objects and verify bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bucket="afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+          base="scenarios/afl-grand-final-winning-kick/v1"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          upload_and_verify() {
+            local rel="$1"
+            local mime="$2"
+            local src="$base/$rel"
+            local key="$base/$rel"
+            local dest="$tmp/${rel//\//_}"
+            aws s3 cp "$src" "s3://$bucket/$key" --region ap-southeast-2 \
+              --content-type "$mime" --cache-control 'no-store' --only-show-errors
+            aws s3 cp "s3://$bucket/$key" "$dest" --region ap-southeast-2 --only-show-errors
+            cmp --silent "$src" "$dest" || { echo "::error::S3 verification failed for $key"; exit 1; }
+            echo "Verified: $key"
+          }
+
+          upload_and_verify "config.json" "application/json"
+          upload_and_verify "video/config.json" "application/json"
+          for name in scene1 scene2 scene3; do
+            upload_and_verify "video/${name}-video.txt" "text/plain"
+          done
+
+          echo "All five prompt/config objects published and byte-verified. No PNGs or application code touched."
