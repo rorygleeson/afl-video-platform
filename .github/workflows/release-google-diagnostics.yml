@@ -130,6 +130,22 @@ jobs:
               changes = [x["ResourceChange"] for x in d["Changes"] if "ResourceChange" in x]
               summary = [(x.get("Action"), x.get("LogicalResourceId"), x.get("ResourceType")) for x in changes]
               print(f"{stack} planned changes: {summary}")
+              # Inspect precisely which attributes CloudFormation predicts will
+              # change, without logging provider credentials or template values.
+              for change in changes:
+                  evidence = [
+                      {
+                          "attribute": d.get("Target", {}).get("Attribute"),
+                          "name": d.get("Target", {}).get("Name"),
+                          "requires_recreation": d.get("Target", {}).get("RequiresRecreation"),
+                          "source": d.get("ChangeSource"),
+                          "causing_entity": d.get("CausingEntity"),
+                          "evaluation": d.get("Evaluation"),
+                      }
+                      for d in change.get("Details", [])
+                  ]
+                  print("Change details:", change.get("LogicalResourceId"),
+                        "replacement=", change.get("Replacement"), evidence, flush=True)
               if len(changes) != 1 or summary[0] != ("Modify", allowed_logical_id, "AWS::Lambda::Function"):
                   cf.delete_change_set(StackName=stack, ChangeSetName=name)
                   raise RuntimeError("ABORT: Unexpected CloudFormation changes; no deployment attempted")
