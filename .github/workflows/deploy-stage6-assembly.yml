@@ -68,6 +68,12 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role \
             --no-fail-on-empty-changeset
+      - name: Diagnose Stage 6 CloudFormation failure
+        if: failure()
+        run: |
+          aws cloudformation describe-stack-events --stack-name afl-app-dev-assembly \
+            --query 'StackEvents[].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]' \
+            --output table | head -n 100
       - name: Verify FFmpeg Lambda is functional without generating or stitching
         run: |
           set -euo pipefail
