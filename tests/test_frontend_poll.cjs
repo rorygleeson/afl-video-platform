@@ -31,7 +31,7 @@ function setup(options = {}) {
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
-                      'testGoogle', 'googleStatus', 'firstName', 'lastName',
+                      'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
                       'videoPromptStatus1','videoPromptStatus2','videoPromptStatus3',
                       'videoPromptText1','videoPromptText2','videoPromptText3',
@@ -247,10 +247,33 @@ test('changing team cancels pending polling and hides old paid job action', asyn
 test('Google Cloud auth-check button never invokes paid generation', async () => {
   const h = setup();
   await h.els.testGoogle.listeners.click();
-  assert.match(h.els.googleStatus.textContent, /connected successfully/i);
+  assert.equal(h.els.googleStatus.textContent, 'Working!');
+  assert.match(h.els.googleStatus.className, /success/);
   assert.equal(h.els.testGoogle.disabled, false);
   assert.equal(h.calls.filter(c => c.url.endsWith('/video/paid-google-auth-check')).length, 1);
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 0);
+});
+
+test('connection diagnostics show local green success and red failure only', async () => {
+  const h = setup();
+  const priorStatus = h.els.status.textContent;
+  await h.els.testApi.listeners.click();
+  assert.equal(h.els.apiTestResult.textContent, 'Working!');
+  assert.match(h.els.apiTestResult.className, /success/);
+  assert.equal(h.els.status.textContent, priorStatus,
+    'Diagnostic button must never overwrite selfie/upload status');
+  assert.equal(h.els.googleStatus.textContent, '');
+  await h.els.testGoogle.listeners.click();
+  assert.equal(h.els.googleStatus.textContent, 'Working!');
+  assert.match(h.els.googleStatus.className, /success/);
+
+  const denied = setup({forbidGateway:true});
+  const original = denied.els.status.textContent;
+  await denied.els.testApi.listeners.click();
+  assert.equal(denied.els.apiTestResult.textContent, 'Failed');
+  assert.match(denied.els.apiTestResult.className, /failure/);
+  assert.equal(denied.els.status.textContent, original);
+  assert.equal(denied.els.googleStatus.textContent, '');
 });
 
 test('video controls appear after three reference images without prompt toggles', async () => {
