@@ -159,7 +159,13 @@
       </details>
 
     </div>
-    <button id="assembleFinal" type="button" disabled hidden>Assemble Final Video</button>
+    <div id="assemblyPanel" class="video-scene" hidden>
+      <strong>Final video — all three scenes</strong>
+      <button id="assembleFinal" type="button" disabled hidden>Stitch Final Video</button>
+      <p id="assemblyStatus" class="video-state" role="status" aria-live="polite"></p>
+      <div id="assemblyPlayer"></div>
+      <button id="downloadFinal" type="button" class="quiet-button" hidden>Download Final Video MP4</button>
+    </div>
     <p id="videoTestMessage" class="poll-status" role="status" aria-live="polite"></p>
   </section>
 </main>
@@ -278,6 +284,11 @@
       document.getElementById('videoPlayer' + n).replaceChildren();
     }
     document.getElementById('assembleFinal').disabled = true;
+    document.getElementById('assembleFinal').hidden = true;
+    document.getElementById('assemblyPanel').hidden = true;
+    document.getElementById('assemblyStatus').textContent = '';
+    document.getElementById('assemblyPlayer').replaceChildren();
+    document.getElementById('downloadFinal').hidden = true;
   }
 
   async function refreshVideos() {
@@ -405,6 +416,36 @@
         }
       }
       const realStates = [1, 2, 3].map(n => data.videos?.['scene' + n] || {});
+      const assembly = data.assembly || {};
+      const readyForAssembly = realStates.every(st =>
+        st.mode === 'REAL' && st.status === 'COMPLETED' && !!st.url && !st.mock);
+      const assemblyPanel = document.getElementById('assemblyPanel');
+      const assembleButton = document.getElementById('assembleFinal');
+      const assemblyStatus = document.getElementById('assemblyStatus');
+      const finalPlayer = document.getElementById('assemblyPlayer');
+      const finalDownload = document.getElementById('downloadFinal');
+      assemblyPanel.hidden = !(readyForAssembly && assembly.enabled);
+      assembleButton.hidden = assembly.status !== 'READY' || !readyForAssembly;
+      assembleButton.disabled = assembly.status !== 'READY';
+      const display = {QUEUED:'Assembly queued', PROCESSING:'Stitching the three scenes…',
+        COMPLETED:'Final video ready', FAILED:'Assembly failed', REVIEW_REQUIRED:'Assembly needs review'};
+      assemblyStatus.textContent = display[assembly.status] || '';
+      if (assembly.status === 'COMPLETED' && assembly.url) {
+        if (!finalPlayer.querySelector('video')) {
+          const movie = document.createElement('video');
+          movie.controls = true;
+          movie.preload = 'metadata';
+          movie.src = assembly.url;
+          finalPlayer.replaceChildren(movie);
+        }
+        finalDownload.hidden = false;
+      } else {
+        finalPlayer.replaceChildren();
+        finalDownload.hidden = true;
+      }
+      if (assembly.errorCode && ['FAILED','REVIEW_REQUIRED'].includes(assembly.status)) {
+        assemblyStatus.textContent += ' (' + assembly.errorCode.replaceAll('_', ' ') + ')';
+      }
       realVideoTracking = realStates.some(st => st.mode === 'REAL' &&
         !['COMPLETED', 'FAILED', 'CANCELLED', 'REVIEW_REQUIRED'].includes(st.status));
       // Poll status continuously for the current visible job. No automatic
@@ -867,6 +908,44 @@
       }
     });
   }
+
+  document.getElementById('assembleFinal').addEventListener('click', async () => {
+    const button = document.getElementById('assembleFinal');
+    if (!currentJobId || button.hidden || button.disabled) return;
+    const jobId = currentJobId;
+    button.disabled = true;
+    button.hidden = true;
+    document.getElementById('assemblyStatus').textContent = 'Requesting final video assembly…';
+    try {
+      await api('/jobs/' + jobId + '/assembly', {method:'POST'});
+      if (jobId === currentJobId) void refreshVideos();
+    } catch (error) {
+      if (jobId === currentJobId) {
+        document.getElementById('assemblyStatus').textContent =
+          'Assembly request uncertain: ' + error.message + '. Checking existing job; no automatic retry.';
+        void refreshVideos();
+      }
+    }
+  });
+
+  document.getElementById('downloadFinal').addEventListener('click', async () => {
+    const button = document.getElementById('downloadFinal');
+    const jobId = currentJobId;
+    if (!jobId || button.hidden) return;
+    button.disabled = true;
+    try {
+      const result = await api('/jobs/' + jobId + '/assembly');
+      if (jobId !== currentJobId) return;
+      if (result.assembly?.status !== 'COMPLETED' || !result.assembly.downloadUrl)
+        throw new Error('Final MP4 is not ready.');
+      window.location.assign(result.assembly.downloadUrl);
+    } catch (error) {
+      if (jobId === currentJobId)
+        document.getElementById('assemblyStatus').textContent = 'Download failed: ' + error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
 
   async function runScene1Preflight(jobId) {
     if (!jobId || videoTestSection.hidden || jobId !== currentJobId) return;
