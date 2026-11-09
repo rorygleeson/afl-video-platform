@@ -1,23 +1,19 @@
 # AFL Grand Final — Scene 3: PREMIERS CELEBRATION
-# AWS substitutes $fullName, $teamName, $guernsey and $commentary.
-# Animate the provided PERSONALISED Scene 3 celebration image, not the master.
+# Dynamic values: $fullName, $teamName, $guernsey, $commentary.
 
-FORMAT AND PURPOSE: 10-second portrait 9:16 photorealistic LIVE AFL Grand Final television broadcast. Winning goal and final siren have already occurred in Scene 2. Show one spontaneous, energetic, physically believable premiership celebration, not a staged slow-motion montage.
+FORMAT: 10-second vertical 9:16 photorealistic live AFL Grand Final broadcast. Animate the supplied PERSONALISED Scene 3 celebration image. The winning goal and final siren happened in Scene 2: do not repeat either event.
 
-EXACT OPENING FRAME: Continue directly from the provided Scene 3 image. $fullName in $teamName's $guernsey is ALREADY celebrating with both fists raised, mouth open, surrounded and embraced by existing teammates immediately on either side. Do not restart the celebration or invent another raised-fists entrance. Preserve the personalised central player's exact face, hair, age, body and guernsey, and every visible teammate's distinct identity, position, anatomy, hands and contact points. Keep the SAME packed floodlit NIGHT stadium, grass, colours and light direction.
+OPENING: Start from the personalised reference showing $fullName celebrating with raised fists, teammates embracing him and a packed floodlit NIGHT stadium. Preserve the central player's recognisable face, COMPLETE selfie hairstyle, age, build, and existing teammates' faces, positions and contact. No identity changes when he turns or shouts.
 
-WINNING-TEAM UNIFORM — CRITICAL: Every teammate surrounding and celebrating with the central player wears the SAME $teamName uniform, consistently matching $guernsey in colours, stripe orientation and design. The selected team's $guernsey is the sole authority for the WINNING team's clothing: if the supplied starting image still shows any original master-team colours, replace those colours in the central player's and every celebrating teammate's kit with $guernsey from the FIRST FRAME and keep it unchanged. Never revert to the source master's vertical black-and-white stripes when they do not match the selected team. Do not create mismatching team strips or switch designs as bodies turn. ESSENDON BOMBERS are the opposition for the wider match; their consistent kit is BLACK with a BOLD RED DIAGONAL SASH. NO Essendon players appear in this celebration and no opponent joins the team huddle. No third team.
+WINNING TEAM: The central player and EVERY celebrating teammate wear the same $teamName uniform: $guernsey, with matching colours, pattern and stripe orientation for the entire clip. The selected-team strip overrides any original master-team clothing. Never revert to the master image's black-and-white vertical stripes unless those match the selected team. ESSENDON is the opposition and must NOT appear in the winning celebration. No third-team uniforms.
 
-REAL-TIME CELEBRATION:
-0–2s: Immediately animate existing joy: the central player shouts, smiles and drives his raised arms in a spontaneous celebratory movement while existing teammates shout and clutch shoulders, consistent with their original positions. Immediate enormous crowd roar.
-2–5s: Existing teammates jostle and lean in with realistic body weight, grips, short energetic bounces and enthusiastic shoulder/torso embraces. Keep hands connected to plausible shoulders, not passing through bodies. The central player's face remains clear and stable.
-5–8s: The central player briefly turns toward a nearby existing teammate, smiling and shouting; teammates continue their genuine, varied football celebrations without spawning new people or duplicating movements.
-8–10s: Continue natural exuberant embraces; hold a clear live broadcast view of the central player and the group as the stadium cheers. Do not freeze the last frame or repeat identical arm movements.
+ACTION:
+0–3s: Begin immediately with energetic, natural joy from the reference pose: cheers, raised fists and authentic shoulder embraces. No second entrance or frozen pose.
+3–7s: Existing teammates jostle and congratulate him with convincing weight and hand contact. Keep the central player's face visible; avoid exaggerated facial deformation or people appearing from nowhere.
+7–10s: Continue spontaneous celebration, ending on a clear broadcast view of the same player and teammates, their faces and uniforms stable.
 
-CAMERA: Start at exactly the given composition. Handheld live sports-broadcast feel with small responsive reframing and modest lateral tracking to keep the central player's face visible. No dramatic camera orbit, abrupt cut, excessive zoom or change to a different crowd scene. Keep hands, faces, clothing and physical contact visually continuous.
+CAMERA: One mostly steady live-TV medium shot with gentle tracking to keep the main player's face visible. Normal-speed movements, no cinematic slow motion, hard cuts, dramatic spins or repeated motion loops.
 
-SPEED AND REALISM: Natural REAL-TIME celebration with visibly energetic movements; not exaggerated frantic flailing, floating figures, robotic repeated gestures or slow motion. Maintain anatomically correct arms and hands and realistic reactions to embraces.
+AUDIO: Loud premiership crowd and player cheers. One excited Australian commentator says exactly "$commentary" ONCE. Leave space for crowd reaction. No new final siren, background music or extra lines.
 
-AUDIO: A packed stadium's sustained premiership roar, player shouts and applause. One excited Australian AFL commentator says exactly: "$commentary". The entire call must fit intelligibly within the 10-second clip, with a few seconds for crowd response if possible. The spoken call must make clear $teamName won the Grand Final. Do not restart the final siren; it already sounded in Scene 2. No music.
-
-NEGATIVE CONSTRAINTS: No new foreground teammates or opponents; no Essendon celebration players; no changing winning-team guernseys, swapped faces, duplicated limbs, extra people materialising, slow motion, fake trophy appearance, fireworks, pyrotechnics, confetti, smoke, subtitles, titles, watermarks or invented sponsor lettering. Night stadium lighting stays consistent.
+KEEP: realistic hands and embraces, no duplicate limbs or faces, no additional celebrating players, smoke, confetti, trophies, fireworks, captions or invented sponsor lettering.
