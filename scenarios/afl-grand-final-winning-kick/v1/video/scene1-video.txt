@@ -1,20 +1,19 @@
-# AFL Grand Final — Scene 1: FULL-SPEED FINAL RUN
-# AWS substitutes $fullName, $teamName, $guernsey and $commentary.
-# Generate from the provided PERSONALISED scene-1 reference image, not the unpersonalised master.
+# AFL Grand Final — Scene 1: FAST RUN
+# Dynamic values: $fullName, $teamName, $guernsey, $commentary.
 
-FORMAT AND INTENT: 5 seconds, portrait 9:16, single continuous photorealistic LIVE AFL Grand Final television broadcast shot, normal match speed. A desperate, powerful sprint towards goal, not a slow-motion highlight or sports advertisement.
+FORMAT: 5-second vertical 9:16 photorealistic LIVE AFL broadcast at normal match speed, not cinematic slow motion. Animate the provided PERSONALISED Scene 1 starting image.
 
-EXACT OPENING FRAME AND CONTINUITY: Start in the exact composition of the supplied Scene 1 image: the central athlete is already moving, shown at a close three-quarter angle with a single red oval AFL football held securely against his torso. He is $fullName, playing for $teamName in $guernsey. Preserve his actual face, age, hair, build, uniform, grip and the same packed FLOODLIT NIGHT stadium, grass, shadows and crowd. No change to daytime. Keep the face stable throughout motion.
+OPENING: The reference is the exact starting frame. $fullName wears $teamName's $guernsey, sprinting at a three-quarter angle with one red AFL ball securely held in both hands. Preserve the customer's face, COMPLETE hairstyle, natural age, body, selected guernsey and existing nighttime floodlit stadium throughout. No identity morphing or team-strip changes.
 
-REAL-TIME ACTION:
-0–0.8s: Continue from the existing moving pose without any standing start. He surges forward instantly with fast leg turnover, firm foot strikes, strong arm/shoulder movement and a realistic forward athletic lean.
-0.8–3.8s: Sustained explosive AFL match-speed sprint, not a jog: rapid alternating footfalls, full-length powerful running strides, vigorous knee drive, realistic foot-ground contact and an obvious increase in ground covered every second. The runner passes distinct grass markings and background landmarks quickly. The stadium and grass visibly slide past; his position advances across the oval rather than remaining almost fixed in frame. Feet, knees, body and ball-holding arms move naturally without looping. He breaks into OPEN SPACE; no tackle, bump or new defender.
-3.8–5s: Maintain speed, look upfield and make a subtle adjustment to the grip for an imminent running drop punt. DO NOT release, bounce, drop or kick the ball in this clip. Finish still carrying it at speed, ready for the next scene.
+ACTION:
+0–1s: Already sprinting from frame one; no standing start, hesitation or jogging.
+1–4s: Explosive full-speed AFL running with strong natural strides. He covers obvious distance across the oval. Grass and field markings sweep past rapidly; show his legs and foot-ground contact, not a player running on the spot.
+4–5s: Still carrying the ball at speed, he looks up towards goal and prepares to kick in the next scene. NO kick or ball release in this clip.
 
-BROADCAST CAMERA: Start at exactly the reference angle, then promptly widen to a dynamic SIDE/FRONT-THREE-QUARTER live broadcast tracking shot with ground markers passing rapidly. The camera must NOT perfectly lock onto the athlete at a constant scale, which makes a real sprint look stationary; reveal visible forward displacement and increasingly distant background landmarks. Keep clear full-stride leg movement visible. Preserve direction of travel, natural broadcast lens perspective and plausible stadium parallax. Background may exhibit natural motion blur; face and football remain legible. No abrupt scene cuts, invented crane/orbit/drone camera moves, extreme zoom or unnatural camera shake.
+CAMERA: One uninterrupted live-TV side/front-three-quarter tracking shot, widening modestly to reveal rapid forward travel, realistic parallax and full-stride movement. Avoid a perfectly locked camera that disguises speed; no dramatic orbit, hard cut or slow-motion effect.
 
-OPPOSITION AND UNIFORMS: Essendon Bombers are the ONLY opposition team in this scenario. Their uniform is BLACK with a BOLD RED DIAGONAL SASH, consistently worn by every opponent. Scene 1 does NOT require any opponents; do not introduce one in foreground. If distant existing opponents remain in view, they must all be Essendon in that identical black-and-red sash design. No third team, changing colours or mixed opponent guernseys. The main player remains in $guernsey throughout.
+OPPOSITION: No new foreground players. Any existing opposition wears Essendon Bombers BLACK with a BOLD RED DIAGONAL SASH. Preserve the main player's selected $guernsey.
 
-AUDIO: Loud believable Grand Final crowd, rapid footfalls and rising urgency. One excited Australian AFL commentator says exactly: "$commentary". Deliver the shorter call ONE TIME ONLY, with the surname during the first 2 seconds and 'charging towards goal' before 4 seconds. Finish all spoken commentary by approximately 4 seconds. NEVER repeat any phrase, words or sentence; no additional commentary or second announcer. After the call ends, only the stadium crowd and real on-field sounds remain through 5 seconds. Pronounce the player's surname clearly. No background music.
+AUDIO: Loud authentic stadium crowd and fast footsteps. One excited Australian commentator says exactly "$commentary" ONCE, finishing by about 4 seconds. No repeated words, additional commentary or music.
 
-NEGATIVE CONSTRAINTS: Absolutely no slow motion, time dilation, floaty/weightless strides, jogging, running in place or prolonged cinematic pauses. No tackle, no kick, no extra ball, no changing face or guernsey, no morphing limbs, no text overlays/subtitles/new sponsor lettering, no fireworks or confetti. Retain the original night lighting and real AFL physical mechanics.
+KEEP: one ball, believable anatomy, authentic floodlit NIGHT atmosphere, no tackle, no kick, no fireworks, captions or invented sponsors.
