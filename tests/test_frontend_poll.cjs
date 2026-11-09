@@ -559,7 +559,7 @@ test('there are no prompt toggle controls or preview API calls', async () => {
     assert.doesNotMatch(html, new RegExp('id="videoScene' + n + '"'));
     assert.doesNotMatch(html, new RegExp('id="videoPromptDetails' + n + '"'));
   }
-  assert.equal(h.calls.filter(c => /\\/video\\/scene[123]\\/preview$/.test(c.url)).length, 0);
+  assert.equal(h.calls.filter(c => c.url.includes('/video/scene') && c.url.endsWith('/preview')).length, 0);
 });
 
 test('existing uncertain paid Scene 1 auto-opens debug and displays its status', async () => {
