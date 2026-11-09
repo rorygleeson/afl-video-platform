@@ -786,13 +786,25 @@
                                '/diagnostics');
         if (currentJobId !== requestedJob) return;
         const detail = data.diagnostic || {};
-        output.textContent = detail.status === 'READ_ONLY_DIAGNOSTIC'
-          ? 'Google status: ' + (detail.providerStatus || 'unknown') +
-            '. Reason: ' + (detail.errorCategory || 'UNSPECIFIED').replaceAll('_', ' ').toLowerCase() +
+        const fmt = value => String(value || 'unknown').replaceAll('_', ' ').toLowerCase();
+        const recorded = 'Recorded: ' + fmt(detail.recordedErrorCode);
+        if (detail.status === 'READ_ONLY_DIAGNOSTIC') {
+          output.textContent = 'Google status: ' + fmt(detail.providerStatus) +
+            '. Provider reason: ' + fmt(detail.errorCategory) +
             (detail.errorCode ? ' (' + detail.errorCode + ')' : '') +
+            '. ' + recorded + '.' +
             (detail.reason === 'GOOGLE_DID_NOT_SUPPLY_A_CLASSIFIABLE_REASON'
-              ? '. Google did not provide a specific reason.' : '')
-          : 'Google failure details unavailable: ' + (detail.reason || 'unknown') + '.';
+              ? ' Google supplied no classifiable reason.' : '') +
+            ' Read-only check; no new paid generation.';
+        } else {
+          const category = detail.errorCategory && detail.errorCategory !== 'UNSPECIFIED'
+            ? ' Stored provider reason: ' + fmt(detail.errorCategory) + '.' : '';
+          output.textContent = recorded + '.' + category +
+            ' Google lookup unavailable: ' + fmt(detail.reason) +
+            (detail.errorCode ? ' (' + detail.errorCode + ')' : '') +
+            '. This does not mean the original request failed for the same reason.' +
+            ' No new paid generation.';
+        }
       } catch (error) {
         if (currentJobId === requestedJob)
           output.textContent = 'Read-only diagnostic unavailable. No video was restarted.';
