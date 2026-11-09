@@ -24,6 +24,9 @@
     .video-scene button{margin-top:8px}
     .video-scene video{width:100%;max-height:330px;border-radius:8px;margin-top:10px}
     .video-state{font-size:.9rem;color:#465569;white-space:pre-wrap}
+    .diagnostic-result{margin:6px 0 0;font-weight:700}
+    .diagnostic-result.success{color:#16733b}
+    .diagnostic-result.failure{color:#b42318}
     .mock-note{background:#fff4d9;border-radius:8px;padding:10px;font-size:.9rem}
     [hidden]{display:none!important}
     .reference-card{min-width:0;border:1px solid #d4dce5;border-radius:9px;padding:6px}
@@ -135,8 +138,9 @@
   <section id="diagnosticsSection" aria-label="Connection diagnostics" style="margin-top:32px;padding-top:16px;border-top:1px solid #d4dce5">
     <h2 style="font-size:1.1rem;margin-bottom:4px">Connection diagnostics</h2>
     <button id="testApi" type="button">Test x-api-key</button>
+    <p id="apiTestResult" class="diagnostic-result" role="status" aria-live="polite"></p>
     <button id="testGoogle" type="button">Test Google connectivity (free)</button>
-    <p id="googleStatus" role="status" aria-live="polite"></p>
+    <p id="googleStatus" class="diagnostic-result" role="status" aria-live="polite"></p>
   </section>
 </main>
 <script src="./config.js"></script>
@@ -145,6 +149,7 @@
   const preview = document.getElementById('preview');
   const generate = document.getElementById('generate');
   const testApi = document.getElementById('testApi');
+  const apiTestResult = document.getElementById('apiTestResult');
   const apiConnectionStatus = document.getElementById('apiConnectionStatus');
   const testGoogle = document.getElementById('testGoogle');
   const googleStatus = document.getElementById('googleStatus');
@@ -472,16 +477,20 @@
   status.textContent = apiBaseUrl ? '' : 'Backend configuration missing. Contact the developer.';
   generate.disabled = !apiBaseUrl;
 
+  function setDiagnosticResult(element, working) {
+    element.textContent = working ? 'Working!' : 'Failed';
+    element.className = 'diagnostic-result ' + (working ? 'success' : 'failure');
+  }
+
   testGoogle.addEventListener('click', async () => {
     testGoogle.disabled = true;
-    googleStatus.textContent = 'Checking AWS-to-Google authentication (no video generation)…';
+    googleStatus.textContent = '';
+    googleStatus.className = 'diagnostic-result';
     try {
       const result = await api('/video/paid-google-auth-check');
-      googleStatus.textContent = result.status === 'AUTHENTICATED'
-        ? 'Google Cloud connected successfully (real video worker). No paid video started.'
-        : 'Google authentication not ready: ' + (result.status || 'unknown status');
+      setDiagnosticResult(googleStatus, result.status === 'AUTHENTICATED');
     } catch (error) {
-      googleStatus.textContent = 'Google connection check failed: ' + error.message;
+      setDiagnosticResult(googleStatus, false);
     } finally {
       testGoogle.disabled = false;
     }
@@ -574,14 +583,13 @@
 
   testApi.addEventListener('click', async () => {
     testApi.disabled = true;
+    apiTestResult.textContent = '';
+    apiTestResult.className = 'diagnostic-result';
     try {
-      setPhase('Checking API Gateway');
-      const data = await api('/scenarios');
-      showStatus('API Gateway reachable; API key accepted.\n' +
-        'Scenarios available: ' + (data.scenarios?.length ?? 0) +
-        '\nNext, choose a selfie and submit the test job.');
+      await api('/scenarios');
+      setDiagnosticResult(apiTestResult, true);
     } catch (error) {
-      showStatus(describeError(error, 'Checking API Gateway /scenarios'));
+      setDiagnosticResult(apiTestResult, false);
     } finally {
       testApi.disabled = false;
     }
