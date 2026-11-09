@@ -280,7 +280,8 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertEqual(result["generation_config"]["video_config"]["task"], "image_to_video")
         self.assertEqual(result["input"][1]["data"], base64.b64encode(b"png-data").decode())
         self.assertEqual(result["response_format"][0]["delivery"], "inline")
-        self.assertEqual(result["response_format"][0]["duration"], "5s")
+        self.assertEqual(result["response_format"][0]["duration"], "8s")
+        self.assertEqual(w.image_payload(b"png-data", "image/png", "Scene 1 run", 5)["response_format"][0]["duration"], "5s")
         self.assertNotIn("gcs_uri", result["response_format"][0])
 
     def test_scene3_duration_and_image_limit(self):
