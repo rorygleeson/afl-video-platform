@@ -75,6 +75,31 @@ class VideoStage4ApiTests(unittest.TestCase):
                          {"op":"auth_check"})
         self.states.start_execution.assert_not_called()
 
+    def test_failed_google_diagnostic_is_read_only_and_uses_existing_worker(self):
+        import io
+        self.api.GOOGLE_WORKER_ARN = "arn:aws:lambda:ap-southeast-2:123456789012:function:paid-worker"
+        self.job["paidVideoApprovals"] = {"scene3": {"status": "REQUESTED"}}
+        self.job["realVideos"] = {"scene3": {
+            "status": "FAILED", "errorCode": "GOOGLE_FAILED",
+            "interactionId": "known-provider-id"}}
+        self.api.LAMBDA.invoke.return_value = {"Payload": io.BytesIO(
+            json.dumps({"status": "READ_ONLY_DIAGNOSTIC", "providerStatus": "failed",
+                        "errorCategory": "UNSPECIFIED",
+                        "paidGenerationStarted": False}).encode())}
+        code, data = self.invoke("GET",
+            "/jobs/" + self.jobid + "/real-videos/scene3/diagnostics")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["diagnostic"]["providerStatus"], "failed")
+        sent = json.loads(self.api.LAMBDA.invoke.call_args.kwargs["Payload"])
+        self.assertEqual(sent, {"op": "diagnose_failed_interaction",
+                                "jobId": self.jobid, "sceneId": "scene3"})
+        self.states.start_execution.assert_not_called()
+        self.ddb.update_item.assert_not_called()
+        code, data = self.invoke("GET",
+            "/jobs/" + self.jobid + "/real-videos/scene2/diagnostics")
+        self.assertEqual(code, 409)
+        self.api.LAMBDA.invoke.assert_called_once()
+
     def test_real_scene1_is_hard_locked_and_never_starts_sfn(self):
         self.api.REAL_VIDEO_MODE = "DISABLED"
         status, body = self.invoke("POST", "/jobs/" + self.jobid + "/real-videos/scene1")
