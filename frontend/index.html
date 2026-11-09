@@ -87,7 +87,7 @@
   </section>
   <section id="videoTestSection" hidden>
     <h2 style="margin-bottom:6px">Create your videos</h2>
-    <p class="poll-status" id="realVideoGate">Generate each MP4 individually. Each paid request requires confirmation and is protected against duplicate submissions.</p>
+    <p class="poll-status" id="realVideoGate">Generate the three MP4s in parallel with one confirmation. Each scene is protected against duplicate paid submissions.</p>
     <button id="generateAllVideos" type="button" hidden disabled>Generate All 3 Videos (paid)</button>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 5 seconds</strong>
@@ -731,13 +731,13 @@
       };
       videoSubmissionLog.set(sceneId, submission);
       document.getElementById('scene' + n + 'PaidStatus').textContent = submission.status;
-      document.getElementById('videoDebugText' + n).textContent = submission.events.join('\\n');
+      document.getElementById('videoDebugText' + n).textContent = submission.events.join('\n');
     }
     realVideoTracking = true;
 
     // Independent requests: a failure or ambiguous reply in one scene does not
     // cancel the other two, nor trigger any paid retry.
-    const results = await Promise.allSettled(scenes.map(async n => {
+    await Promise.allSettled(scenes.map(async n => {
       const sceneId = 'scene' + n;
       const submission = videoSubmissionLog.get(sceneId);
       try {
@@ -756,7 +756,7 @@
       }
       if (jobId === currentJobId) {
         document.getElementById('scene' + n + 'PaidStatus').textContent = submission.status;
-        document.getElementById('videoDebugText' + n).textContent = submission.events.join('\\n');
+        document.getElementById('videoDebugText' + n).textContent = submission.events.join('\n');
       }
     }));
     // All promises settle; failures are retained in each scene's diagnostic state.
