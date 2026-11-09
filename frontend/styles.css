@@ -1,0 +1,52 @@
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#172432;background:#f4f6f9}
+    body{max-width:560px;margin:0 auto;padding:24px 16px 50px}
+    main{background:white;border:1px solid #dae0e6;border-radius:14px;padding:24px;box-shadow:0 6px 24px #17243210}
+    h1{margin:0 0 6px;font-size:1.65rem}p{line-height:1.5;color:#4c5a69}
+    label{display:block;margin:16px 0 5px;font-weight:650}
+    input,select,button{box-sizing:border-box;width:100%;min-height:44px;padding:10px;border:1px solid #b8c3ce;border-radius:8px;font:inherit}
+    button{background:#1261a0;color:#fff;font-weight:700;border:0;margin-top:20px;cursor:pointer}
+    button:disabled{background:#9eaab7;cursor:not-allowed}
+    .note{padding:12px;background:#edf5ff;border-radius:8px;font-size:.9rem}
+    #preview{max-width:100%;max-height:240px;margin-top:12px;border-radius:8px}
+    #results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+    #results img{width:100%;border-radius:6px}
+    #status{white-space:pre-wrap;overflow-wrap:anywhere}
+    .poll-status{font-size:.9rem;margin-top:8px;color:#526174}
+    .video-scene{border:1px solid #d4dce5;border-radius:10px;padding:14px;margin:12px 0}
+    .video-scene button{margin-top:8px}
+    .video-scene video{width:100%;max-height:330px;border-radius:8px;margin-top:10px}
+    .video-state{font-size:.9rem;color:#465569;white-space:pre-wrap}
+    .diagnostic-result{margin:6px 0 0;font-weight:700}
+    .diagnostic-result.success{color:#16733b}
+    .diagnostic-result.failure{color:#b42318}
+    .mock-note{background:#fff4d9;border-radius:8px;padding:10px;font-size:.9rem}
+    [hidden]{display:none!important}
+    .reference-card{min-width:0;border:1px solid #d4dce5;border-radius:9px;padding:6px}
+    .reference-card strong{display:block;font-size:.8rem}
+    .reference-card p{font-size:.75rem;margin:4px 0}
+    .reference-progress.completed{color:#16733b;font-weight:700}
+    .reference-progress.generating::before{content:"⚙";display:inline-block;margin-right:5px;font-size:1rem;line-height:1;vertical-align:-1px;animation:reference-gear-spin 2s linear infinite}
+    @keyframes reference-gear-spin{to{transform:rotate(360deg)}}
+    @media (prefers-reduced-motion:reduce){.reference-progress.generating::before{animation:none}}
+
+    .reference-card img{display:block;width:100%;height:auto;aspect-ratio:9/16;object-fit:cover}
+    .video-scene .video-state{margin:8px 0}
+    .step-heading{font-weight:700;margin-top:10px}
+    .scene-prompt{margin-top:10px;border:1px solid #d4dce5;border-radius:8px;padding:10px}
+    .scene-prompt summary{cursor:pointer;font-weight:650;color:#1261a0}
+    .scene-prompt pre{max-height:350px;overflow-y:auto}
+    .video-result{margin-top:12px;padding:10px;border-top:1px solid #d4dce5}
+    .video-scene .quiet-button{background:transparent;border:1px solid #cbd5df;color:#1261a0;font-weight:600;min-height:40px;margin-top:4px}
+    #videoPanel1{padding:16px}
+    #videoPanel1 .video-state{line-height:1.45}
+    #videoPanel1 .scene-prompt pre{max-height:230px}
+    .video-debug{margin-top:12px;border-top:1px solid #d4dce5;padding-top:10px}
+    .video-debug summary{font-size:.9rem;color:#1261a0;cursor:pointer}
+    .debug-text{font-size:.78rem;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;max-height:200px;overflow:auto}
+    .developer-diagnostics{border:1px solid #d4dce5;border-radius:10px;padding:12px 14px;background:#f8fafc}
+    .developer-diagnostics>summary{font-weight:650;color:#1261a0;cursor:pointer;min-height:30px}
+    .developer-diagnostics .video-debug{margin-top:8px}
+    .developer-diagnostics .debug-text{margin:10px 0 4px}
+
+
+  
