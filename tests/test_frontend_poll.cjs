@@ -256,36 +256,21 @@ test('Google Cloud auth-check button never invokes paid generation', async () =>
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 0);
 });
 
-test('test buttons and three collapsible prompts appear after reference images finish', async () => {
+test('video controls appear after three reference images without prompt toggles', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  assert.equal(h.els.videoPromptSection.hidden, true);
+  assert.equal(h.els.videoTestSection.hidden, true);
   await h.els.generateScene1.listeners.click();
-  await h.flush();
-  await h.nextTimer();
-  await h.nextTimer();
-  assert.equal(h.els.videoPromptSection.hidden, false);
+  await h.flush(); await h.nextTimer(); await h.nextTimer();
   assert.equal(h.els.videoTestSection.hidden, false);
-  assert.equal(h.els.videoPanel1.hidden, false);
-  assert.equal(h.els.videoPanel2.hidden, false);
-  assert.equal(h.els.videoPanel3.hidden, false);
-  assert.match(html, /id="testApi" type="button">Test x-api-key/);
-  assert.match(html, /id="testGoogle" type="button">Test Google connectivity/);
-  assert.match(html, /id="scene1Preflight"[^>]*hidden/);
   for (const n of [1, 2, 3]) {
-    assert.match(html, new RegExp('id="videoScene' + n + '" type="button"'));
-    await h.els['videoScene'+n].listeners.click();
-    assert.match(h.els['videoPromptText'+n].textContent, /Alex Tonelli/);
-    assert.match(h.els['videoPromptText'+n].textContent, /Geelong Cats/);
-    assert.equal(h.els['videoPromptDetails'+n].open, true);
-    h.els['videoPromptDetails'+n].open = false;
-    assert.equal(h.els['videoPromptDetails'+n].open, false);
+    assert.equal(h.els['videoPanel'+n].hidden, false);
+    assert.doesNotMatch(html, new RegExp('id="videoScene' + n + '"'));
+    assert.doesNotMatch(html, new RegExp('id="videoPromptDetails' + n + '"'));
     assert.match(h.els['videoStatus'+n].textContent, /Real video not generated/);
   }
-  assert.equal(h.calls.filter(c => c.url.includes('/video/scene') && c.url.endsWith('/preview')).length, 3);
-  assert.equal(h.calls.filter(c => /\/videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length, 0);
-  assert.doesNotMatch(html, /id="generateVideo[123]"/, 'No mock submission buttons in HTML');
-  assert.doesNotMatch(script, /method: 'POST'[\s\S]*\/videos\/scene/, 'No mock video submit handlers');
+  assert.equal(h.calls.filter(c => c.url.includes('/video/scene') && c.url.endsWith('/preview')).length, 0);
+  assert.doesNotMatch(html, /id="generateVideo[123]"/);
   assert.equal(h.els.assembleFinal.hidden, true);
   const request = h.calls.find(c => c.url.endsWith('/jobs') && c.opts.method === 'POST');
   assert.equal(JSON.parse(request.opts.body).firstName, 'Alex');
@@ -307,14 +292,12 @@ test('editing names invalidates existing job and previews', async () => {
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
-  await h.els.videoScene1.listeners.click();
   h.els.firstName.listeners.input();
-  assert.equal(h.els.videoPromptSection.hidden, true);
   assert.equal(h.els.refresh.hidden, true);
 });
 
 
-test('reference images gate all video prompt sections, existing mock records do not unlock paid controls', async () => {
+test('reference images gate video controls, existing mock records do not unlock paid controls', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
   assert.equal(h.els.videoTestSection.hidden, true);
@@ -340,7 +323,7 @@ test('reference images gate all video prompt sections, existing mock records do 
 
 test('reference image progress stays above scene prompt controls', () => {
   const order = ['id="resumeLast"', 'id="jobProgressSection"', 'id="status"',
-                 'id="results"', 'id="videoPromptSection"', 'id="videoTestSection"'];
+                 'id="results"', 'id="videoTestSection"'];
   let previous = -1;
   for (const item of order) {
     const position = html.indexOf(item);
@@ -357,11 +340,9 @@ test('video controls stay hidden if any reference scene is still generating', as
   await h.flush();
   assert.equal(h.getPolls(),1);
   assert.equal(h.els.videoTestSection.hidden,true);
-  assert.equal(h.els.videoPromptSection.hidden,true);
   await h.nextTimer();
   assert.equal(h.getPolls(),2);
   assert.equal(h.els.videoTestSection.hidden,true);
-  assert.equal(h.els.videoPromptSection.hidden,true);
 });
 
 test('Scene 1 preflight is read-only and makes no video POST', async () => {
@@ -391,26 +372,14 @@ test('real Scene 1 paid button remains hidden and never starts without approval'
   assert.equal(h.calls.filter(c => c.url.endsWith('/real-videos/scene1')).length, 0);
 });
 
-test('job ID remains visible after creation and can be recovered when resuming', async () => {
+test('job ID UI is absent, but resume state retains the job internally', async () => {
   const h = setup();
-  assert.equal(h.els.jobIdPanel.hidden, true);
+  assert.doesNotMatch(html, /id="jobIdPanel"|id="copyJobId"|id="currentJobIdText"/);
   await h.els.generate.listeners.click();
-  assert.equal(h.els.jobIdPanel.hidden, false);
-  assert.equal(h.els.currentJobIdText.textContent, 'a'.repeat(32));
   assert.equal(h.sessionStorage.getItem('aflLastJobId'), 'a'.repeat(32));
-  await h.els.generateScene1.listeners.click();
-  await h.flush();
-  assert.equal(h.els.currentJobIdText.textContent, 'a'.repeat(32));
-  assert.equal(h.els.jobIdPanel.hidden, false);
-});
-
-test('changing selections hides stale job ID', async () => {
-  const h = setup();
-  await h.els.generate.listeners.click();
-  assert.equal(h.els.jobIdPanel.hidden, false);
+  assert.doesNotMatch(h.els.status.textContent, /Job:\\s*[0-9a-f]{32}/);
   h.els.team.listeners.change();
-  assert.equal(h.els.jobIdPanel.hidden, true);
-  assert.equal(h.els.currentJobIdText.textContent, '');
+  assert.equal(h.sessionStorage.getItem('aflLastJobId'), null);
 });
 
 test('Scene 1 free readiness automatically runs once for a finished job', async () => {
@@ -579,22 +548,18 @@ test('valid API key is checked before initiating signed selfie upload', async ()
   assert.ok(calls.indexOf('https://api.example.com/scenarios') <
             calls.indexOf('https://api.example.com/uploads'));
   assert.match(h.els.apiConnectionStatus.textContent, /API connected/);
-  assert.equal(h.els.jobIdPanel.hidden, false);
 });
 
-test('prompt preview toggles closed and open without repeating API calls', async () => {
+test('there are no prompt toggle controls or preview API calls', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
   await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  await h.els.videoScene2.listeners.click();
-  assert.equal(h.els.videoPromptDetails2.open, true);
-  assert.equal(h.els.videoPromptDetails2.hidden, false);
-  await h.els.videoScene2.listeners.click();
-  assert.equal(h.els.videoPromptDetails2.open, false);
-  await h.els.videoScene2.listeners.click();
-  assert.equal(h.els.videoPromptDetails2.open, true);
-  assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene2/preview')).length,1);
+  for (const n of [1, 2, 3]) {
+    assert.doesNotMatch(html, new RegExp('id="videoScene' + n + '"'));
+    assert.doesNotMatch(html, new RegExp('id="videoPromptDetails' + n + '"'));
+  }
+  assert.equal(h.calls.filter(c => /\\/video\\/scene[123]\\/preview$/.test(c.url)).length, 0);
 });
 
 test('existing uncertain paid Scene 1 auto-opens debug and displays its status', async () => {
