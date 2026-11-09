@@ -26,12 +26,13 @@ jobs:
           set -euo pipefail
           python3 -m py_compile src/google_video_worker/handler.py src/api/handler.py src/api/video_prompts.py
           python3 - <<'PY'
-          import re
           from pathlib import Path
           html = Path('frontend/index.html').read_text()
-          js = re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>', html)
-          assert js
-          Path('/tmp/check-afl-frontend.js').write_text('\n'.join(js))
+          assert '<script src="./config.js"></script>' in html
+          assert '<script src="./app.js"></script>' in html
+          assert '<link rel="stylesheet" href="./styles.css">' in html
+          assert Path('frontend/app.js').stat().st_size > 0
+          assert Path('frontend/styles.css').stat().st_size > 0
           worker = Path('src/google_video_worker/handler.py').read_text()
           diag = worker.split('def diagnose_failed_interaction(job, scene):')[1].split('def lambda_handler(event, context):')[0]
           assert 'google_json("POST"' not in diag
@@ -39,7 +40,7 @@ jobs:
           assert 'GOOGLE_RESPONSE_TOO_LARGE' in diag
           assert '"providerFinalStatus": state' in worker
           PY
-          node --check /tmp/check-afl-frontend.js
+          node --check frontend/app.js
 
       - uses: actions/setup-python@v5
         with:
