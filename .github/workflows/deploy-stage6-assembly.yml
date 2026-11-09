@@ -1,0 +1,113 @@
+name: Deploy Stage 6 final MP4 assembly (no paid video generation)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-stage6-assembly.yml'
+      - 'src/assembly_worker/**'
+      - 'infrastructure/app/assembly.yaml'
+      - 'tests/test_assembly_worker.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy-assembly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Python, API, frontend and CloudFormation without billing
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'cfn-lint>=1,<2'
+          python -m py_compile src/assembly_worker/handler.py src/api/handler.py
+          python -m unittest discover -s tests -p 'test_*.py' -v
+          node --test tests/test_frontend_poll.cjs
+          cfn-lint infrastructure/app/assembly.yaml infrastructure/app/backend.yaml --regions ap-southeast-2
+          echo 'Stage 6 offline validation passed. No generated videos or Google requests.'
+      - name: Assume existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Bundle pinned FFmpeg static binaries and Stage 6 Python worker
+        run: |
+          set -euo pipefail
+          mkdir -p dist/stage6/bin dist/stage6/worker
+          curl --fail --location --retry 3 --output /tmp/ffmpeg-static.tar.xz \
+            'https://github.com/publicala/ffmpeg-static/releases/download/v7.0.2/ffmpeg-7.0.2-amd64-static.tar.xz'
+          echo 'abda8d77ce8309141f83ab8edf0596834087c52467f6badf376a6a2a4c87cf67  /tmp/ffmpeg-static.tar.xz' | sha256sum --check
+          tar --extract --xz --file /tmp/ffmpeg-static.tar.xz --directory /tmp \
+            ffmpeg-7.0.2-amd64-static/ffmpeg ffmpeg-7.0.2-amd64-static/ffprobe
+          install -m 755 /tmp/ffmpeg-7.0.2-amd64-static/ffmpeg dist/stage6/bin/ffmpeg
+          install -m 755 /tmp/ffmpeg-7.0.2-amd64-static/ffprobe dist/stage6/bin/ffprobe
+          dist/stage6/bin/ffmpeg -version | head -n 1
+          dist/stage6/bin/ffprobe -version | head -n 1
+          (cd dist/stage6 && zip -q -r ../assembly-layer.zip bin)
+          cp src/assembly_worker/handler.py dist/stage6/worker/
+          (cd dist/stage6/worker && zip -q ../../assembly-worker.zip handler.py)
+          aws s3 cp dist/assembly-layer.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/assembly/ffmpeg-$GITHUB_SHA.zip"
+          aws s3 cp dist/assembly-worker.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/assembly/worker-$GITHUB_SHA.zip"
+      - name: Deploy dedicated assembly stack
+        run: |
+          set -euo pipefail
+          aws cloudformation deploy \
+            --stack-name afl-app-dev-assembly \
+            --region ap-southeast-2 \
+            --template-file infrastructure/app/assembly.yaml \
+            --parameter-overrides \
+              ArtifactBucketName=afl-video-bootstrap-artifactbucket-xiuriidgyft4 \
+              AssemblyWorkerArtifactKey=assembly/worker/$GITHUB_SHA.zip \
+              FfmpegLayerArtifactKey=assembly/ffmpeg-$GITHUB_SHA.zip \
+              PermissionsBoundaryArn=arn:aws:iam::134387458447:policy/afl-video-app-permissions-boundary \
+              UploadsBucketName=afl-app-dev-uploads-134387458447-ap-southeast-2 \
+              JobsTableName=afl-app-dev-jobs \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role \
+            --no-fail-on-empty-changeset
+      - name: Verify FFmpeg Lambda is functional without generating or stitching
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name afl-app-dev-assembly \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"op":"health"}' /tmp/assembly-health.json > /tmp/assembly-meta.json
+          python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/assembly-meta.json'))
+          result=json.load(open('/tmp/assembly-health.json'))
+          assert not meta.get('FunctionError'), meta
+          assert result == {'status':'READY','videoGeneration':False}, result
+          print('Assembly FFmpeg and ffprobe ready. No S3 videos read or paid calls made.')
+          PY
+      - name: Enable assembly API and deploy updated backend safely
+        run: |
+          set -euo pipefail
+          mkdir -p dist/stage6/api
+          cp src/api/handler.py src/api/video_prompts.py dist/stage6/api/
+          (cd dist/stage6/api && zip -q ../../assembly-api.zip handler.py video_prompts.py)
+          aws s3 cp dist/assembly-api.zip "s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/api/assembly-$GITHUB_SHA.zip"
+          aws cloudformation describe-stacks --stack-name afl-app-dev-backend --output json > /tmp/assembly-backend-stack.json
+          mapfile -t overrides < <(jq -r '.Stacks[0].Parameters[] | select(.ParameterValue != null) | select(.ParameterKey != "LambdaArtifactKey") | select(.ParameterKey != "AssemblyEnabled") | "\(.ParameterKey)=\(.ParameterValue)"' /tmp/assembly-backend-stack.json)
+          overrides+=("LambdaArtifactKey=api/assembly-$GITHUB_SHA.zip" "AssemblyEnabled=true")
+          aws cloudformation deploy \
+            --stack-name afl-app-dev-backend \
+            --region ap-southeast-2 \
+            --template-file infrastructure/app/backend.yaml \
+            --parameter-overrides "${overrides[@]}" \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --role-arn arn:aws:iam::134387458447:role/afl-video-cfn-execution-role \
+            --no-fail-on-empty-changeset
+          test "$(aws cloudformation describe-stacks --stack-name afl-app-dev-backend --query 'Stacks[0].Parameters[?ParameterKey==`AssemblyEnabled`].ParameterValue | [0]' --output text)" = true
+      - name: Publish updated UI after backend and assembly are ready
+        run: |
+          set -euo pipefail
+          bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue | [0]' --output text)
+          distribution=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue | [0]' --output text)
+          aws s3 cp frontend/index.html "s3://$bucket/index.html" \
+            --content-type 'text/html; charset=utf-8' --cache-control 'max-age=60, must-revalidate'
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /
+          echo 'Stage 6 UI published. No scene generation or assembly requested.'
