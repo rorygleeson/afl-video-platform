@@ -42,7 +42,7 @@ class ReplicatePromptTests(unittest.TestCase):
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
                 text = scene["promptInstructions"].lower()
-                self.assertIn("face", text)
+                self.assertIn("scene ", text)
                 if scene["id"] in ("scene1", "scene2"):
                     self.assertIn("essendon", text)
                 else:
@@ -54,7 +54,7 @@ class ReplicatePromptTests(unittest.TestCase):
         shared = self.config["sharedPrompt"].lower()
         self.assertIn("full head replacement", shared)
         self.assertIn("image 2 (selfie)", shared)
-        self.assertIn("never assume the customer has dark, straight or short hair", shared)
+        self.assertIn("never retain or mix the master athlete's face or hair", shared)
         self.assertIn("selected playing guernsey style", shared)
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
@@ -65,6 +65,23 @@ class ReplicatePromptTests(unittest.TestCase):
         celebration = self.config["scenes"][2]["promptInstructions"].lower()
         self.assertIn("every visible celebrating teammate", celebration)
         self.assertIn("the selected team's guernsey", celebration)
+
+    def test_concise_scene_prompts_do_not_repeat_shared_identity_rules(self):
+        shared = self.config["sharedPrompt"].lower()
+        for term in ("only facial identity source", "full head replacement",
+                     "hairstyle", "skin tone", "selected playing guernsey style"):
+            self.assertIn(term, shared)
+        self.assertLess(len(shared.split()), 300)
+        for scene in self.config["scenes"]:
+            with self.subTest(scene=scene["id"]):
+                scene_text = scene["promptInstructions"].lower()
+                self.assertLess(len(scene_text.split()), 110)
+                self.assertNotIn("full head replacement", scene_text)
+                self.assertNotIn("only facial identity source", scene_text)
+        self.assertIn("red afl football", self.config["scenes"][0]["promptInstructions"].lower())
+        self.assertIn("not kicked yet", self.config["scenes"][1]["promptInstructions"].lower())
+        self.assertIn("every visible celebrating teammate",
+                      self.config["scenes"][2]["promptInstructions"].lower())
 
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):
