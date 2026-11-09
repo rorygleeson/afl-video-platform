@@ -1,19 +1,18 @@
-# AFL Grand Final — Scene 3: PREMIERS CELEBRATION
-# Dynamic values: $fullName, $teamName, $guernsey, $commentary.
+# AFL Grand Final — Scene 3: PREMIERS
+# Variables: $fullName, $teamName, $guernsey, $commentary
 
-FORMAT: 10-second vertical 9:16 photorealistic live AFL Grand Final broadcast. Animate the supplied PERSONALISED Scene 3 celebration image. The winning goal and final siren happened in Scene 2: do not repeat either event.
+FORMAT: 5 seconds, vertical 9:16, photorealistic live Australian rules football broadcast at natural speed. This is a NEW celebration camera shot; animate the supplied PERSONALISED Scene 3 image as the exact opening frame. The winning goal and final siren have ALREADY happened. Do not show either event again.
 
-OPENING: Start from the personalised reference showing $fullName celebrating with raised fists, teammates embracing him and a packed floodlit NIGHT stadium. Preserve the central player's recognisable face, COMPLETE selfie hairstyle, age, build, and existing teammates' faces, positions and contact. No identity changes when he turns or shouts.
+STARTING IMAGE: $fullName stands in the centre with his face toward the camera and mouth open in triumph, ONE fist raised visibly in front of his body. Two teammates are tightly embracing him, one on each side, already smiling/shouting. Gold confetti is already in the air. A 'PREMIER CHAMPIONS' stadium display appears in the distance. Keep these existing elements; do not add new text or new confetti bursts.
 
-WINNING TEAM: The central player and EVERY celebrating teammate wear the same $teamName uniform: $guernsey, with matching colours, pattern and stripe orientation for the entire clip. The selected-team strip overrides any original master-team clothing. Never revert to the master image's black-and-white vertical stripes unless those match the selected team. ESSENDON is the opposition and must NOT appear in the winning celebration. No third-team uniforms.
+0.0–1.2s: Begin immediately in the existing embrace, with jubilant, natural movement. The central player pumps his raised fist once; teammates cheer and hold him. No frozen introduction or second entrance.
+1.2–4.0s: The two teammates jostle and hug him with realistic weight and stable hand contact. The central player briefly cheers but keeps his face toward camera as much as natural. Avoid extreme mouth stretching or facial identity drift. Existing confetti drifts gently.
+4.0–5.0s: Hold a strong close broadcast composition on the central player's recognisable face and teammates as the crowd continues roaring. Finish cleanly without new players or camera cuts.
 
-ACTION:
-0–3s: Begin immediately with energetic, natural joy from the reference pose: cheers, raised fists and authentic shoulder embraces. No second entrance or frozen pose.
-3–7s: Existing teammates jostle and congratulate him with convincing weight and hand contact. Keep the central player's face visible; avoid exaggerated facial deformation or people appearing from nowhere.
-7–10s: Continue spontaneous celebration, ending on a clear broadcast view of the same player and teammates, their faces and uniforms stable.
+CAMERA: ONE gently stabilised close/medium television camera, subtle sideways tracking only. Do not swing behind the player's head or zoom rapidly. Do not invent a trophy presentation, additional players or any second celebration scene.
 
-CAMERA: One mostly steady live-TV medium shot with gentle tracking to keep the main player's face visible. Normal-speed movements, no cinematic slow motion, hard cuts, dramatic spins or repeated motion loops.
+WINNING TEAM: The central player AND BOTH teammates wear $teamName's playing guernsey ($guernsey), as depicted in the personalised starting image. Keep all three players' original positions, faces and contact. Do not introduce Essendon opponents or change the team kit.
 
-AUDIO: Loud premiership crowd and player cheers. One excited Australian commentator says exactly "$commentary" ONCE. Leave space for crowd reaction. No new final siren, background music or extra lines.
+AUDIO: The SAME Australian AFL commentator from Scenes 1 and 2 says exactly "$commentary" ONCE, with a triumphant tone and a clear full name and team. Start immediately and finish by 4.7 seconds. Energetic crowd and player shouts may sit beneath the narration, but no other intelligible commentary. No repeat siren, music or subtitles.
 
-KEEP: realistic hands and embraces, no duplicate limbs or faces, no additional celebrating players, smoke, confetti, trophies, fireworks, captions or invented sponsor lettering.
+STRICT: Stable customer face, hairstyle and age; no face-swap transitions, duplicate hands, disappearing arms, changing uniforms, generated captions, new fireworks or unexplained camera cuts.
