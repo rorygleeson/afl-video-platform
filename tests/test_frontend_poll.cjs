@@ -644,7 +644,7 @@ test('four requested cosmetic changes keep progress and scene headings consisten
   assert.match(html, /Preparing your reference images…/);
   assert.doesNotMatch(html, /Preparing your videos…/);
   for (const [n, seconds] of [[1, 5], [2, 8], [3, 10]]) {
-    assert.match(html, new RegExp('<strong>Scene ' + n + '[^<]*' + seconds + ' seconds<\\/strong>'));
+    assert.match(html, new RegExp('<strong>Scene ' + n + '[^<]*' + seconds + ' seconds</strong>'));
   }
   assert.doesNotMatch(html, /Download Scene [123] MP4/);
   assert.doesNotMatch(html, /scene-download/);
@@ -668,11 +668,11 @@ test('final download fetches existing MP4 only and saves a timestamped filename'
   await h.els.downloadFinal.listeners.click();
   await h.flush();
   assert.equal(h.downloads.length, 1);
-  assert.match(h.downloads[0].name, /^afl-grand-final-\\d{14}\\.mp4$/);
+  assert.match(h.downloads[0].name, /^afl-grand-final-\d{14}\.mp4$/);
   assert.equal(h.downloads[0].url, 'blob:test');
   assert.equal(h.calls.filter(c => c.url === 'https://s3.example.com/final.mp4').length, 1);
   assert.equal(h.calls.filter(c => c.url.endsWith('/assembly') && c.opts.method === 'POST').length, 0);
-  assert.equal(h.calls.filter(c => /\\/real-videos\\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0);
+  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0);
   for (const n of [1, 2, 3]) {
     const player = h.els['videoPlayer' + n];
     assert.equal(player.children.length, 1, 'Only the scene player is shown');
