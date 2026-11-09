@@ -146,4 +146,8 @@ def assemble(job_id):
 
 
 def lambda_handler(event, context):
+    if event.get("op") == "health":
+        return {"status": "READY" if os.access(FFMPEG, os.X_OK)
+                and os.access(FFPROBE, os.X_OK) else "NOT_CONFIGURED",
+                "videoGeneration": False}
     return assemble(event.get("jobId"))
