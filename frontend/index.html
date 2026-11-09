@@ -104,11 +104,11 @@
     <h2 style="margin-bottom:6px">Create your videos</h2>
     <p class="poll-status" id="realVideoGate">Review each prompt, then generate an individual MP4. Each paid request requires confirmation and is protected against duplicate submissions.</p>
     <div class="video-scene" id="videoPanel1">
-      <strong>Scene 1 · Run-up · 8 seconds</strong>
+      <strong>Scene 1 · Run-up · 5 seconds</strong>
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite" hidden></p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
-      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 8 seconds)</button>
+      <button id="generateRealScene1" type="button" hidden>Generate Scene 1 MP4 (paid, 5 seconds)</button>
       <button id="videoScene1" type="button">Show / hide Scene 1 prompt (free)</button>
       <details id="videoPromptDetails1" class="scene-prompt" hidden>
         <summary>Video prompt and commentary</summary>
@@ -813,7 +813,7 @@
 
   for (const n of [1, 2, 3]) {
     const sceneId = 'scene' + n;
-    const duration = n === 3 ? 10 : 8;
+    const duration = n === 3 ? 10 : (n === 1 ? 5 : 8);
     const button = document.getElementById('generateRealScene' + n);
     button.addEventListener('click', async () => {
       if (!currentJobId || videoTestSection.hidden || button.hidden ||
