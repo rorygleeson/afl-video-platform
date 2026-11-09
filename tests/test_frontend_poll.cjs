@@ -13,6 +13,7 @@ function setup(options = {}) {
   let statusPolls = 0;
   const mockStatuses = {scene1: 'NOT_REQUESTED', scene2: 'NOT_REQUESTED', scene3: 'NOT_REQUESTED'};
   const calls = [];
+  const downloads = [];
   const pendingVideoPosts = new Map();
   const timers = new Map();
   let timerId = 0;
@@ -23,6 +24,8 @@ function setup(options = {}) {
       listeners: {},
       children: [],
       appendChild(child) { this.children.push(child); },
+      setAttribute(name, value) { (this.attributes ||= {})[name] = value; },
+      getAttribute(name) { return this.attributes?.[name] ?? null; },
       querySelector(tag) { return this.children.find(c => c.tagName === tag) || null; },
       querySelectorAll(tag) { return this.children.filter(c => c.tagName === tag); },
       replaceChildren(...children) { this.children = [...children]; },
@@ -81,7 +84,15 @@ function setup(options = {}) {
       }
       return null;
     },
-    createElement(tag) { const node = el(); node.tagName = tag; return node; },
+    createElement(tag) {
+      const node = el(); node.tagName = tag;
+      if (tag === 'a') {
+        node.click = () => downloads.push({name: node.download, url: node.href});
+        node.remove = () => {};
+      }
+      return node;
+    },
+    body: {appendChild() {}},
   };
   const fetch = async (url, opts = {}) => {
     calls.push({url, opts});
@@ -126,10 +137,17 @@ function setup(options = {}) {
     if (url.endsWith('/generate')) return {
       ok: true, async json() { return {status: 'GENERATING_IMAGES'}; },
     };
+    if (url.endsWith('/assembly')) return {
+      ok: true, async json() { return {assembly: options.assembly || {}}; },
+    };
+    if (url === 'https://s3.example.com/final.mp4') return {
+      ok: true, async blob() { return new Blob(['MP4 fixture'], {type: 'video/mp4'}); },
+    };
     if (url.endsWith('/videos')) return {
       ok: true, async json() { return {
         videoGenerationMode: 'MOCK_ONLY',
         paidScenes: options.paidScenes || {},
+        assembly: options.assembly || {},
         videos: {
           scene1: {status: mockStatuses.scene1},
           scene2: {status: mockStatuses.scene2},
@@ -181,7 +199,7 @@ function setup(options = {}) {
   const ctx = {
     document: doc,
     window: {AFL_CONFIG: {apiBaseUrl: 'https://api.example.com'}, confirm: () => true, sessionStorage},
-    fetch, Set, URL: {createObjectURL() { return 'blob:test'; }, revokeObjectURL() {}},
+    fetch, Set, Blob, URL: {createObjectURL() { return 'blob:test'; }, revokeObjectURL() {}},
     FormData: class { append() {} },
     crypto: {randomUUID() { return 'test-idempotency-key'; }},
     setTimeout(fn, delay) {
@@ -202,7 +220,7 @@ function setup(options = {}) {
     await flush();
     return scheduled.delay;
   }
-  return {els, doc, calls, timers, pendingVideoPosts, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses};
+  return {els, doc, calls, downloads, timers, pendingVideoPosts, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses};
 }
 
 test('auto polls every 5 seconds, adds each image once and stops when complete', async () => {
@@ -620,4 +638,45 @@ test('per-scene debug shows status and live GET polling does not submit paid req
   await h.nextTimer(); await h.flush();
   assert.ok(h.calls.filter(c => c.url.endsWith('/videos')).length > start);
   assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length,0);
+});
+
+test('four requested cosmetic changes keep progress and scene headings consistent', () => {
+  assert.match(html, /Preparing your reference images…/);
+  assert.doesNotMatch(html, /Preparing your videos…/);
+  for (const [n, seconds] of [[1, 5], [2, 8], [3, 10]]) {
+    assert.match(html, new RegExp('<strong>Scene ' + n + '[^<]*' + seconds + ' seconds<\\/strong>'));
+  }
+  assert.doesNotMatch(html, /Download Scene [123] MP4/);
+  assert.doesNotMatch(html, /scene-download/);
+  assert.match(html, /controlsList', 'nodownload'/);
+  assert.match(html, /id="downloadFinal"/);
+});
+
+test('final download fetches existing MP4 only and saves a timestamped filename', async () => {
+  const options = {
+    paidScenes: {scene1: false, scene2: false, scene3: false},
+    realVideos: Object.fromEntries([1, 2, 3].map(n => ['scene' + n,
+      {mode: 'REAL', status: 'COMPLETED', url: 'https://s3.example.com/scene' + n + '.mp4'}])),
+    assembly: {enabled: true, status: 'COMPLETED',
+      url: 'https://s3.example.com/final.mp4',
+      downloadUrl: 'https://s3.example.com/forced-afl-grand-final.mp4'},
+  };
+  const h = setup(options);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.downloadFinal.hidden, false);
+  await h.els.downloadFinal.listeners.click();
+  await h.flush();
+  assert.equal(h.downloads.length, 1);
+  assert.match(h.downloads[0].name, /^afl-grand-final-\\d{14}\\.mp4$/);
+  assert.equal(h.downloads[0].url, 'blob:test');
+  assert.equal(h.calls.filter(c => c.url === 'https://s3.example.com/final.mp4').length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/assembly') && c.opts.method === 'POST').length, 0);
+  assert.equal(h.calls.filter(c => /\\/real-videos\\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0);
+  for (const n of [1, 2, 3]) {
+    const player = h.els['videoPlayer' + n];
+    assert.equal(player.children.length, 1, 'Only the scene player is shown');
+    assert.equal(player.children[0].controls, true);
+    assert.equal(player.children[0].getAttribute?.('controlsList'), 'nodownload');
+  }
 });
