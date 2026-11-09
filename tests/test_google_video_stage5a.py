@@ -272,6 +272,60 @@ class GoogleVideoAdapterTests(unittest.TestCase):
                                   "SUBMISSION_UNKNOWN", {"errorCode": "GOOGLE_HTTP_403"}))
             w.SLOTS.put_item.assert_not_called()
 
+    def test_read_only_diagnosis_uses_recorded_interaction_and_never_submits_paid_request(self):
+        w = self.worker
+        job = "a" * 32
+        scene = "scene3"
+        w.JOBS.get_item.return_value = {"Item": {
+            "paidVideoApprovals": {scene: {"status": "REQUESTED"}},
+            "realVideos": {scene: {
+                "status": "FAILED", "interactionId": "known-interaction-123"}}}}
+        with patch.object(w, "google_json", return_value={
+            "status": "failed",
+            "errors": [{"code": "safety_policy",
+                        "message": "Blocked by safety policy: private prompt and image bytes"}],
+            "input": {"secret": "private selfie payload"},
+        }) as google:
+            result = w.lambda_handler({"op": "diagnose_failed_interaction",
+                                       "jobId": job, "sceneId": scene}, None)
+        google.assert_called_once_with(
+            "GET", w.BASE + "/known-interaction-123", max_bytes=256 * 1024)
+        self.assertEqual(result["status"], "READ_ONLY_DIAGNOSTIC")
+        self.assertEqual(result["errorCategory"], "SAFETY_OR_POLICY")
+        self.assertEqual(result["errorCode"], "safety_policy")
+        self.assertFalse(result["paidGenerationStarted"])
+        self.assertNotIn("private", str(result))
+        self.assertNotIn("selfie", str(result))
+        w.S3.put_object.assert_not_called()
+        w.SLOTS.put_item.assert_not_called()
+
+    def test_diagnosis_rejects_unfinished_or_wrong_scene_without_google_call(self):
+        w = self.worker
+        job = "a" * 32
+        w.JOBS.get_item.return_value = {"Item": {
+            "paidVideoApprovals": {"scene3": {"status": "REQUESTED"}},
+            "realVideos": {"scene3": {
+                "status": "PROCESSING", "interactionId": "known-interaction"}}}}
+        with patch.object(w, "google_json") as google:
+            with self.assertRaisesRegex(w.ContractError, "failed paid"):
+                w.lambda_handler({"op": "diagnose_failed_interaction",
+                                  "jobId": job, "sceneId": "scene3"}, None)
+            google.assert_not_called()
+
+    def test_diagnosis_without_provider_explanation_returns_explicit_unknown(self):
+        w = self.worker
+        job = "a" * 32
+        w.JOBS.get_item.return_value = {"Item": {
+            "paidVideoApprovals": {"scene3": {"status": "REQUESTED"}},
+            "realVideos": {"scene3": {
+                "status": "FAILED", "interactionId": "known-interaction"}}}}
+        with patch.object(w, "google_json", return_value={"status": "failed"}):
+            result = w.lambda_handler({"op": "diagnose_failed_interaction",
+                                       "jobId": job, "sceneId": "scene3"}, None)
+        self.assertEqual(result["errorCategory"], "UNSPECIFIED")
+        self.assertEqual(result["reason"], "GOOGLE_DID_NOT_SUPPLY_A_CLASSIFIABLE_REASON")
+        self.assertFalse(result["providerMessagePresent"])
+
     def test_inline_image_to_video_request_has_exact_fields(self):
         w = self.worker
         result = w.image_payload(b"png-data", "image/png", "Alex kicks the ball", 8)
