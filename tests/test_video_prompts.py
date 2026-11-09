@@ -38,7 +38,7 @@ class VideoPromptTests(unittest.TestCase):
         scene3 = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")
         self.assertEqual(scene3["commentary"], "Tonelli wins it for Geelong Cats! They\u0027re the premiers!")
         expected = {
-            "scene1": ("Tonelli breaks into the clear! He's charging towards goal! Ten seconds left!", 8),
+            "scene1": ("Tonelli breaks clear! He's charging towards goal!", 5),
             "scene2": ("He goes for goal! What a kick! He\u0027s scored!", 8),
             "scene3": ("Tonelli wins it for Geelong Cats! They\u0027re the premiers!", 10),
         }
