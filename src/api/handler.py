@@ -513,6 +513,19 @@ def failed_video_diagnostic(job_id, scene_id):
     if (record.get("status") not in ("FAILED", "REVIEW_REQUIRED") or
             not job.get("paidVideoApprovals", {}).get(scene_id)):
         return response(409, {"error": "No failed paid attempt to inspect"})
+    # Fallback survives expired or unavailable Google interactions. These are
+    # allowlisted fields written by our own worker, never raw provider text.
+    stored = {
+        "status": "UNAVAILABLE",
+        "source": "DYNAMODB",
+        "recordedStatus": record.get("status", "UNKNOWN"),
+        "recordedErrorCode": record.get("errorCode", "NOT_RECORDED"),
+        "errorCategory": record.get("providerErrorCategory", "UNSPECIFIED"),
+        "reason": "GOOGLE_LOOKUP_UNAVAILABLE",
+        "paidGenerationStarted": False,
+    }
+    if record.get("providerErrorCode"):
+        stored["errorCode"] = record["providerErrorCode"]
     try:
         invocation = LAMBDA.invoke(
             FunctionName=GOOGLE_WORKER_ARN,
@@ -521,16 +534,19 @@ def failed_video_diagnostic(job_id, scene_id):
                                 "jobId": job_id, "sceneId": scene_id}).encode(),
         )
         if invocation.get("FunctionError"):
-            return response(502, {"error": "Read-only Google diagnostic failed"})
+            return response(200, {"jobId": job_id, "sceneId": scene_id,
+                                  "diagnostic": {**stored, "reason": "DIAGNOSTIC_WORKER_FAILED"}})
         details = json.loads(invocation["Payload"].read())
         if not isinstance(details, dict) or details.get("status") not in (
                 "READ_ONLY_DIAGNOSTIC", "UNAVAILABLE"):
-            return response(502, {"error": "Invalid read-only diagnostic response"})
+            return response(200, {"jobId": job_id, "sceneId": scene_id,
+                                  "diagnostic": {**stored, "reason": "INVALID_DIAGNOSTIC_RESPONSE"}})
         return response(200, {"jobId": job_id, "sceneId": scene_id,
                               "diagnostic": details})
     except Exception:
         LOG.exception("Read-only Google failure diagnostic unavailable")
-        return response(502, {"error": "Read-only diagnostic unavailable"})
+        return response(200, {"jobId": job_id, "sceneId": scene_id,
+                              "diagnostic": stored})
 
 
 def start_real_scene(job_id, scene_id, event):
