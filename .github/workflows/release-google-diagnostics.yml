@@ -1,0 +1,162 @@
+name: Release Google diagnostics only
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/release-google-diagnostics.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: afl-google-diagnostics-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compile and validate code before any AWS write
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile src/google_video_worker/handler.py src/api/handler.py src/api/video_prompts.py
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          html = Path('frontend/index.html').read_text()
+          js = re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>', html)
+          assert js
+          Path('/tmp/check-afl-frontend.js').write_text('\n'.join(js))
+          worker = Path('src/google_video_worker/handler.py').read_text()
+          diag = worker.split('def diagnose_failed_interaction(job, scene):')[1].split('def lambda_handler(event, context):')[0]
+          assert 'google_json("POST"' not in diag
+          assert 'google_json("GET"' in diag
+          assert 'GOOGLE_RESPONSE_TOO_LARGE' in diag
+          assert '"providerFinalStatus": state' in worker
+          PY
+          node --check /tmp/check-afl-frontend.js
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build API and Google diagnostic Lambda packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/api dist/google
+          cp src/api/handler.py src/api/video_prompts.py dist/api/
+          (cd dist/api && zip -q ../diagnostic-api.zip handler.py video_prompts.py)
+          python3 -m pip install --disable-pip-version-check --no-cache-dir --target dist/google 'google-auth>=2.38,<3' 'requests>=2.31,<3'
+          cp src/google_video_worker/handler.py src/api/video_prompts.py dist/google/
+          (cd dist/google && zip -q -r ../diagnostic-google.zip .)
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          for p in [Path('dist/diagnostic-api.zip'), Path('dist/diagnostic-google.zip')]:
+              with zipfile.ZipFile(p) as z:
+                  assert {'handler.py', 'video_prompts.py'} <= set(z.namelist())
+                  assert z.testzip() is None
+          PY
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-diagnostic-release
+
+      - name: Upload immutable Lambda artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bucket=afl-video-bootstrap-artifactbucket-xiuriidgyft4
+          aws s3 cp dist/diagnostic-api.zip "s3://$bucket/api-diagnostics/$GITHUB_SHA.zip" --only-show-errors
+          aws s3 cp dist/diagnostic-google.zip "s3://$bucket/google-diagnostics/$GITHUB_SHA.zip" --only-show-errors
+
+      - name: CloudFormation changesets — reject every change except Lambda Code
+        shell: bash
+        env:
+          ARTIFACT_BUCKET: afl-video-bootstrap-artifactbucket-xiuriidgyft4
+          CFN_ROLE: arn:aws:iam::134387458447:role/afl-video-cfn-execution-role
+        run: |
+          python3 - <<'PY'
+          import boto3, os, time
+          from botocore.exceptions import ClientError, WaiterError
+          cf = boto3.client("cloudformation", region_name="ap-southeast-2")
+          sha = os.environ["GITHUB_SHA"]
+          worker = cf.describe_stack_resources(PhysicalResourceId="afl-app-dev-google-omni-worker")
+          candidates = [x for x in worker["StackResources"] if x.get("PhysicalResourceId") == "afl-app-dev-google-omni-worker"]
+          if len(candidates) != 1:
+              raise RuntimeError("Cannot resolve single Google worker CloudFormation stack")
+          google_stack = candidates[0]["StackName"]
+          print("Resolved Google worker stack:", google_stack)
+          plans = [
+              ("afl-app-dev-backend", "LambdaArtifactKey", f"api-diagnostics/{sha}.zip", "ApiLambda"),
+              (google_stack, "GoogleWorkerArtifactKey", f"google-diagnostics/{sha}.zip", "GoogleWorkerLambda"),
+          ]
+          # Prepare and execute each update only if the changeset affects the
+          # expected Lambda code resource and absolutely nothing else.
+          for stack, changed_parameter, new_value, allowed_logical_id in plans:
+              existing = cf.describe_stacks(StackName=stack)["Stacks"][0]
+              params = []
+              found = False
+              for param in existing["Parameters"]:
+                  k = param["ParameterKey"]
+                  if k == changed_parameter:
+                      params.append({"ParameterKey": k, "ParameterValue": new_value})
+                      found = True
+                  else:
+                      params.append({"ParameterKey": k, "UsePreviousValue": True})
+              if not found:
+                  raise RuntimeError(f"{stack} has no {changed_parameter} parameter")
+              name = "afl-diagnostics-" + sha[:12]
+              cf.create_change_set(
+                  StackName=stack, ChangeSetName=name, ChangeSetType="UPDATE",
+                  UsePreviousTemplate=True, Parameters=params, RoleARN=os.environ["CFN_ROLE"],
+                  Capabilities=["CAPABILITY_NAMED_IAM"])
+              try:
+                  cf.get_waiter("change_set_create_complete").wait(
+                      StackName=stack, ChangeSetName=name,
+                      WaiterConfig={"Delay": 5, "MaxAttempts": 48})
+              except WaiterError:
+                  d = cf.describe_change_set(StackName=stack, ChangeSetName=name)
+                  raise RuntimeError(f"Cannot safely deploy {stack}: {d['Status']} / {d.get('StatusReason','')}")
+              d = cf.describe_change_set(StackName=stack, ChangeSetName=name)
+              changes = [x["ResourceChange"] for x in d["Changes"] if "ResourceChange" in x]
+              summary = [(x.get("Action"), x.get("LogicalResourceId"), x.get("ResourceType")) for x in changes]
+              print(f"{stack} planned changes: {summary}")
+              if len(changes) != 1 or summary[0] != ("Modify", allowed_logical_id, "AWS::Lambda::Function"):
+                  cf.delete_change_set(StackName=stack, ChangeSetName=name)
+                  raise RuntimeError("ABORT: Unexpected CloudFormation changes; no deployment attempted")
+              details = changes[0].get("Details", [])
+              if details and any(
+                  x.get("Target", {}).get("Name") not in ("Code", None)
+                  for x in details if x.get("Target", {}).get("Attribute") == "Properties"
+              ):
+                  cf.delete_change_set(StackName=stack, ChangeSetName=name)
+                  raise RuntimeError("ABORT: Unexpected Lambda property change")
+              cf.execute_change_set(StackName=stack, ChangeSetName=name)
+              cf.get_waiter("stack_update_complete").wait(
+                  StackName=stack, WaiterConfig={"Delay": 10, "MaxAttempts": 120})
+              print(f"Verified Code-only update for {stack}")
+          PY
+
+      - name: Publish only frontend index and invalidate its cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend \
+            --query "Stacks[0].Outputs[?OutputKey=='FrontendBucketName'].OutputValue | [0]" --output text)
+          dist=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue | [0]" --output text)
+          test -n "$bucket" && test "$bucket" != None
+          test -n "$dist" && test "$dist" != None
+          aws s3 cp frontend/index.html "s3://$bucket/index.html" \
+            --content-type 'text/html; charset=utf-8' --cache-control 'max-age=60, must-revalidate' --only-show-errors
+          aws cloudfront create-invalidation --distribution-id "$dist" --paths /index.html /
+          echo "Diagnostics release complete. No paid POST, no Step Functions changes."
