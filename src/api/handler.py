@@ -24,6 +24,7 @@ VIDEO_WORKER_ARN = os.environ.get("VIDEO_WORKER_ARN")
 GOOGLE_WORKER_ARN = os.environ.get("GOOGLE_WORKER_ARN")
 GOOGLE_STATE_MACHINE_ARN = os.environ.get("GOOGLE_STATE_MACHINE_ARN")
 REAL_VIDEO_MODE = os.environ.get("REAL_VIDEO_MODE", "DISABLED")
+ASSEMBLY_STATE_MACHINE_ARN = os.environ.get("ASSEMBLY_STATE_MACHINE_ARN", "")
 SCENARIO_ASSET_BUCKET = os.environ.get("SCENARIO_ASSET_BUCKET")
 VIDEO_STATE_MACHINE_ARN = os.environ.get("VIDEO_STATE_MACHINE_ARN")
 VIDEO_MODE = os.environ.get("VIDEO_MODE", "DISABLED")
@@ -293,6 +294,84 @@ def safe_execution_failure_code(execution_arn):
     return "FAILURE_DETAILS_UNAVAILABLE"
 
 
+def assembly_public(job):
+    """Expose final assembly state, never mock clips as real."""
+    job_id = job["jobId"]
+    record = job.get("assembly", {})
+    ready = all(
+        job.get("realVideos", {}).get(scene, {}).get("status") == "COMPLETED"
+        and job["realVideos"][scene].get("resultKey") == f"videos/{job_id}/{scene}.mp4"
+        for scene in VIDEO_SCENES
+    )
+    status = record.get("status", "READY" if ready else "NOT_READY")
+    result = {"status": status, "ready": ready, "enabled": bool(ASSEMBLY_STATE_MACHINE_ARN)}
+    if status in ("QUEUED", "PROCESSING") and ASSEMBLY_STATE_MACHINE_ARN:
+        arn = (ASSEMBLY_STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:", 1)
+               + ":final-" + job_id)
+        try:
+            execution = STATES.describe_execution(executionArn=arn)
+            if execution["status"] in ("FAILED", "TIMED_OUT", "ABORTED"):
+                result["status"] = "REVIEW_REQUIRED"
+                result["errorCode"] = "ASSEMBLY_WORKFLOW_" + execution["status"]
+        except ClientError:
+            result["workflowStatus"] = "UNKNOWN"
+    if status == "FAILED":
+        result["errorCode"] = record.get("errorCode", "ASSEMBLY_FAILED")
+    if status == "COMPLETED" and record.get("resultKey") == f"videos/{job_id}/final.mp4":
+        key = record["resultKey"]
+        result["url"] = S3.generate_presigned_url(
+            "get_object", Params={"Bucket": UPLOAD_BUCKET, "Key": key}, ExpiresIn=300)
+        result["downloadUrl"] = S3.generate_presigned_url(
+            "get_object", Params={"Bucket": UPLOAD_BUCKET, "Key": key,
+                                  "ResponseContentDisposition": 'attachment; filename="afl-grand-final.mp4"',
+                                  "ResponseContentType": "video/mp4"}, ExpiresIn=300)
+    return result
+
+
+def start_assembly(job_id):
+    """Reserve one assembly, verify all three actual files, then start workflow."""
+    if not ASSEMBLY_STATE_MACHINE_ARN:
+        return response(503, {"error": "Assembly is not deployed"})
+    job = get_job(job_id)
+    if not job:
+        return response(404, {"error": "Job not found"})
+    if job.get("assembly"):
+        return response(200, {"jobId": job_id, "assembly": assembly_public(job)})
+    for scene in VIDEO_SCENES:
+        video = job.get("realVideos", {}).get(scene, {})
+        key = f"videos/{job_id}/{scene}.mp4"
+        if video.get("status") != "COMPLETED" or video.get("resultKey") != key:
+            return response(409, {"error": "All three real scene MP4s must be completed"})
+        try:
+            head = S3.head_object(Bucket=UPLOAD_BUCKET, Key=key)
+            if head.get("ContentLength", 0) < 128:
+                return response(409, {"error": "A scene MP4 is empty"})
+        except ClientError:
+            return response(409, {"error": "A scene MP4 is not available in S3"})
+    try:
+        DDB.update_item(
+            Key={"jobId": job_id},
+            UpdateExpression="SET assembly = :record",
+            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(assembly)",
+            ExpressionAttributeValues={":record": {
+                "status": "QUEUED", "createdAt": datetime.now(timezone.utc).isoformat()}})
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return response(202, {"status": "ALREADY_REQUESTED", "jobId": job_id})
+        raise
+    try:
+        STATES.start_execution(
+            stateMachineArn=ASSEMBLY_STATE_MACHINE_ARN,
+            name="final-" + job_id,
+            input=json.dumps({"jobId": job_id}, separators=(",", ":")))
+    except STATES.exceptions.ExecutionAlreadyExists:
+        return response(202, {"status": "ALREADY_REQUESTED", "jobId": job_id})
+    except Exception:
+        LOG.exception("Assembly handoff uncertain")
+        return response(503, {"status": "HANDOFF_UNKNOWN", "error": "Check status; do not retry"})
+    return response(202, {"status": "QUEUED", "jobId": job_id})
+
+
 def video_scene_public(job, scene_id):
     """Mock states never pretend to contain playable MP4s."""
     real = job.get("realVideos", {}).get(scene_id, {})
@@ -356,7 +435,7 @@ def video_status(job_id, scene_id=None):
                           "scene1PaidApproved": REAL_VIDEO_MODE == "ENABLED",
                           "paidScenes": {scene: REAL_VIDEO_MODE == "ENABLED" and not job.get("paidVideoApprovals", {}).get(scene) and not job.get("realVideos", {}).get(scene) for scene in VIDEO_SCENES},
                           "videos": {scene: video_scene_public(job, scene) for scene in VIDEO_SCENES},
-                          "assembly": {"status": "NOT_IMPLEMENTED", "enabled": False}})
+                          "assembly": assembly_public(job)})
 
 
 def start_mock_video(job_id, scene_id, event):
@@ -594,6 +673,15 @@ def lambda_handler(event, context):
     method = (event.get("httpMethod") or "").upper()
     path = event.get("path") or ""
     try:
+        assembly_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/assembly", path)
+        if assembly_match:
+            if method == "POST":
+                return start_assembly(assembly_match.group(1))
+            if method == "GET":
+                job = get_job(assembly_match.group(1))
+                if not job:
+                    return response(404, {"error": "Job not found"})
+                return response(200, {"jobId": job["jobId"], "assembly": assembly_public(job)})
         real_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/(scene[123])", path)
         if method == "POST" and real_match:
             return start_real_scene(real_match.group(1), real_match.group(2), event)
