@@ -174,7 +174,7 @@ def image_payload(blob, content_type, prompt, duration):
         raise ContractError("Reference image exceeds model input size")
     if not isinstance(prompt, str) or not 1 <= len(prompt) <= 12000:
         raise ContractError("Invalid S3 scene prompt")
-    if duration not in (8, 10):
+    if duration not in range(3, 16):
         raise ContractError("Unexpected scene duration")
     return {
         "model": "gemini-omni-1.2-flash",
@@ -206,7 +206,7 @@ def scene_preflight(job, scene):
     if not re.fullmatch(r"results/" + re.escape(job) + "/" + scene + r"\.(png|jpg|jpeg|webp)", key):
         raise ContractError("Unexpected Scene 1 image key")
     config = render_scene(S3, PROMPT_BUCKET, item, scene)
-    if config["durationSeconds"] not in (8, 10) or config["videoGenerationEnabled"] is not False:
+    if config["durationSeconds"] not in range(3, 16) or config["videoGenerationEnabled"] is not False:
         raise ContractError("Unexpected free preview configuration")
     # Validate actual current S3 object. Expired 7-day images must fail closed.
     response = S3.get_object(Bucket=BUCKET, Key=key)
