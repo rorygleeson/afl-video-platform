@@ -92,12 +92,9 @@ jobs:
           from botocore.exceptions import ClientError, WaiterError
           cf = boto3.client("cloudformation", region_name="ap-southeast-2")
           sha = os.environ["GITHUB_SHA"]
-          worker = cf.describe_stack_resources(PhysicalResourceId="afl-app-dev-google-omni-worker")
-          candidates = [x for x in worker["StackResources"] if x.get("PhysicalResourceId") == "afl-app-dev-google-omni-worker"]
-          if len(candidates) != 1:
-              raise RuntimeError("Cannot resolve single Google worker CloudFormation stack")
-          google_stack = candidates[0]["StackName"]
-          print("Resolved Google worker stack:", google_stack)
+          # Fixed stack name verified against the existing Stage 5A deployment
+          # workflow. The GitHub role intentionally lacks DescribeStackResources.
+          google_stack = "afl-app-dev-google-video"
           plans = [
               ("afl-app-dev-backend", "LambdaArtifactKey", f"api-diagnostics/{sha}.zip", "ApiLambda"),
               (google_stack, "GoogleWorkerArtifactKey", f"google-diagnostics/{sha}.zip", "GoogleWorkerLambda"),
