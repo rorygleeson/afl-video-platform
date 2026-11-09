@@ -197,10 +197,8 @@ function setup(options = {}) {
 test('auto polls every 5 seconds, adds each image once and stops when complete', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  assert.equal(h.els.generateScene1.hidden, false);
   assert.equal(h.els.generate.hidden, true, 'upload button hides once the job is created');
   assert.equal(h.els.refresh.hidden, true, 'manual refresh remains hidden; polling is automatic');
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.getPolls(), 1);
   assert.equal(h.imageCount(), 1);
@@ -220,7 +218,6 @@ test('auto polls every 5 seconds, adds each image once and stops when complete',
 test('polling pauses while tab is hidden and resumes when visible', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.getPolls(), 1);
   h.doc.hidden = true;
@@ -237,13 +234,11 @@ test('polling pauses while tab is hidden and resumes when visible', async () => 
 test('changing team cancels pending polling and hides old paid job action', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.timers.size, 1);
   h.els.team.listeners.change();
   assert.equal(h.els.generate.hidden, false, 'changing details reveals new job upload action');
   assert.equal(h.timers.size, 0);
-  assert.equal(h.els.generateScene1.hidden, true);
   assert.equal(h.els.refresh.hidden, true);
 });
 
@@ -260,7 +255,6 @@ test('video controls appear after three reference images without prompt toggles'
   const h = setup();
   await h.els.generate.listeners.click();
   assert.equal(h.els.videoTestSection.hidden, true);
-  await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer();
   assert.equal(h.els.videoTestSection.hidden, false);
   for (const n of [1, 2, 3]) {
@@ -288,7 +282,6 @@ test('first and last names are mandatory before S3 upload', async () => {
 test('editing names invalidates existing job and previews', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
@@ -301,7 +294,6 @@ test('reference images gate video controls, existing mock records do not unlock 
   const h = setup();
   await h.els.generate.listeners.click();
   assert.equal(h.els.videoTestSection.hidden, true);
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.els.videoTestSection.hidden, true);
   await h.nextTimer();
@@ -322,7 +314,7 @@ test('reference images gate video controls, existing mock records do not unlock 
 });
 
 test('reference image progress stays above scene prompt controls', () => {
-  const order = ['id="generateScene1"', 'id="jobProgressSection"', 'id="status"',
+  const order = ['id="generate"', 'id="jobProgressSection"', 'id="status"',
                  'id="results"', 'id="videoTestSection"'];
   let previous = -1;
   for (const item of order) {
@@ -336,7 +328,6 @@ test('video controls stay hidden if any reference scene is still generating', as
   const h = setup();
   await h.els.generate.listeners.click();
   assert.equal(h.els.videoTestSection.hidden,true);
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.getPolls(),1);
   assert.equal(h.els.videoTestSection.hidden,true);
@@ -348,7 +339,6 @@ test('video controls stay hidden if any reference scene is still generating', as
 test('Scene 1 preflight is read-only and makes no video POST', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
@@ -363,7 +353,6 @@ test('Scene 1 preflight is read-only and makes no video POST', async () => {
 test('real Scene 1 paid button remains hidden and never starts without approval', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
@@ -377,9 +366,7 @@ test('resume last job control is absent and a new job still starts normally', as
   assert.doesNotMatch(html, /id="resumeLast"|Resume your last job/);
   assert.doesNotMatch(html, /id="jobIdPanel"|id="copyJobId"|id="currentJobIdText"/);
   await h.els.generate.listeners.click();
-  assert.equal(h.els.generateScene1.hidden, false);
   assert.doesNotMatch(h.els.status.textContent, /Job:\\s*[0-9a-f]{32}/);
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.calls.filter(c => c.url.endsWith('/jobs') && c.opts.method === 'POST').length, 1);
 });
@@ -387,7 +374,6 @@ test('resume last job control is absent and a new job still starts normally', as
 test('Scene 1 free readiness automatically runs once for a finished job', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   assert.equal(h.calls.filter(c => c.url.endsWith('/video/scene1/preflight')).length, 0);
   await h.nextTimer();
@@ -410,7 +396,6 @@ test('Scene 1 free readiness automatically runs once for a finished job', async 
 test('all three real video buttons are independently wired but never call paid endpoints while locked', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
@@ -425,7 +410,6 @@ test('all three real video buttons are independently wired but never call paid e
 test('approved Scene 1 click submits only Scene 1 once with exact consent', async () => {
   const h = setup({paidScenes: {scene1: true, scene2: true, scene3: true}});
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
@@ -452,7 +436,6 @@ test('approved Scene 1 click submits only Scene 1 once with exact consent', asyn
 test('paid POST outcome survives stale MOCK_ONLY status polling', async () => {
   const h = setup({paidScenes:{scene1:true,scene2:true,scene3:true}});
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   await h.els.generateRealScene1.listeners.click();
   await h.flush();
@@ -470,7 +453,6 @@ test('read-only workflow review status does not re-open a paid button', async ()
   const h = setup({paidScenes: {scene1: false, scene2: false, scene3: false},
     realVideos: {scene1: {mode:'REAL', status:'REVIEW_REQUIRED', errorCode:'WORKFLOW_FAILED'}}});
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
@@ -482,7 +464,6 @@ test('read-only workflow review status does not re-open a paid button', async ()
 test('all three prompts and independent paid actions are available after reference images', async () => {
   const h = setup({paidScenes: {scene1: false, scene2: true, scene3: true}});
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush();
   await h.nextTimer(); await h.nextTimer(); await h.flush();
   assert.equal(h.els.videoPanel2.hidden, false);
@@ -496,7 +477,6 @@ test('all three prompts and independent paid actions are available after referen
   const h2 = setup({paidScenes: {scene1:false, scene2:true, scene3:true},
     realVideos:{scene1:options}});
   await h2.els.generate.listeners.click();
-  await h2.els.generateScene1.listeners.click();
   await h2.flush(); await h2.nextTimer(); await h2.nextTimer(); await h2.flush();
   assert.equal(h2.els.videoPanel1.hidden, false);
   assert.equal(h2.els.videoPanel2.hidden, false);
@@ -508,7 +488,6 @@ test('all three prompts and independent paid actions are available after referen
       scene2:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/video2.mp4'},
     }});
   await h3.els.generate.listeners.click();
-  await h3.els.generateScene1.listeners.click();
   await h3.flush(); await h3.nextTimer(); await h3.nextTimer(); await h3.flush();
   assert.equal(h3.els.videoPanel3.hidden, false);
   assert.equal(h3.els.generateRealScene3.hidden, false);
@@ -519,7 +498,6 @@ test('uncertain Scene 1 keeps all three prompts visible but locks paid retries',
   const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
     realVideos:{scene1:{mode:'REAL',status:'SUBMISSION_UNKNOWN'}}});
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   assert.equal(h.els.generateRealScene1.hidden, true);
   assert.equal(h.els.videoPanel2.hidden, false);
@@ -555,7 +533,6 @@ test('valid API key is checked before initiating signed selfie upload', async ()
 test('there are no prompt toggle controls or preview API calls', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   for (const n of [1, 2, 3]) {
     assert.doesNotMatch(html, new RegExp('id="videoScene' + n + '"'));
@@ -568,7 +545,6 @@ test('existing uncertain paid Scene 1 auto-opens debug and displays its status',
   const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
     realVideos:{scene1:{mode:'REAL',status:'SUBMISSION_UNKNOWN'}}});
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   assert.equal(h.els.videoDebugDetails1.open, true);
   // One visible scene status only: hide the redundant player-status line.
@@ -583,7 +559,6 @@ test('per-scene debug shows status and live GET polling does not submit paid req
   const h = setup({paidScenes: {scene1:false,scene2:false,scene3:false},
     realVideos:{scene1:{mode:'REAL',status:'PROCESSING',workflowStatus:'RUNNING'}}});
   await h.els.generate.listeners.click();
-  await h.els.generateScene1.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   assert.match(h.els.videoDebugText1.textContent,/PROCESSING/);
   assert.match(h.els.videoDebugText1.textContent,/RUNNING/);
