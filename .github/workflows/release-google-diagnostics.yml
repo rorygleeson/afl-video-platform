@@ -78,105 +78,55 @@ jobs:
           aws s3 cp dist/diagnostic-api.zip "s3://$bucket/api-diagnostics/$GITHUB_SHA.zip" --only-show-errors
           aws s3 cp dist/diagnostic-google.zip "s3://$bucket/google-diagnostics/$GITHUB_SHA.zip" --only-show-errors
 
-      - name: Install CloudFormation inspection dependency
+      - name: Install Lambda API dependency
         run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
 
-      - name: Resolve existing Lambda IDs without executing CloudFormation changes
+      - name: Preflight and deploy only the two approved Lambda code packages
         shell: bash
-        env:
-          CFN_ROLE: arn:aws:iam::134387458447:role/afl-video-cfn-execution-role
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import boto3, json, os
-          from botocore.exceptions import WaiterError
-          cf = boto3.client("cloudformation", region_name="ap-southeast-2")
-          sha = os.environ["GITHUB_SHA"]
-          plans = [
-              ("afl-app-dev-backend", "LambdaArtifactKey", f"api-diagnostics/{sha}.zip", "ApiLambda"),
-              ("afl-app-dev-google-video", "GoogleWorkerArtifactKey", f"google-diagnostics/{sha}.zip", "GoogleWorkerLambda"),
-          ]
-          resolved = []
-          for stack, parameter, key, logical_id in plans:
-              existing = cf.describe_stacks(StackName=stack)["Stacks"][0]
-              if existing["StackStatus"] != "UPDATE_COMPLETE":
-                  raise RuntimeError(f"{stack} not in UPDATE_COMPLETE; refusing code update")
-              params = [
-                  {"ParameterKey": p["ParameterKey"], **(
-                      {"ParameterValue": key} if p["ParameterKey"] == parameter
-                      else {"UsePreviousValue": True}
-                  )}
-                  for p in existing["Parameters"]
-              ]
-              if not any(p["ParameterKey"] == parameter for p in existing["Parameters"]):
-                  raise RuntimeError(f"Missing {parameter} in {stack}")
-              name = "afl-diagnostics-resolve-" + sha[:12]
-              cf.create_change_set(
-                  StackName=stack, ChangeSetName=name, ChangeSetType="UPDATE",
-                  UsePreviousTemplate=True, Parameters=params,
-                  RoleARN=os.environ["CFN_ROLE"], Capabilities=["CAPABILITY_NAMED_IAM"])
-              try:
-                  try:
-                      cf.get_waiter("change_set_create_complete").wait(
-                          StackName=stack, ChangeSetName=name,
-                          WaiterConfig={"Delay": 5, "MaxAttempts": 48})
-                  except WaiterError:
-                      detail = cf.describe_change_set(StackName=stack, ChangeSetName=name)
-                      raise RuntimeError(f"Cannot resolve {stack}: {detail['Status']} / {detail.get('StatusReason','')}")
-                  detail = cf.describe_change_set(StackName=stack, ChangeSetName=name)
-                  if detail.get("NextToken"):
-                      raise RuntimeError("Paginated changeset; cannot safely resolve Lambda")
-                  matches = [c["ResourceChange"] for c in detail["Changes"]
-                             if c.get("ResourceChange", {}).get("LogicalResourceId") == logical_id]
-                  if len(matches) != 1:
-                      raise RuntimeError(f"Expected exactly one {logical_id} change in {stack}")
-                  change = matches[0]
-                  if (change.get("Action") != "Modify"
-                      or change.get("ResourceType") != "AWS::Lambda::Function"
-                      or change.get("Replacement") not in (False, "False")
-                      or not change.get("PhysicalResourceId")):
-                      raise RuntimeError(f"Unexpected Lambda change for {logical_id}")
-                  details = change.get("Details", [])
-                  if not details or any(d.get("Target", {}).get("Attribute") != "Properties"
-                                        or d.get("Target", {}).get("Name") != "Code"
-                                        or d.get("Target", {}).get("RequiresRecreation") != "Never"
-                                        for d in details):
-                      raise RuntimeError(f"Unexpected Lambda properties for {logical_id}")
-                  resolved.append({"function": change["PhysicalResourceId"], "key": key})
-              finally:
-                  cf.delete_change_set(StackName=stack, ChangeSetName=name)
-          with open("/tmp/diagnostic-lambdas.json", "w") as file:
-              json.dump(resolved, file)
-          print("Resolved two existing Lambda functions; no CloudFormation changes executed.")
-          PY
+          import base64
+          import boto3
+          import hashlib
+          import os
+          from pathlib import Path
 
-      - name: Update only existing Lambda code and verify deployment
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import boto3, json
-          s3_bucket = "afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+          # These names are intentionally exact and match the restricted
+          # AFLDiagnosticLambdaCodeUpdate IAM policy. Never discover or mutate
+          # IAM, CloudFormation, or Step Functions resources in this release.
+          targets = (
+              ("afl-app-dev-api", Path("dist/diagnostic-api.zip"), f"api-diagnostics/{os.environ['GITHUB_SHA']}.zip"),
+              ("afl-app-dev-google-omni-worker", Path("dist/diagnostic-google.zip"), f"google-diagnostics/{os.environ['GITHUB_SHA']}.zip"),
+          )
           lam = boto3.client("lambda", region_name="ap-southeast-2")
-          with open("/tmp/diagnostic-lambdas.json") as file:
-              targets = json.load(file)
-          if len(targets) != 2 or len({x["function"] for x in targets}) != 2:
-              raise RuntimeError("Expected two distinct existing Lambdas")
-          # Code-only API call: never mutate Lambda configuration, IAM, or Step Functions.
-          for target in targets:
-              function = target["function"]
-              before = lam.get_function_configuration(FunctionName=function)
-              if before.get("State") != "Active" or before.get("LastUpdateStatus") != "Successful":
-                  raise RuntimeError(f"{function} is not ready for a code-only update")
+          bucket = "afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+          verified = []
+
+          # Check BOTH functions before the first code write.
+          for name, artifact, key in targets:
+              if not artifact.is_file():
+                  raise RuntimeError(f"Missing build artifact for {name}")
+              expected_hash = base64.b64encode(hashlib.sha256(artifact.read_bytes()).digest()).decode("ascii")
+              config = lam.get_function_configuration(FunctionName=name)
+              if config.get("FunctionName") != name or config.get("State") != "Active" or config.get("LastUpdateStatus") != "Successful":
+                  raise RuntimeError(f"Preflight failed for {name}")
+              if not config.get("RevisionId"):
+                  raise RuntimeError(f"Missing revision ID for {name}")
+              verified.append((name, key, expected_hash, config["RevisionId"], config.get("CodeSha256")))
+
+          for name, key, expected_hash, revision, current_hash in verified:
+              if current_hash == expected_hash:
+                  print(f"Already deployed, skipping unchanged Lambda: {name}", flush=True)
+                  continue
               response = lam.update_function_code(
-                  FunctionName=function, S3Bucket=s3_bucket, S3Key=target["key"],
-                  RevisionId=before["RevisionId"])
+                  FunctionName=name, S3Bucket=bucket, S3Key=key, RevisionId=revision)
               lam.get_waiter("function_updated").wait(
-                  FunctionName=function, WaiterConfig={"Delay": 5, "MaxAttempts": 60})
-              after = lam.get_function_configuration(FunctionName=function)
-              if after.get("LastUpdateStatus") != "Successful" or after.get("CodeSha256") != response.get("CodeSha256"):
-                  raise RuntimeError(f"{function} code update verification failed")
-              print(f"Verified code-only Lambda update: {function}")
+                  FunctionName=name, WaiterConfig={"Delay": 5, "MaxAttempts": 60})
+              after = lam.get_function_configuration(FunctionName=name)
+              if after.get("LastUpdateStatus") != "Successful" or after.get("CodeSha256") != expected_hash or response.get("CodeSha256") != expected_hash:
+                  raise RuntimeError(f"Code checksum verification failed for {name}")
+              print(f"Verified code-only Lambda deployment: {name}", flush=True)
           PY
 
       - name: Publish only frontend index and invalidate its cache
