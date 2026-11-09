@@ -1,4 +1,4 @@
-# AFL Grand Final — Scene 2: THE KICK AFTER THE SIREN
+# AFL Grand Final — Scene 2: KICK BEFORE THE SIREN, GOAL AFTER
 # Variables: $fullName, $teamName, $guernsey, $commentary
 
 FORMAT: 8 seconds, vertical 9:16, photorealistic live Australian rules football broadcast. Normal game speed and realistic AFL ball physics. The supplied PERSONALISED Scene 2 image is the exact opening frame; this is a NEW broadcast camera angle, not a continuation of Scene 1's camera.
