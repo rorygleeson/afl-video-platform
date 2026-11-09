@@ -37,8 +37,8 @@ function setup(options = {}) {
                       'videoPromptText1','videoPromptText2','videoPromptText3',
                       'videoPromptDetails1','videoPromptDetails2','videoPromptDetails3',
                       'videoScene1', 'videoScene2', 'videoScene3',
-                      'scene1Preflight', 'scene1PreflightStatus', 'scene1PaidStatus', 'generateRealScene1',
-                      'scene2PaidStatus', 'scene3PaidStatus', 'generateRealScene2', 'generateRealScene3',
+                      'scene1Preflight', 'scene1PreflightStatus', 'scene1PaidStatus', 'generateAllVideos',
+                      'scene2PaidStatus', 'scene3PaidStatus',
                       'videoTestSection','videoTestMessage','assembleFinal','assemblyPanel','assemblyStatus','assemblyPlayer','downloadFinal','nextStageMessage',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
@@ -51,7 +51,7 @@ function setup(options = {}) {
   }
   els.assembleFinal.disabled = true;
   els.assembleFinal.hidden = true; // Matches the HTML hidden attribute.
-  for (const n of [1, 2, 3]) els['generateRealScene' + n].hidden = true;
+  els.generateAllVideos.hidden = true;
   els.jobIdPanel.hidden = true;
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
@@ -135,7 +135,7 @@ function setup(options = {}) {
     if (/\/real-videos\/scene[123]$/.test(url) && opts.method === 'POST') {
       const scene = url.match(/scene[123]$/)[0];
       // Mimic DynamoDB reservation becoming visible in subsequent GET status.
-      options.paidScenes = {scene1: false, scene2: false, scene3: false};
+      options.paidScenes = {...(options.paidScenes || {}), [scene]: false};
       options.realVideos = {...(options.realVideos || {}),
         [scene]: {mode: 'REAL', status: 'REQUESTED'}};
       return {ok: true, async json() { return {status: 'REAL_VIDEO_REQUESTED'}; }};
@@ -365,7 +365,7 @@ test('reference images gate video controls, existing mock records do not unlock 
   await h.flush();
   assert.equal(h.els.videoPanel2.hidden, false, 'Prompt for Scene 2 remains available');
   assert.equal(h.els.videoPanel3.hidden, false, 'Prompt for Scene 3 remains available');
-  assert.equal(h.els.generateRealScene2.hidden, true, 'Mock result cannot authorize paid scene');
+  assert.equal(h.els.generateAllVideos.hidden, true, 'Mock result cannot authorize paid scene');
   assert.match(h.els.videoStatus1.textContent, /Real video not generated/);
   assert.equal(h.els.assembleFinal.hidden, true);
   assert.equal(h.calls.filter(c => /\/videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0);
@@ -415,7 +415,7 @@ test('real Scene 1 paid button remains hidden and never starts without approval'
   await h.nextTimer();
   await h.nextTimer();
   await h.els.scene1Preflight.listeners.click();
-  assert.equal(h.els.generateRealScene1.hidden, true);
+  assert.equal(h.els.generateAllVideos.hidden, true);
   assert.equal(h.calls.filter(c => c.url.endsWith('/real-videos/scene1')).length, 0);
 });
 
@@ -451,117 +451,82 @@ test('Scene 1 free readiness automatically runs once for a finished job', async 
                'Readiness never submits a paid MP4');
 });
 
-test('all three real video buttons are independently wired but never call paid endpoints while locked', async () => {
+test('one batch button stays hidden until real videos are approved', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
-  await h.flush();
-  await h.nextTimer();
-  await h.nextTimer();
-  for (const n of [1,2,3]) {
-    assert.equal(h.els['generateRealScene' + n].hidden, true);
-    assert.ok(h.els['generateRealScene' + n].listeners.click, 'Scene ' + n + ' must be wired');
-    assert.match(h.els['scene' + n + 'PaidStatus'].textContent, /locked/);
-  }
-  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
+  await h.flush(); await h.nextTimer(); await h.nextTimer();
+  assert.equal(h.els.generateAllVideos.hidden, true);
+  assert.ok(h.els.generateAllVideos.listeners.click);
+  assert.doesNotMatch(html, /id="generateRealScene[123]"/);
+  assert.equal(h.calls.filter(c => c.url.includes('/real-videos/scene')).length, 0);
 });
 
-test('approved Scene 1 click submits only Scene 1 once with exact consent', async () => {
-  const h = setup({paidScenes: {scene1: true, scene2: true, scene3: true}});
+test('one confirmed click submits three Google scenes concurrently, once each', async () => {
+  const h = setup({paidScenes: {scene1:true,scene2:true,scene3:true}});
   await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.generateAllVideos.hidden, false);
+  assert.match(h.els.generateAllVideos.textContent, /All 3 Videos/);
+  const first = h.els.generateAllVideos.listeners.click();
+  const second = h.els.generateAllVideos.listeners.click();
+  await Promise.all([first, second]);
   await h.flush();
-  await h.nextTimer();
-  await h.nextTimer();
-  await h.flush();
-  assert.equal(h.els.generateRealScene1.hidden, false);
-  assert.equal(h.els.generateRealScene2.hidden, false);
-  assert.equal(h.els.generateRealScene3.hidden, false);
-  await h.els.generateRealScene1.listeners.click();
-  await h.flush();
-  assert.equal(h.els.generateRealScene1.hidden, true);
-  // Hide other paid buttons immediately until backend reports global slot state.
-  assert.equal(h.els.generateRealScene2.hidden, true);
-  assert.equal(h.els.generateRealScene3.hidden, true);
-  const submitted = h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url));
-  assert.equal(submitted.length, 1);
-  assert.match(submitted[0].url, /\/real-videos\/scene1$/);
-  assert.equal(submitted[0].opts.method, 'POST');
-  assert.deepEqual(JSON.parse(submitted[0].opts.body), {confirmPaidScene: 'scene1'});
-  await h.els.generateRealScene1.listeners.click();
-  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 1,
-    'Second click must never resubmit Scene 1');
+  const submitted = h.calls.filter(c => c.url.includes('/real-videos/scene'));
+  assert.equal(submitted.length, 3);
+  assert.deepEqual(submitted.map(c=>c.url.match(/scene[123]$/)[0]).sort(),
+    ['scene1','scene2','scene3']);
+  for (const c of submitted) {
+    const scene = c.url.match(/scene[123]$/)[0];
+    assert.equal(c.opts.method, 'POST');
+    assert.deepEqual(JSON.parse(c.opts.body), {confirmPaidScene: scene});
+    assert.ok(c.opts.headers['Idempotency-Key']);
+  }
+  for (const n of [1,2,3])
+    assert.match(h.els['videoDebugText'+n].textContent,/API response: REAL_VIDEO_REQUESTED/);
+  assert.equal(h.els.generateAllVideos.hidden,true);
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,3);
 });
 
-test('paid POST outcome survives stale MOCK_ONLY status polling', async () => {
+test('paid batch outcome survives stale read-only status polling', async () => {
   const h = setup({paidScenes:{scene1:true,scene2:true,scene3:true}});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  await h.els.generateRealScene1.listeners.click();
+  await h.els.generateAllVideos.listeners.click();
   await h.flush();
-  assert.match(h.els.videoDebugText1.textContent,/POST \/jobs\//);
-  assert.match(h.els.videoDebugText1.textContent,/API response: REAL_VIDEO_REQUESTED/);
-  await h.els.refresh.listeners.click();
-  await h.flush();
-  assert.match(h.els.videoDebugText1.textContent,/API response: REAL_VIDEO_REQUESTED/,
-     'Stale read-only status must not erase paid submission diagnostic');
-  assert.equal(h.els.generateRealScene1.hidden,true);
-  assert.equal(h.calls.filter(c=>/\/real-videos\/scene1$/.test(c.url)).length,1);
-});
-
-test('read-only workflow review status does not re-open a paid button', async () => {
-  const h = setup({paidScenes: {scene1: false, scene2: false, scene3: false},
-    realVideos: {scene1: {mode:'REAL', status:'REVIEW_REQUIRED', errorCode:'WORKFLOW_FAILED'}}});
-  await h.els.generate.listeners.click();
-  await h.flush();
-  await h.nextTimer();
-  await h.nextTimer();
-  assert.match(h.els.scene1PaidStatus.textContent, /Generation needs review/);
-  assert.equal(h.els.generateRealScene1.hidden, true);
-  assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
-});
-
-test('all three prompts and independent paid actions are available after reference images', async () => {
-  const h = setup({paidScenes: {scene1: false, scene2: true, scene3: true}});
-  await h.els.generate.listeners.click();
-  await h.flush();
-  await h.nextTimer(); await h.nextTimer(); await h.flush();
-  assert.equal(h.els.videoPanel2.hidden, false);
-  assert.equal(h.els.videoPanel3.hidden, false);
-  // Mock completion must never count as a real MP4 or paid authorization.
-  h.mockStatuses.scene1 = 'MOCK_COMPLETED';
   await h.els.refresh.listeners.click(); await h.flush();
-  assert.equal(h.els.videoPanel2.hidden, false);
-  const options = {mode:'REAL', status:'COMPLETED', url:'https://example.invalid/video1.mp4'};
-  // Fetch override is handled by setup options, so use a new independent job simulation.
-  const h2 = setup({paidScenes: {scene1:false, scene2:true, scene3:true},
-    realVideos:{scene1:options}});
-  await h2.els.generate.listeners.click();
-  await h2.flush(); await h2.nextTimer(); await h2.nextTimer(); await h2.flush();
-  assert.equal(h2.els.videoPanel1.hidden, false);
-  assert.equal(h2.els.videoPanel2.hidden, false);
-  assert.equal(h2.els.generateRealScene2.hidden, false);
-  assert.equal(h2.els.videoPanel3.hidden, false);
-  const h3 = setup({paidScenes: {scene1:false,scene2:false,scene3:true},
-    realVideos:{
-      scene1:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/video1.mp4'},
-      scene2:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/video2.mp4'},
-    }});
-  await h3.els.generate.listeners.click();
-  await h3.flush(); await h3.nextTimer(); await h3.nextTimer(); await h3.flush();
-  assert.equal(h3.els.videoPanel3.hidden, false);
-  assert.equal(h3.els.generateRealScene3.hidden, false);
-  assert.equal(h3.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length,0);
+  assert.match(h.els.videoDebugText1.textContent,/API response: REAL_VIDEO_REQUESTED/);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/scene1')).length,1);
 });
 
-test('uncertain Scene 1 keeps all three prompts visible but locks paid retries', async () => {
+test('read-only workflow review does not unlock another paid attempt', async () => {
+  const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
+    realVideos:{scene1:{mode:'REAL',status:'REVIEW_REQUIRED',errorCode:'WORKFLOW_FAILED'}}});
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.match(h.els.scene1PaidStatus.textContent,/Generation needs review/);
+  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,0);
+});
+
+test('batch only submits remaining eligible scenes, not completed MP4', async () => {
+  const h = setup({paidScenes:{scene1:false,scene2:true,scene3:true},
+    realVideos:{scene1:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'}}});
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.generateAllVideos.hidden,false);
+  assert.match(h.els.generateAllVideos.textContent,/2 Remaining Videos/);
+  await h.els.generateAllVideos.listeners.click();
+  const submitted=h.calls.filter(c=>c.url.includes('/real-videos/scene'));
+  assert.deepEqual(submitted.map(c=>c.url.match(/scene[123]$/)[0]).sort(),['scene2','scene3']);
+});
+
+test('uncertain scene stays read-only and is never automatically resubmitted', async () => {
   const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
     realVideos:{scene1:{mode:'REAL',status:'SUBMISSION_UNKNOWN'}}});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  assert.equal(h.els.generateRealScene1.hidden, true);
-  assert.equal(h.els.videoPanel2.hidden, false);
-  assert.equal(h.els.videoPanel3.hidden, false);
-  assert.equal(h.els.generateRealScene2.hidden, true);
-  assert.equal(h.els.generateRealScene3.hidden, true);
+  assert.equal(h.els.generateAllVideos.hidden,true);
   assert.match(h.els.scene1PaidStatus.textContent,/do not retry/i);
   assert.match(h.els.videoDebugText1.textContent,/SUBMISSION_UNKNOWN/);
 });
@@ -609,7 +574,7 @@ test('existing uncertain paid Scene 1 auto-opens debug and displays its status',
   assert.equal(h.els.videoStatus1.hidden, true);
   assert.match(h.els.scene1PaidStatus.textContent,/submission/i);
   assert.match(h.els.videoDebugText1.textContent,/SUBMISSION_UNKNOWN/);
-  assert.equal(h.els.generateRealScene1.hidden, true);
+  assert.equal(h.els.generateAllVideos.hidden, true);
   assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url)).length, 0);
 });
 
