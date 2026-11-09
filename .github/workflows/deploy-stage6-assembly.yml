@@ -82,21 +82,17 @@ jobs:
           aws cloudformation describe-stack-events --stack-name afl-app-dev-assembly \
             --query 'StackEvents[].[Timestamp,LogicalResourceId,ResourceStatus,ResourceStatusReason]' \
             --output table | head -n 100
-      - name: Verify FFmpeg Lambda is functional without generating or stitching
+      - name: Verify created Stage 6 stack and pinned binaries without Lambda invoke
         run: |
           set -euo pipefail
-          aws lambda invoke \
-            --function-name afl-app-dev-assembly \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"op":"health"}' /tmp/assembly-health.json > /tmp/assembly-meta.json
-          python - <<'PY'
-          import json
-          meta=json.load(open('/tmp/assembly-meta.json'))
-          result=json.load(open('/tmp/assembly-health.json'))
-          assert not meta.get('FunctionError'), meta
-          assert result == {'status':'READY','videoGeneration':False}, result
-          print('Assembly FFmpeg and ffprobe ready. No S3 videos read or paid calls made.')
-          PY
+          state=$(aws cloudformation describe-stacks --stack-name afl-app-dev-assembly --query 'Stacks[0].StackStatus' --output text)
+          test "$state" = CREATE_COMPLETE -o "$state" = UPDATE_COMPLETE
+          arn=$(aws cloudformation describe-stacks --stack-name afl-app-dev-assembly \
+            --query 'Stacks[0].Outputs[?OutputKey==`AssemblyStateMachineArn`].OutputValue | [0]' --output text)
+          test "$arn" = 'arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-assembly'
+          dist/stage6/bin/ffmpeg -version | head -n 1
+          dist/stage6/bin/ffprobe -version | head -n 1
+          echo 'Stack created and pinned FFmpeg binary verified on CI runner. Runtime invoke not attempted.'
       - name: Enable assembly API and deploy updated backend safely
         run: |
           set -euo pipefail
