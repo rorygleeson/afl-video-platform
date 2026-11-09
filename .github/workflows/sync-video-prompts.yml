@@ -33,7 +33,7 @@ jobs:
           folder=Path('scenarios/afl-grand-final-winning-kick/v1/video')
           config=json.loads((folder/'config.json').read_text())
           assert config['model']=='gemini-omni-1.2-flash'
-          assert [(s['id'],s['durationSeconds']) for s in config['scenes']] == [('scene1',8),('scene2',8),('scene3',10)]
+          assert [(s['id'],s['durationSeconds']) for s in config['scenes']] == [('scene1',5),('scene2',8),('scene3',10)]
           for scene in config['scenes']:
               p=folder/scene['template']
               assert p.is_file() and p.stat().st_size > 1000
