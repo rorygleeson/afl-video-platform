@@ -29,7 +29,7 @@ function setup(options = {}) {
     };
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
-                      'generateScene1', 'resumeLast', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
+                      'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
                       'testGoogle', 'googleStatus', 'firstName', 'lastName',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
@@ -322,7 +322,7 @@ test('reference images gate video controls, existing mock records do not unlock 
 });
 
 test('reference image progress stays above scene prompt controls', () => {
-  const order = ['id="resumeLast"', 'id="jobProgressSection"', 'id="status"',
+  const order = ['id="generateScene1"', 'id="jobProgressSection"', 'id="status"',
                  'id="results"', 'id="videoTestSection"'];
   let previous = -1;
   for (const item of order) {
@@ -372,14 +372,16 @@ test('real Scene 1 paid button remains hidden and never starts without approval'
   assert.equal(h.calls.filter(c => c.url.endsWith('/real-videos/scene1')).length, 0);
 });
 
-test('job ID UI is absent, but resume state retains the job internally', async () => {
+test('resume last job control is absent and a new job still starts normally', async () => {
   const h = setup();
+  assert.doesNotMatch(html, /id="resumeLast"|Resume your last job/);
   assert.doesNotMatch(html, /id="jobIdPanel"|id="copyJobId"|id="currentJobIdText"/);
   await h.els.generate.listeners.click();
-  assert.equal(h.sessionStorage.getItem('aflLastJobId'), 'a'.repeat(32));
+  assert.equal(h.els.generateScene1.hidden, false);
   assert.doesNotMatch(h.els.status.textContent, /Job:\\s*[0-9a-f]{32}/);
-  h.els.team.listeners.change();
-  assert.equal(h.sessionStorage.getItem('aflLastJobId'), null);
+  await h.els.generateScene1.listeners.click();
+  await h.flush();
+  assert.equal(h.calls.filter(c => c.url.endsWith('/jobs') && c.opts.method === 'POST').length, 1);
 });
 
 test('Scene 1 free readiness automatically runs once for a finished job', async () => {
