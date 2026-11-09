@@ -1,13 +1,11 @@
-"""Stage 5A Google Omni 1.2 Flash adapter, installed but HARD-LOCKED.
+"""Google Omni video worker: paid scene execution and read-only diagnostics.
 
-No API route invokes this worker. The companion Step Functions starts with a
-gate which fails closed while PAID_GENERATION_ENABLED=false. Model defaults
-UNCONFIGURED. Nothing in Stage 5A invokes Google's paid model.
+Paid submissions require both the deployment gate and explicit job/scene
+approval. Authentication checks, scene preflight and failure diagnosis must
+not submit a paid generation request.
 
-Never retry an ambiguous POST: status UNKNOWN_SUBMISSION means an operator
-must reconcile billing and provider-side submission before another request.
-Google protocol is based on November 2026 public docs and NOT authenticated
-end-to-end verified for this project's model quota.
+Never retry an ambiguous POST: an uncertain submission requires operator
+reconciliation before another paid request can be considered.
 """
 import base64
 import binascii
