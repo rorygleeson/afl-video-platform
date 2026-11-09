@@ -181,10 +181,34 @@ jobs:
                       extras[0]["Details"][0].get("CausingEntity") == "ApiLambda.Arn" and
                       extras[0]["Details"][0].get("Evaluation") == "Dynamic"
                   )
-                  if not allowed_proxy:
+                  allowed_google = (
+                      stack == "afl-app-dev-google-video" and len(extras) == 1 and
+                      extras[0].get("Action") == "Modify" and
+                      extras[0].get("LogicalResourceId") == "GoogleStateMachine" and
+                      extras[0].get("ResourceType") == "AWS::StepFunctions::StateMachine" and
+                      extras[0].get("Replacement") in (False, "False")
+                  )
+                  if allowed_google:
+                      # GoogleStateMachine.DefinitionString dynamically embeds the
+                      # worker's ARN; RoleArn also depends on an unchanged IAM
+                      # resource. Only those dynamic dependencies are permitted.
+                      dependencies = extras[0].get("Details", [])
+                      allowed_paths = {
+                          ("DefinitionString", "GoogleWorkerLambda.Arn"),
+                          ("RoleArn", "GoogleStateMachineRole.Arn"),
+                      }
+                      allowed_google = bool(dependencies) and all(
+                          d.get("Target", {}).get("Attribute") == "Properties" and
+                          d.get("Target", {}).get("RequiresRecreation") == "Never" and
+                          d.get("ChangeSource") == "ResourceAttribute" and
+                          d.get("Evaluation") == "Dynamic" and
+                          (d.get("Target", {}).get("Name"), d.get("CausingEntity")) in allowed_paths
+                          for d in dependencies
+                      )
+                  if not (allowed_proxy or allowed_google):
                       cf.delete_change_set(StackName=stack, ChangeSetName=name)
                       raise RuntimeError("ABORT: Unrelated CloudFormation resource or property change")
-                  print("Allowed only non-replacing ProxyAny.Integration dependency on ApiLambda.Arn")
+                  print("Allowed only strictly checked non-replacing reference dependencies", flush=True)
               cf.execute_change_set(StackName=stack, ChangeSetName=name)
               cf.get_waiter("stack_update_complete").wait(
                   StackName=stack, WaiterConfig={"Delay": 10, "MaxAttempts": 120})
