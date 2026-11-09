@@ -206,6 +206,7 @@ jobs:
                           for d in dependencies
                       )
                   if not (allowed_proxy or allowed_google):
+                      print("REJECTED changeset:", stack, "extras=", [(c.get("LogicalResourceId"), c.get("Action"), c.get("ResourceType"), c.get("Replacement"), c.get("Details", [])) for c in extras], "allowed_proxy=", allowed_proxy, "allowed_google=", allowed_google, flush=True)
                       cf.delete_change_set(StackName=stack, ChangeSetName=name)
                       raise RuntimeError("ABORT: Unrelated CloudFormation resource or property change")
                   print("Allowed only strictly checked non-replacing reference dependencies", flush=True)
