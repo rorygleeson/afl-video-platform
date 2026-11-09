@@ -55,7 +55,7 @@ class ReplicatePromptTests(unittest.TestCase):
         self.assertIn("entire visible head", shared)
         self.assertIn("image 2 = the customer selfie", shared)
         self.assertIn("do not retain the template man's facial features", shared)
-        self.assertIn("selected playing guernsey style", shared)
+        self.assertIn("selected team\'s specified guernsey colours/pattern", shared)
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
                 prompt = namespace["build_image_prompt"](self.config, scene, "geelong").lower()
@@ -68,8 +68,8 @@ class ReplicatePromptTests(unittest.TestCase):
 
     def test_concise_scene_prompts_do_not_repeat_shared_identity_rules(self):
         shared = self.config["sharedPrompt"].lower()
-        for term in ("the only source for the central player's identity", "full head replacement",
-                     "hairstyle", "skin tone", "selected playing guernsey style"):
+        for term in ("the only source for the central player's identity", "entire visible head",
+                     "hairstyle", "skin tone", "selected team\'s specified guernsey colours/pattern"):
             self.assertIn(term, shared)
         self.assertLess(len(shared.split()), 650)
         for scene in self.config["scenes"]:
@@ -80,7 +80,7 @@ class ReplicatePromptTests(unittest.TestCase):
                 self.assertNotIn("only facial identity source", scene_text)
         self.assertIn("red afl football", self.config["scenes"][0]["promptInstructions"].lower())
         self.assertIn("not been dropped or kicked yet", self.config["scenes"][1]["promptInstructions"].lower())
-        self.assertIn("every visible celebrating teammate",
+        self.assertIn("both teammates",
                       self.config["scenes"][2]["promptInstructions"].lower())
 
     def test_missing_or_invalid_prompt_fails_before_generation(self):
