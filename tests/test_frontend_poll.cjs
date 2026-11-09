@@ -110,9 +110,11 @@ function setup(options = {}) {
         upload: {url: 'https://s3.example.com/upload', fields: {}},
       }; },
     };
-    if (url === 'https://s3.example.com/upload') return {ok: true};
+    if (url === 'https://s3.example.com/upload')
+      return options.failSelfieUpload ? {ok:false, status:500} : {ok:true};
     if (url.endsWith('/jobs') && opts.method === 'POST') return {
-      ok: true, async json() { return {job: {jobId: 'a'.repeat(32),
+      ok: !options.failJobCreation, status: options.failJobCreation ? 503 : 200,
+      async json() { return options.failJobCreation ? {error:'Job creation unavailable'} : {job: {jobId: 'a'.repeat(32),
                                                status: 'AWAITING_IMAGE_PIPELINE'}}; },
     };
     if (url.endsWith('/generate')) return {
@@ -269,6 +271,39 @@ test('video controls appear after three reference images without prompt toggles'
   const request = h.calls.find(c => c.url.endsWith('/jobs') && c.opts.method === 'POST');
   assert.equal(JSON.parse(request.opts.body).firstName, 'Alex');
   assert.equal(JSON.parse(request.opts.body).lastName, 'Tonelli');
+});
+
+test('one click automatically submits exactly one image generation and never shows a second button', async () => {
+  const h = setup();
+  assert.doesNotMatch(html, /id="generateScene1"|Generate 3 reference images with Replicate/);
+  await h.els.generate.listeners.click();
+  assert.equal(h.calls.filter(c => c.url === 'https://s3.example.com/upload').length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/jobs') && c.opts.method === 'POST').length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1);
+  assert.equal(h.els.generate.hidden, true);
+  assert.equal(h.els.generate.disabled, true);
+  assert.equal(h.getPolls(), 1);
+});
+
+test('rapid double click does not create another upload, job, or paid image request', async () => {
+  const h = setup();
+  const first = h.els.generate.listeners.click();
+  const second = h.els.generate.listeners.click();
+  await Promise.all([first, second]);
+  await h.flush();
+  assert.equal(h.calls.filter(c => c.url === 'https://s3.example.com/upload').length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/jobs') && c.opts.method === 'POST').length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1);
+});
+
+test('failed selfie upload stops before job creation or Replicate generation', async () => {
+  const h = setup({failSelfieUpload:true});
+  await h.els.generate.listeners.click();
+  assert.equal(h.calls.filter(c => c.url === 'https://s3.example.com/upload').length, 1);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/jobs') && c.opts.method === 'POST').length, 0);
+  assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 0);
+  assert.match(h.els.status.textContent, /upload failed/i);
+  assert.equal(h.els.generate.disabled, false);
 });
 
 test('first and last names are mandatory before S3 upload', async () => {
