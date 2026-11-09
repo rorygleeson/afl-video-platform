@@ -146,16 +146,45 @@ jobs:
                   ]
                   print("Change details:", change.get("LogicalResourceId"),
                         "replacement=", change.get("Replacement"), evidence, flush=True)
-              if len(changes) != 1 or summary[0] != ("Modify", allowed_logical_id, "AWS::Lambda::Function"):
+              # A code-only ApiLambda update can cause CloudFormation to
+              # re-evaluate ProxyAny.Integration because its URI references
+              # ApiLambda.Arn. This is safe only for this exact non-replacing
+              # dynamic dependency, never for an arbitrary API Gateway change.
+              lambda_changes = [c for c in changes if c.get("LogicalResourceId") == allowed_logical_id]
+              if len(lambda_changes) != 1 or lambda_changes[0].get("Action") != "Modify" or (
+                  lambda_changes[0].get("ResourceType") != "AWS::Lambda::Function"
+              ) or lambda_changes[0].get("Replacement") not in (False, "False"):
                   cf.delete_change_set(StackName=stack, ChangeSetName=name)
-                  raise RuntimeError("ABORT: Unexpected CloudFormation changes; no deployment attempted")
-              details = changes[0].get("Details", [])
-              if details and any(
-                  x.get("Target", {}).get("Name") not in ("Code", None)
-                  for x in details if x.get("Target", {}).get("Attribute") == "Properties"
+                  raise RuntimeError("ABORT: Expected non-replacing Lambda Code update missing")
+              details = lambda_changes[0].get("Details", [])
+              if not details or any(
+                  d.get("Target", {}).get("Attribute") != "Properties" or
+                  d.get("Target", {}).get("Name") != "Code" or
+                  d.get("Target", {}).get("RequiresRecreation") != "Never"
+                  for d in details
               ):
                   cf.delete_change_set(StackName=stack, ChangeSetName=name)
-                  raise RuntimeError("ABORT: Unexpected Lambda property change")
+                  raise RuntimeError("ABORT: Lambda update affects properties other than Code")
+              extras = [c for c in changes if c is not lambda_changes[0]]
+              if extras:
+                  allowed_proxy = (
+                      stack == "afl-app-dev-backend" and len(extras) == 1 and
+                      extras[0].get("Action") == "Modify" and
+                      extras[0].get("LogicalResourceId") == "ProxyAny" and
+                      extras[0].get("ResourceType") == "AWS::ApiGateway::Method" and
+                      extras[0].get("Replacement") in (False, "False") and
+                      len(extras[0].get("Details", [])) == 1 and
+                      extras[0]["Details"][0].get("Target", {}).get("Attribute") == "Properties" and
+                      extras[0]["Details"][0].get("Target", {}).get("Name") == "Integration" and
+                      extras[0]["Details"][0].get("Target", {}).get("RequiresRecreation") == "Never" and
+                      extras[0]["Details"][0].get("ChangeSource") == "ResourceAttribute" and
+                      extras[0]["Details"][0].get("CausingEntity") == "ApiLambda.Arn" and
+                      extras[0]["Details"][0].get("Evaluation") == "Dynamic"
+                  )
+                  if not allowed_proxy:
+                      cf.delete_change_set(StackName=stack, ChangeSetName=name)
+                      raise RuntimeError("ABORT: Unrelated CloudFormation resource or property change")
+                  print("Allowed only non-replacing ProxyAny.Integration dependency on ApiLambda.Arn")
               cf.execute_change_set(StackName=stack, ChangeSetName=name)
               cf.get_waiter("stack_update_complete").wait(
                   StackName=stack, WaiterConfig={"Delay": 10, "MaxAttempts": 120})
