@@ -1,17 +1,17 @@
-# AFL Grand Final — Scene 2: MATCH-WINNING KICK
-# Dynamic values: $fullName, $teamName, $guernsey, $commentary.
+# AFL Grand Final — Scene 2: THE KICK AFTER THE SIREN
+# Variables: $fullName, $teamName, $guernsey, $commentary
 
-FORMAT: 8-second vertical 9:16 photorealistic live AFL broadcast at full real-time match speed. Animate the supplied PERSONALISED Scene 2 starting image.
+FORMAT: 8 seconds, vertical 9:16, photorealistic live Australian rules football broadcast. Normal game speed and realistic AFL ball physics. The supplied PERSONALISED Scene 2 image is the exact opening frame; this is a NEW broadcast camera angle, not a continuation of Scene 1's camera.
 
-OPENING: $fullName runs forward holding ONE red oval AFL football at chest height in BOTH hands. He wears $teamName's $guernsey. Preserve his face and COMPLETE hairstyle, the floodlit NIGHT stadium, starting pose, camera direction and trailing defender. NO goalposts appear in the opening frame. The defender and any other opponents wear ESSENDON Bombers BLACK with a BOLD RED DIAGONAL SASH; no third team.
+FIELD GEOGRAPHY: $fullName enters in the RIGHT foreground, running diagonally toward the opening camera with one red AFL football held low in both hands; he wears $teamName's guernsey ($guernsey). His face looks toward the attacking goals / opening camera. On the LEFT in the FAR background are FOUR posts belonging to the OPPOSITE end of the oval, not the scoring target. A couple of distant, defocused Essendon players in BLACK with a RED diagonal sash trail the runner. The ATTACKING goals are beyond/behind the opening camera, OUTSIDE the starting frame. Never treat the distant background posts as the scoring target.
 
-ACTION:
-0–2s: Carry full sprinting momentum into ONE authentic AFL running drop punt at about 2 seconds. The football drops cleanly from both hands onto the boot, is kicked forward once, then travels away in the actual direction of the kick. No pause or stationary set shot.
-2–3.5s: The broadcast camera pans naturally in the ball's direction and widens to establish the attacking goal end. The player recedes or leaves frame.
-3.5–6.5s: Hold a wide, field-side broadcast view. The airborne ball flies FROM THE PLAYING FIELD TOWARDS the attacking goals, becoming progressively smaller as it travels. It never bounces, lands short, reverses direction, changes size unnaturally or approaches from behind the posts.
-Around 6s: The ball crosses the goal line IN THE AIR between the TWO TALL CENTRAL GOALPOSTS for six points. Four correctly aligned AFL posts: SHORT / TALL / TALL / SHORT. Never through a side gap.
-6.5–8s: Crowd erupts and final siren sounds only after the goal. Stay on the wide view.
+0.0–1.4s: Continue the run from the supplied image. Take fast final steps for a running drop punt, not a stationary set shot. Face remains visible as he approaches.
+1.4–1.95s: ONE clean AFL running drop punt: release the ball from both hands onto the boot and strike it ONCE at about 1.9 seconds, while still moving. The ball launches forward TOWARD and past the opening camera, toward the unseen attacking goals. Commentary says "He kicks" on foot-to-ball contact.
+1.95–2.4s: The final siren sounds just AFTER contact, confirming the kick was taken before time expired. Make ONE clean, conventional TV broadcast cut to a new wide camera BEHIND and slightly to the side of the kicker, looking downfield toward the ATTACKING goals. The same single ball is already flying AWAY from this new camera.
+2.4–5.8s: Track the high, fast, realistic ball flight with a gentle pan/tilt and widening field-of-play view. The ball gets steadily SMALLER with distance, not larger; it must remain just distinguishable. Reveal FOUR correctly aligned white posts at the attacking end: SHORT outer behind post, TALL central goalpost, TALL central goalpost, SHORT outer behind post. Outer posts approximately three-quarters the height of central posts, with even spacing, no crossbar. A packed grandstand is behind those posts.
+5.8–6.3s: The ball crosses the goal line ON THE FULL, untouched, precisely BETWEEN THE TWO TALL CENTRAL POSTS. The Australian commentator delivers "IT'S A GOAL!" at the crossing, NEVER before. This scores SIX POINTS even though the siren has already sounded.
+6.3–8.0s: Stay with the wide broadcast camera. The ball continues away beyond the goal line, shrinking into the distance toward the crowd behind the posts and leaving sight. Huge crowd roar. Do not show a close-up spectator catch or a second scoring event.
 
-CAMERA AND PHYSICS: One coherent direction of travel and realistic ball trajectory. Do not orbit the ball or create a giant close-up. Avoid multiple kicks, duplicate balls, randomly positioned goals or impossible changes in stadium geography.
+AUDIO: Same Australian AFL commentator as Scene 1, speaking exactly "$commentary" ONCE: short "He kicks" at contact, a pause for ball flight, explosive "IT'S A GOAL!" at scoring. One final siren just after the kick, not after the goal. Authentic boot impact and crowd ambience. No other commentary, music or subtitles.
 
-AUDIO: Realistic kick contact, rising stadium crowd, one Australian commentator saying exactly "$commentary" ONCE. Deliver the scoring declaration when the ball crosses the line, not before. No music, subtitles, fireworks or confetti.
+HARD CONTINUITY: Preserve the customer's recognisable face, complete hairstyle, age and selected team strip in the opening shot. ONE football, ONE kick and ONE goal. Preserve the two different ends of the field. No backward or bouncing ball, no switch of direction, no instant teleport to posts, no extra goalposts, no rugby crossbar, no third camera angle, no replay, no oversized ball and no slow motion.
