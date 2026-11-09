@@ -81,139 +81,102 @@ jobs:
       - name: Install CloudFormation inspection dependency
         run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
 
-      - name: CloudFormation changesets — reject every change except Lambda Code
+      - name: Resolve existing Lambda IDs without executing CloudFormation changes
         shell: bash
         env:
-          ARTIFACT_BUCKET: afl-video-bootstrap-artifactbucket-xiuriidgyft4
           CFN_ROLE: arn:aws:iam::134387458447:role/afl-video-cfn-execution-role
         run: |
+          set -euo pipefail
           python3 - <<'PY'
-          import boto3, os, time
-          from botocore.exceptions import ClientError, WaiterError
+          import boto3, json, os
+          from botocore.exceptions import WaiterError
           cf = boto3.client("cloudformation", region_name="ap-southeast-2")
           sha = os.environ["GITHUB_SHA"]
-          # Fixed stack name verified against the existing Stage 5A deployment
-          # workflow. The GitHub role intentionally lacks DescribeStackResources.
-          google_stack = "afl-app-dev-google-video"
           plans = [
               ("afl-app-dev-backend", "LambdaArtifactKey", f"api-diagnostics/{sha}.zip", "ApiLambda"),
-              (google_stack, "GoogleWorkerArtifactKey", f"google-diagnostics/{sha}.zip", "GoogleWorkerLambda"),
+              ("afl-app-dev-google-video", "GoogleWorkerArtifactKey", f"google-diagnostics/{sha}.zip", "GoogleWorkerLambda"),
           ]
-          # Prepare and execute each update only if the changeset affects the
-          # expected Lambda code resource and absolutely nothing else.
-          for stack, changed_parameter, new_value, allowed_logical_id in plans:
+          resolved = []
+          for stack, parameter, key, logical_id in plans:
               existing = cf.describe_stacks(StackName=stack)["Stacks"][0]
-              params = []
-              found = False
-              for param in existing["Parameters"]:
-                  k = param["ParameterKey"]
-                  if k == changed_parameter:
-                      params.append({"ParameterKey": k, "ParameterValue": new_value})
-                      found = True
-                  else:
-                      params.append({"ParameterKey": k, "UsePreviousValue": True})
-              if not found:
-                  raise RuntimeError(f"{stack} has no {changed_parameter} parameter")
-              name = "afl-diagnostics-" + sha[:12]
+              if existing["StackStatus"] != "UPDATE_COMPLETE":
+                  raise RuntimeError(f"{stack} not in UPDATE_COMPLETE; refusing code update")
+              params = [
+                  {"ParameterKey": p["ParameterKey"], **(
+                      {"ParameterValue": key} if p["ParameterKey"] == parameter
+                      else {"UsePreviousValue": True}
+                  )}
+                  for p in existing["Parameters"]
+              ]
+              if not any(p["ParameterKey"] == parameter for p in existing["Parameters"]):
+                  raise RuntimeError(f"Missing {parameter} in {stack}")
+              name = "afl-diagnostics-resolve-" + sha[:12]
               cf.create_change_set(
                   StackName=stack, ChangeSetName=name, ChangeSetType="UPDATE",
-                  UsePreviousTemplate=True, Parameters=params, RoleARN=os.environ["CFN_ROLE"],
-                  Capabilities=["CAPABILITY_NAMED_IAM"])
+                  UsePreviousTemplate=True, Parameters=params,
+                  RoleARN=os.environ["CFN_ROLE"], Capabilities=["CAPABILITY_NAMED_IAM"])
               try:
-                  cf.get_waiter("change_set_create_complete").wait(
-                      StackName=stack, ChangeSetName=name,
-                      WaiterConfig={"Delay": 5, "MaxAttempts": 48})
-              except WaiterError:
-                  d = cf.describe_change_set(StackName=stack, ChangeSetName=name)
-                  raise RuntimeError(f"Cannot safely deploy {stack}: {d['Status']} / {d.get('StatusReason','')}")
-              d = cf.describe_change_set(StackName=stack, ChangeSetName=name)
-              changes = [x["ResourceChange"] for x in d["Changes"] if "ResourceChange" in x]
-              summary = [(x.get("Action"), x.get("LogicalResourceId"), x.get("ResourceType")) for x in changes]
-              print(f"{stack} planned changes: {summary}")
-              # Inspect precisely which attributes CloudFormation predicts will
-              # change, without logging provider credentials or template values.
-              for change in changes:
-                  evidence = [
-                      {
-                          "attribute": d.get("Target", {}).get("Attribute"),
-                          "name": d.get("Target", {}).get("Name"),
-                          "requires_recreation": d.get("Target", {}).get("RequiresRecreation"),
-                          "source": d.get("ChangeSource"),
-                          "causing_entity": d.get("CausingEntity"),
-                          "evaluation": d.get("Evaluation"),
-                      }
-                      for d in change.get("Details", [])
-                  ]
-                  print("Change details:", change.get("LogicalResourceId"),
-                        "replacement=", change.get("Replacement"), evidence, flush=True)
-              # A code-only ApiLambda update can cause CloudFormation to
-              # re-evaluate ProxyAny.Integration because its URI references
-              # ApiLambda.Arn. This is safe only for this exact non-replacing
-              # dynamic dependency, never for an arbitrary API Gateway change.
-              lambda_changes = [c for c in changes if c.get("LogicalResourceId") == allowed_logical_id]
-              if len(lambda_changes) != 1 or lambda_changes[0].get("Action") != "Modify" or (
-                  lambda_changes[0].get("ResourceType") != "AWS::Lambda::Function"
-              ) or lambda_changes[0].get("Replacement") not in (False, "False"):
+                  try:
+                      cf.get_waiter("change_set_create_complete").wait(
+                          StackName=stack, ChangeSetName=name,
+                          WaiterConfig={"Delay": 5, "MaxAttempts": 48})
+                  except WaiterError:
+                      detail = cf.describe_change_set(StackName=stack, ChangeSetName=name)
+                      raise RuntimeError(f"Cannot resolve {stack}: {detail['Status']} / {detail.get('StatusReason','')}")
+                  detail = cf.describe_change_set(StackName=stack, ChangeSetName=name)
+                  if detail.get("NextToken"):
+                      raise RuntimeError("Paginated changeset; cannot safely resolve Lambda")
+                  matches = [c["ResourceChange"] for c in detail["Changes"]
+                             if c.get("ResourceChange", {}).get("LogicalResourceId") == logical_id]
+                  if len(matches) != 1:
+                      raise RuntimeError(f"Expected exactly one {logical_id} change in {stack}")
+                  change = matches[0]
+                  if (change.get("Action") != "Modify"
+                      or change.get("ResourceType") != "AWS::Lambda::Function"
+                      or change.get("Replacement") not in (False, "False")
+                      or not change.get("PhysicalResourceId")):
+                      raise RuntimeError(f"Unexpected Lambda change for {logical_id}")
+                  details = change.get("Details", [])
+                  if not details or any(d.get("Target", {}).get("Attribute") != "Properties"
+                                        or d.get("Target", {}).get("Name") != "Code"
+                                        or d.get("Target", {}).get("RequiresRecreation") != "Never"
+                                        for d in details):
+                      raise RuntimeError(f"Unexpected Lambda properties for {logical_id}")
+                  resolved.append({"function": change["PhysicalResourceId"], "key": key})
+              finally:
                   cf.delete_change_set(StackName=stack, ChangeSetName=name)
-                  raise RuntimeError("ABORT: Expected non-replacing Lambda Code update missing")
-              details = lambda_changes[0].get("Details", [])
-              if not details or any(
-                  d.get("Target", {}).get("Attribute") != "Properties" or
-                  d.get("Target", {}).get("Name") != "Code" or
-                  d.get("Target", {}).get("RequiresRecreation") != "Never"
-                  for d in details
-              ):
-                  cf.delete_change_set(StackName=stack, ChangeSetName=name)
-                  raise RuntimeError("ABORT: Lambda update affects properties other than Code")
-              extras = [c for c in changes if c is not lambda_changes[0]]
-              if extras:
-                  allowed_proxy = (
-                      stack == "afl-app-dev-backend" and len(extras) == 1 and
-                      extras[0].get("Action") == "Modify" and
-                      extras[0].get("LogicalResourceId") == "ProxyAny" and
-                      extras[0].get("ResourceType") == "AWS::ApiGateway::Method" and
-                      extras[0].get("Replacement") in (False, "False") and
-                      len(extras[0].get("Details", [])) == 1 and
-                      extras[0]["Details"][0].get("Target", {}).get("Attribute") == "Properties" and
-                      extras[0]["Details"][0].get("Target", {}).get("Name") == "Integration" and
-                      extras[0]["Details"][0].get("Target", {}).get("RequiresRecreation") == "Never" and
-                      extras[0]["Details"][0].get("ChangeSource") == "ResourceAttribute" and
-                      extras[0]["Details"][0].get("CausingEntity") == "ApiLambda.Arn" and
-                      extras[0]["Details"][0].get("Evaluation") == "Dynamic"
-                  )
-                  allowed_google = (
-                      stack == "afl-app-dev-google-video" and len(extras) == 1 and
-                      extras[0].get("Action") == "Modify" and
-                      extras[0].get("LogicalResourceId") == "GoogleStateMachine" and
-                      extras[0].get("ResourceType") == "AWS::StepFunctions::StateMachine" and
-                      extras[0].get("Replacement") in (False, "False")
-                  )
-                  if allowed_google:
-                      # GoogleStateMachine.DefinitionString dynamically embeds the
-                      # worker's ARN; RoleArn also depends on an unchanged IAM
-                      # resource. Only those dynamic dependencies are permitted.
-                      dependencies = extras[0].get("Details", [])
-                      allowed_paths = {
-                          ("DefinitionString", "GoogleWorkerLambda.Arn"),
-                          ("RoleArn", "GoogleStateMachineRole.Arn"),
-                      }
-                      allowed_google = bool(dependencies) and all(
-                          d.get("Target", {}).get("Attribute") == "Properties" and
-                          d.get("Target", {}).get("RequiresRecreation") == "Never" and
-                          d.get("ChangeSource") == "ResourceAttribute" and
-                          d.get("Evaluation") == "Dynamic" and
-                          (d.get("Target", {}).get("Name"), d.get("CausingEntity")) in allowed_paths
-                          for d in dependencies
-                      )
-                  if not (allowed_proxy or allowed_google):
-                      print("REJECTED changeset:", stack, "extras=", [(c.get("LogicalResourceId"), c.get("Action"), c.get("ResourceType"), c.get("Replacement"), c.get("Details", [])) for c in extras], "allowed_proxy=", allowed_proxy, "allowed_google=", allowed_google, flush=True)
-                      cf.delete_change_set(StackName=stack, ChangeSetName=name)
-                      raise RuntimeError("ABORT: Unrelated CloudFormation resource or property change")
-                  print("Allowed only strictly checked non-replacing reference dependencies", flush=True)
-              cf.execute_change_set(StackName=stack, ChangeSetName=name)
-              cf.get_waiter("stack_update_complete").wait(
-                  StackName=stack, WaiterConfig={"Delay": 10, "MaxAttempts": 120})
-              print(f"Verified Code-only update for {stack}")
+          with open("/tmp/diagnostic-lambdas.json", "w") as file:
+              json.dump(resolved, file)
+          print("Resolved two existing Lambda functions; no CloudFormation changes executed.")
+          PY
+
+      - name: Update only existing Lambda code and verify deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import boto3, json
+          s3_bucket = "afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+          lam = boto3.client("lambda", region_name="ap-southeast-2")
+          with open("/tmp/diagnostic-lambdas.json") as file:
+              targets = json.load(file)
+          if len(targets) != 2 or len({x["function"] for x in targets}) != 2:
+              raise RuntimeError("Expected two distinct existing Lambdas")
+          # Code-only API call: never mutate Lambda configuration, IAM, or Step Functions.
+          for target in targets:
+              function = target["function"]
+              before = lam.get_function_configuration(FunctionName=function)
+              if before.get("State") != "Active" or before.get("LastUpdateStatus") != "Successful":
+                  raise RuntimeError(f"{function} is not ready for a code-only update")
+              response = lam.update_function_code(
+                  FunctionName=function, S3Bucket=s3_bucket, S3Key=target["key"],
+                  RevisionId=before["RevisionId"])
+              lam.get_waiter("function_updated").wait(
+                  FunctionName=function, WaiterConfig={"Delay": 5, "MaxAttempts": 60})
+              after = lam.get_function_configuration(FunctionName=function)
+              if after.get("LastUpdateStatus") != "Successful" or after.get("CodeSha256") != response.get("CodeSha256"):
+                  raise RuntimeError(f"{function} code update verification failed")
+              print(f"Verified code-only Lambda update: {function}")
           PY
 
       - name: Publish only frontend index and invalidate its cache
