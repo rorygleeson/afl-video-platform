@@ -158,6 +158,7 @@
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
   let previewUrl, currentJobId, currentPhase = 'Initialising';
   let uploadInProgress = false;
+  let uploadSubmissionUncertain = false;
   const POLL_INTERVAL_MS = 5000;
   const POLL_ERROR_BACKOFF_MS = 15000;
   const TERMINAL_STATUSES = new Set(['COMPLETED', 'PARTIAL_SUCCESS', 'FAILED']);
@@ -490,10 +491,16 @@
   });
 
   function invalidateJobSelection() {
+    if (uploadInProgress) return;
+    if (uploadSubmissionUncertain) {
+      uploadSubmissionUncertain = false;
+      generate.disabled = !apiBaseUrl;
+    }
     if (currentJobId) {
       stopPolling();
       currentJobId = null;
       generate.hidden = false;
+      generate.disabled = !apiBaseUrl;
       refresh.hidden = true;
         resetVideoUi();
         results.replaceChildren();
@@ -806,7 +813,7 @@
   generate.addEventListener('click', async () => {
     // Single-flight guard protects against rapid double taps, including
     // programmatic event dispatch while the button is disabled.
-    if (uploadInProgress || currentJobId) return;
+    if (uploadInProgress || uploadSubmissionUncertain || currentJobId) return;
     const file = input.files[0];
     if (!apiBaseUrl) return;
     if (!document.getElementById('key').value.trim()) {
@@ -826,7 +833,11 @@
     }
     uploadInProgress = true;
     generate.disabled = true;
+    const formFields = ['key', 'scenario', 'team', 'firstName', 'lastName', 'selfie']
+      .map(id => document.getElementById(id));
+    for (const field of formFields) field.disabled = true;
     let jobCreated = false;
+    let jobCreateRequestSent = false;
     try {
       // No S3 upload or paid generation before authentication succeeds.
       setPhase('Connecting to API Gateway');
@@ -847,6 +858,7 @@
       const uploaded = await fetch(signed.upload.url, {method: 'POST', body: form});
       if (!uploaded.ok) throw new Error('S3 upload failed: ' + uploaded.status);
       setPhase('Creating DynamoDB job through API Gateway');
+      jobCreateRequestSent = true;
       const created = await api('/jobs', {
         method: 'POST',
         headers: {'Idempotency-Key': crypto.randomUUID()},
@@ -862,6 +874,7 @@
         throw new Error('Job creation response missing a valid job ID. Check status before trying again.');
       }
       // Only one confirmed job can be selected. Do not enable a second upload.
+      jobCreateRequestSent = false;
       jobCreated = true;
       stopPolling();
       resetVideoUi();
@@ -888,16 +901,18 @@
       // Existing three scene cards, status polling, images and video gate.
       startPolling();
     } catch (error) {
+      uploadSubmissionUncertain = jobCreateRequestSent;
       apiConnectionStatus.textContent = /API Gateway refused access/.test(error.message)
         ? 'API access denied. Check x-api-key — no paid request was made.'
         : 'Selfie upload or job creation did not finish successfully.';
       showStatus(describeError(error, currentPhase) +
-        '\\nReference image generation was not started.');
+        (uploadSubmissionUncertain
+          ? '\nJob creation response is uncertain. Do not submit again until status is checked.'
+          : '\nReference image generation was not started.'));
     } finally {
       uploadInProgress = false;
-      // Do not re-enable a potentially ambiguous job creation submission
-      // in the same view; explicit user edits can recover an upload-stage error.
-      generate.disabled = !apiBaseUrl || jobCreated || !!currentJobId;
+      for (const field of formFields) field.disabled = false;
+      generate.disabled = !apiBaseUrl || jobCreated || !!currentJobId || uploadSubmissionUncertain;
     }
   });
 </script>
