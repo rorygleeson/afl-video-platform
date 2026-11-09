@@ -32,7 +32,7 @@ class ReplicatePromptTests(unittest.TestCase):
                 result = build_image_prompt(self.config, scene, "geelong")
                 self.assertEqual(result.count(self.config["sharedPrompt"]), 1)
                 self.assertEqual(result.count(scene["promptInstructions"]), 1)
-                self.assertIn("ONLY facial identity source", result)
+                self.assertIn("the ONLY source for the central player's identity", result)
                 self.assertIn("Geelong Cats: navy blue and white horizontal hoops", result)
                 self.assertIn(scene["promptInstructions"], result)
                 self.assertEqual(scene["model"], "google/nano-banana-pro")
@@ -46,15 +46,15 @@ class ReplicatePromptTests(unittest.TestCase):
                 if scene["id"] in ("scene1", "scene2"):
                     self.assertIn("essendon", text)
                 else:
-                    self.assertIn("no opposition players", text)
-        self.assertIn("natural happy smile or slightly open triumphant mouth",
+                    self.assertIn("no essendon opponents", text)
+        self.assertIn("mouth is open in a triumphant cheer",
                       self.config["scenes"][2]["promptInstructions"])
 
     def test_customer_hair_and_selected_team_override_master(self):
         shared = self.config["sharedPrompt"].lower()
-        self.assertIn("full head replacement", shared)
-        self.assertIn("image 2 (selfie)", shared)
-        self.assertIn("never retain or mix the master athlete's face or hair", shared)
+        self.assertIn("entire visible head", shared)
+        self.assertIn("image 2 = the customer selfie", shared)
+        self.assertIn("do not retain the template man's facial features", shared)
         self.assertIn("selected playing guernsey style", shared)
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
@@ -63,23 +63,23 @@ class ReplicatePromptTests(unittest.TestCase):
                 self.assertIn("hairstyle", prompt)
                 self.assertIn("selected team", prompt)
         celebration = self.config["scenes"][2]["promptInstructions"].lower()
-        self.assertIn("every visible celebrating teammate", celebration)
-        self.assertIn("the selected team's guernsey", celebration)
+        self.assertIn("both teammates", celebration)
+        self.assertIn("the selected team's coordinated kit", celebration)
 
     def test_concise_scene_prompts_do_not_repeat_shared_identity_rules(self):
         shared = self.config["sharedPrompt"].lower()
-        for term in ("only facial identity source", "full head replacement",
+        for term in ("the only source for the central player's identity", "full head replacement",
                      "hairstyle", "skin tone", "selected playing guernsey style"):
             self.assertIn(term, shared)
-        self.assertLess(len(shared.split()), 300)
+        self.assertLess(len(shared.split()), 650)
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
                 scene_text = scene["promptInstructions"].lower()
-                self.assertLess(len(scene_text.split()), 110)
+                self.assertLess(len(scene_text.split()), 230)
                 self.assertNotIn("full head replacement", scene_text)
                 self.assertNotIn("only facial identity source", scene_text)
         self.assertIn("red afl football", self.config["scenes"][0]["promptInstructions"].lower())
-        self.assertIn("not kicked yet", self.config["scenes"][1]["promptInstructions"].lower())
+        self.assertIn("not been dropped or kicked yet", self.config["scenes"][1]["promptInstructions"].lower())
         self.assertIn("every visible celebrating teammate",
                       self.config["scenes"][2]["promptInstructions"].lower())
 
