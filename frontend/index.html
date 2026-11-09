@@ -81,7 +81,6 @@
   <button id="generate" type="button" disabled>Upload selfie &amp; create job</button>
   <button id="generateScene1" type="button" hidden>Generate 3 reference images with Replicate (paid API)</button>
   <button id="refresh" type="button" hidden aria-hidden="true" tabindex="-1" style="display:none">Refresh job status</button>
-  <button id="resumeLast" type="button" hidden>Resume your last job</button>
   <section id="jobProgressSection">
     <h2>Reference images</h2>
     <p id="status" role="status">Loading backend configuration…</p>
@@ -149,7 +148,6 @@
   const testGoogle = document.getElementById('testGoogle');
   const googleStatus = document.getElementById('googleStatus');
   const refresh = document.getElementById('refresh');
-  const resumeLast = document.getElementById('resumeLast');
   const generateScene1 = document.getElementById('generateScene1');
   const status = document.getElementById('status');
   const results = document.getElementById('results');
@@ -166,8 +164,6 @@
   let refreshInFlight = false;
   let pollingEnabled = false;
   let pollErrors = 0;
-  const savedJob = window.sessionStorage?.getItem('aflLastJobId') || '';
-  if (/^[0-9a-f]{32}$/.test(savedJob)) resumeLast.hidden = false;
   let videoTimer = null;
   let videoBusy = false;
   let videoRefreshRequested = false;
@@ -498,8 +494,6 @@
       generate.hidden = false;
       generateScene1.hidden = true;
       refresh.hidden = true;
-      window.sessionStorage?.removeItem('aflLastJobId');
-      resumeLast.hidden = true;
         resetVideoUi();
         results.replaceChildren();
       showStatus('Selection changed. Upload selfie and create a new job before generating.');
@@ -706,32 +700,6 @@
     }
   });
 
-  resumeLast.addEventListener('click', async () => {
-    const jobId = window.sessionStorage?.getItem('aflLastJobId') || '';
-    if (!/^[0-9a-f]{32}$/.test(jobId)) {
-      resumeLast.hidden = true;
-      return;
-    }
-    resumeLast.disabled = true;
-    try {
-      const found = await api('/jobs/' + jobId);
-      if (!found.job || found.job.jobId !== jobId) throw new Error('Saved job is unavailable.');
-      currentJobId = jobId;
-      generate.hidden = true;
-        videoTestSection.hidden = true;
-      refresh.hidden = true;
-      resumeLast.hidden = true;
-      results.replaceChildren();
-      showStatus('Restoring previously created job…');
-      void refreshJob();
-    } catch (error) {
-      generate.hidden = false;
-      showStatus('Could not resume job: ' + error.message);
-    } finally {
-      resumeLast.disabled = false;
-    }
-  });
-
   refresh.addEventListener('click', () => {
     void refreshJob();
     void refreshVideos();
@@ -919,8 +887,6 @@
       generateScene1.disabled = false;
       results.replaceChildren();
       generate.hidden = true;
-      window.sessionStorage?.setItem('aflLastJobId', currentJobId);
-      resumeLast.hidden = true;
       refresh.hidden = true;
         videoTestSection.hidden = true;
       generateScene1.hidden = false;
