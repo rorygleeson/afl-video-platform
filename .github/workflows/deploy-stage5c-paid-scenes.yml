@@ -27,7 +27,7 @@ jobs:
           assert config['videoGenerationEnabled'] is True
           assert 'videoConcurrency' not in config and config['maxPaidScenesPerRequest']==1
           assert [(s['id'],s['durationSeconds']) for s in config['scenes']] == [
-              ('scene1',5),('scene2',8),('scene3',10)]
+              ('scene1',4),('scene2',8),('scene3',5)]
           print('Paid scene configuration validated. No video submitted.')
           PY
       - name: Assume existing GitHub OIDC AWS deployment role
