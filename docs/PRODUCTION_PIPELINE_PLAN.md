@@ -130,6 +130,17 @@ Four STANDARD state machines listed: `afl-app-dev-assembly`, `afl-app-dev-google
 
 **Outstanding hard gate:** Preserve and verify the **live Google worker code** (SHA256 `RKx1wcvmxcE3Sx7kzlxbTI3NhBlNlt/Ydpy6J4ZOpmI=`) before any Google stack deployment. The stack's current S3 artifact differs; do not overwrite the live worker with the recorded artifact. Identify which direct diagnostics release created the current live version, capture an immutable recoverable copy, and reconcile IaC via a reviewed change set. Inspect dependencies before retiring mock/pilot resources. Step 1 inventory substantially complete; Step 2 immutable rollback baseline **not complete**.
 
+## 1.7 Live Google package identified — 2026-11-10
+
+**Evidence:** [Successful read-only provenance run #2](https://github.com/rorygleeson/afl-video-platform/actions/runs/42753399499), job 129622051966. Compared 59 existing ZIP objects against live Google Lambda SHA256. Exactly one matched:
+
+- Live Google function: `afl-app-dev-google-omni-worker`
+- **Matching S3 artifact:** `s3://afl-video-bootstrap-artifactbucket-xiuriidgyft4/google-diagnostics/956c2a9faa7efb1f39ed1a8ecc376510ffb1ec34.zip` (8,287,174 bytes)
+- Live Lambda SHA256: `RKx1wcvmxcE3Sx7kzlxbTI3NhBlNlt/Ydpy6J4ZOpmI=` (exact ZIP digest match)
+- **Currently recorded CFN parameter:** `GoogleWorkerArtifactKey=google-video/bae89b65942bfabd9fac270af811e01e08e429ea.zip` (mismatch)
+
+This strongly supports direct diagnostics code deployment as the source of drift. **The correct live ZIP already exists in S3, but object immutability, retention and separate recovery copy have not yet been verified.** No automatic CloudFormation correction or Lambda redeploy authorized. Next: inspect template, permissions, retention, and generate a reviewed Google-stack change set that points to the verified live ZIP, with a hard gate against other resource changes.
+
 ## 2. Target release architecture
 
 ```text
