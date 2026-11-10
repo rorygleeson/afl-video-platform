@@ -46,8 +46,10 @@ jobs:
           run=json.loads(result.stdout)
           if run.get("path") != ".github/workflows/release.yml" or run.get("head_branch") != "main" or run.get("event") != "workflow_dispatch":
               raise SystemExit("Evidence must originate from a manually dispatched main-branch release workflow")
-          if run.get("status") != "completed":
-              raise SystemExit("Release workflow has not finished")
+          if run.get("status") != "completed" or run.get("conclusion") != "success":
+              raise SystemExit("Release workflow must have completed successfully")
+          if run.get("inputs", {}).get("change_set_preview") != "deploy_backend":
+              raise SystemExit("Rollback evidence must come from an actual deploy_backend run")
           print("PASS: release evidence originates from expected workflow and branch")
           PY
       - name: Download saved rollback evidence from selected release
