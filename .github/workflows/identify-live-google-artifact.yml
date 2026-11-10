@@ -53,10 +53,10 @@ jobs:
           with open("google-artifact-provenance.json","w") as f: json.dump(report,f,indent=2)
           print(json.dumps(report,indent=2))
           with open(__import__("os").environ["GITHUB_STEP_SUMMARY"],"a") as f:
-              f.write("## Live Google artifact provenance\n\n")
-              f.write(f"Candidate ZIPs checked: {inspected}  \n")
-              f.write(f"Matching existing artifacts: {len(matches)}  \n")
-              for x in matches: f.write(f"- \`{x['s3_key']}\`\n")
+              print("## Live Google artifact provenance",file=f)
+              print("Candidate ZIPs checked:",inspected,file=f)
+              print("Matching existing artifacts:",len(matches),file=f)
+              for x in matches: print("- "+x["s3_key"],file=f)
           if not matches: raise SystemExit("No matching existing S3 ZIP; do not redeploy. A separate GetFunction backup permission may be required.")
           PY
       - name: Retain provenance report even on mismatch
