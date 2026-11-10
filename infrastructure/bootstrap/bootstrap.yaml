@@ -197,6 +197,11 @@ Resources:
                 Action:
                   - states:ListStateMachines
                 Resource: '*'
+              - Sid: AuditApplicationStateMachineDefinitions
+                Effect: Allow
+                Action:
+                  - states:DescribeStateMachine
+                Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-*'
               - Sid: ValidateTemplate
                 Effect: Allow
                 Action: cloudformation:ValidateTemplate
