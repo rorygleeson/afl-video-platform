@@ -30,6 +30,11 @@ jobs:
           else:
               source=str(template)
           # Never publish the complete deployed template, which may contain sensitive values.
+          import hashlib
+          repo_source=open("infrastructure/app/google-video.yaml").read()
+          exact_source_match=source.rstrip()==repo_source.rstrip()
+          deployed_sha256=hashlib.sha256(source.encode()).hexdigest()
+          repo_sha256=hashlib.sha256(repo_source.encode()).hexdigest()
           logical_ids=["GoogleWorkerLambda","DeveloperPreflightInvokePermission","GoogleStateMachineRole","GoogleStateMachine"]
           references={}
           for name in logical_ids:
@@ -37,7 +42,7 @@ jobs:
               references[name]={"deployed_mentions":source.count(name),"repo_mentions":open("infrastructure/app/google-video.yaml").read().count(name)}
           live=cf.describe_stacks(StackName=stack)["Stacks"][0]
           parameters={x["ParameterKey"]:x["ParameterValue"] for x in live.get("Parameters",[])}
-          result={"stack":stack,"status":live["StackStatus"],"template_stage":"Original","template_format":"dict" if isinstance(template,dict) else "text","logical_references":references,"google_artifact_parameter":parameters.get("GoogleWorkerArtifactKey"),"explanation":"CloudFormation preview reported transitive changes to Lambda invoke permission, state machine role, and state machine definition; existing change set must NOT execute."}
+          result={"stack":stack,"status":live["StackStatus"],"template_stage":"Original","template_format":"dict" if isinstance(template,dict) else "text","exact_source_match":exact_source_match,"deployed_sha256":deployed_sha256,"repo_sha256":repo_sha256,"logical_references":references,"google_artifact_parameter":parameters.get("GoogleWorkerArtifactKey"),"explanation":"CloudFormation preview reported transitive changes to Lambda invoke permission, state machine role, and state machine definition; existing change set must NOT execute."}
           print(json.dumps(result,indent=2))
           with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
               print("## Google dependency inspection (read-only)",file=f)
