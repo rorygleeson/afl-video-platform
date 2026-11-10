@@ -34,12 +34,19 @@ def rollback_manifest(baseline, plan):
             raise ValueError(f"Missing stack baseline: {label}")
         if original["parameters"] != entry["current_parameters"]:
             raise ValueError(f"Baseline changed: {label}")
+        template = Path(original["deployed_template_path"])
+        if not template.is_file():
+            raise ValueError(f"Missing deployed template: {label}")
+        if hashlib.sha256(template.read_bytes()).hexdigest() != original["deployed_template_sha256"]:
+            raise ValueError(f"Deployed template digest mismatch: {label}")
         result["stacks"][label] = {
             "stack_id": original["stack_id"],
             "name": original["name"],
             "previous_parameters": original["parameters"],
             "previous_resources": original["resources"],
-            "template_body_saved": False,
+            "template_body_saved": True,
+            "template_sha256": original["deployed_template_sha256"],
+            "template_path": original["deployed_template_path"],
         }
     return result
 
