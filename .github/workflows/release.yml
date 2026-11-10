@@ -16,7 +16,19 @@ jobs:
       - name: Validate ownership inventory
         run: python3 scripts/check_deployment_ownership.py
       - name: Verify source scripts compile
-        run: python3 -m py_compile scripts/check_deployment_ownership.py scripts/capture_release_baseline.py
+        run: python3 -m py_compile scripts/check_deployment_ownership.py scripts/capture_release_baseline.py scripts/build_release_artifacts.py
+      - name: Build deterministic release artifacts
+        run: |
+          python3 scripts/build_release_artifacts.py
+          cp dist/release/manifest.json /tmp/release-manifest.json
+          python3 scripts/build_release_artifacts.py
+          cmp /tmp/release-manifest.json dist/release/manifest.json
+      - name: Upload immutable build manifest and packages for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-packages-${{ github.run_id }}
+          path: dist/release/
+          retention-days: 14
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
