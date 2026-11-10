@@ -151,6 +151,22 @@ jobs:
       - name: Verify AWS health after backend update
         if: ${{ inputs.change_set_preview == 'deploy_backend' }}
         run: python3 scripts/verify_release_health.py --baseline release-baseline.json
+      - name: Verify deployed backend Lambda code matches approved packages
+        if: ${{ inputs.change_set_preview == 'deploy_backend' }}
+        run: |
+          python3 - <<'PY'
+          import base64, boto3, hashlib, json
+          from pathlib import Path
+          manifest=json.loads(Path("dist/release/manifest.json").read_text())["artifacts"]
+          checks={"api":"afl-app-dev-api", "image-worker":"afl-app-dev-image-worker", "legacy-video-worker":"afl-app-dev-video-worker"}
+          lam=boto3.client("lambda",region_name="ap-southeast-2")
+          for artifact, function in checks.items():
+              expected=base64.b64encode(bytes.fromhex(manifest[artifact]["sha256_hex"])).decode()
+              current=lam.get_function_configuration(FunctionName=function)
+              if current.get("CodeSha256") != expected or current.get("State") != "Active" or current.get("LastUpdateStatus") != "Successful":
+                  raise SystemExit(f"FAIL: {function} does not match the approved package or is not ready")
+              print(f"PASS: {function} matches approved release ZIP")
+          PY
       - name: Verify deployment workflow guardrails
         run: |
           python3 - <<'PY'
