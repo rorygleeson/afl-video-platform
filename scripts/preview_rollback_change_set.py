@@ -12,6 +12,9 @@ from pathlib import Path
 
 import boto3
 
+from validate_change_set import validate
+from preview_release_change_set import verify_reconcile_permission
+
 REGION = "ap-southeast-2"
 BACKEND = "afl-app-dev-backend"
 ALLOWED = {"ApiLambda", "ImageWorkerLambda", "VideoWorkerLambda"}
@@ -41,22 +44,12 @@ def prepare(manifest, live, template_path):
     return template.read_text(), [{"ParameterKey": k, "ParameterValue": v} for k, v in sorted(previous.items())]
 
 
-def inspect(changes):
-    if changes.get("Status") != "CREATE_COMPLETE":
-        raise ValueError("Rollback change set is not complete")
-    entries = changes.get("Changes", [])
-    if not entries:
-        raise ValueError("Empty rollback change set")
-    for item in entries:
-        resource = item.get("ResourceChange", {})
-        if resource.get("LogicalResourceId") not in ALLOWED:
-            raise ValueError("Unexpected rollback resource: " + str(resource.get("LogicalResourceId")))
-        if resource.get("Action") != "Modify" or resource.get("Replacement") != "False":
-            raise ValueError("Rollback would replace or create/delete a resource")
-        if any(d.get("Target", {}).get("RequiresRecreation") not in ("Never", None)
-               for d in resource.get("Details", [])):
-            raise ValueError("Rollback requires recreation")
-    return len(entries)
+def inspect(changes, verified_reconcile_permission=False):
+    """Reuse the forward release's strict dependency and permission checks."""
+    issues = validate(changes, ALLOWED, verified_reconcile_permission=verified_reconcile_permission)
+    if issues:
+        raise ValueError("Unsafe rollback: " + "; ".join(issues))
+    return len(changes["Changes"])
 
 
 def main():
@@ -92,11 +85,23 @@ def main():
             time.sleep(2)
         else:
             raise RuntimeError("Rollback preview timed out")
-        count = inspect(result)
+        changes = list(result.get("Changes", []))
+        next_token = result.get("NextToken")
+        while next_token:
+            page = cf.describe_change_set(StackName=BACKEND, ChangeSetName=name, NextToken=next_token)
+            if page.get("ChangeSetId") != result.get("ChangeSetId") or page.get("StackId") != result.get("StackId"):
+                raise ValueError("Rollback change-set pagination identity changed")
+            changes.extend(page.get("Changes", []))
+            next_token = page.get("NextToken")
+        result["Changes"] = changes
+        lam = boto3.client("lambda", region_name=REGION)
+        events = boto3.client("events", region_name=REGION)
+        verified = verify_reconcile_permission(cf, lam, events, BACKEND, changes)
+        count = inspect(result, verified_reconcile_permission=verified)
         args.output.write_text(json.dumps({
             "stack": BACKEND, "verdict": "SAFE_ROLLBACK_PREVIEW",
             "change_count": count, "executed": False,
-            "changes": result.get("Changes", []),
+            "changes": changes,
         }, indent=2, default=str) + "\n")
         print("SAFE_ROLLBACK_PREVIEW:", count, "resources; execution DISABLED")
     finally:
