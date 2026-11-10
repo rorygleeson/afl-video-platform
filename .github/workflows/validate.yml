@@ -38,11 +38,17 @@ jobs:
         run: cfn-lint infrastructure/bootstrap/bootstrap.yaml infrastructure/app/frontend.yaml infrastructure/app/backend.yaml --regions ap-southeast-2
       - name: Check application Python, JavaScript and scenario JSON syntax
         run: |
-          python -m py_compile src/api/handler.py src/api/video_prompts.py src/image_worker/handler.py src/video_worker/handler.py src/google_video_worker/handler.py src/assembly_worker/handler.py scripts/audit_live_aws.py scripts/check_deployment_ownership.py scripts/capture_release_baseline.py
+          python -m py_compile src/api/handler.py src/api/video_prompts.py src/image_worker/handler.py src/video_worker/handler.py src/google_video_worker/handler.py src/assembly_worker/handler.py scripts/audit_live_aws.py scripts/check_deployment_ownership.py scripts/capture_release_baseline.py scripts/build_release_artifacts.py scripts/validate_change_set.py
           node --check frontend/app.js
           python -m json.tool scenarios/afl-grand-final-winning-kick/v1/config.json > /dev/null
       - name: Enforce single application deployment owner
         run: python scripts/check_deployment_ownership.py --enforce
+      - name: Verify deterministic release packages
+        run: |
+          python scripts/build_release_artifacts.py
+          cp dist/release/manifest.json /tmp/release-manifest.json
+          python scripts/build_release_artifacts.py
+          cmp /tmp/release-manifest.json dist/release/manifest.json
       - name: Test browser polling and scene thumbnails
         run: node --test tests/test_frontend_poll.cjs
       - name: Test regional SigV4 presigned uploads
