@@ -60,6 +60,8 @@ jobs:
               changes.extend(x["ResourceChange"] for x in page.get("Changes",[]) if "ResourceChange" in x)
               token=page.get("NextToken")
               if not token: break
+          # CloudFormation reports transitive dependent changes when a referenced
+          # Lambda Code property changes. These must be reviewed, not auto-approved.
           summary=[{"logical_id":x.get("LogicalResourceId"),"action":x.get("Action"),"type":x.get("ResourceType"),"replacement":x.get("Replacement"),"details":[{"attribute":d.get("Target",{}).get("Attribute"),"name":d.get("Target",{}).get("Name"),"recreation":d.get("Target",{}).get("RequiresRecreation")} for d in x.get("Details",[])]} for x in changes]
           safe=(len(changes)==1 and changes[0].get("LogicalResourceId")=="GoogleWorkerLambda" and changes[0].get("Action")=="Modify" and changes[0].get("ResourceType")=="AWS::Lambda::Function" and changes[0].get("Replacement") in (False,"False") and len(changes[0].get("Details",[]))>0 and all(d.get("Target",{}).get("Attribute")=="Properties" and d.get("Target",{}).get("Name")=="Code" and d.get("Target",{}).get("RequiresRecreation")=="Never" for d in changes[0]["Details"]))
           result={"stack":stack,"change_set":name,"live_sha256":expected,"new_artifact_key":key,"safe_code_only_preview":safe,"changes":summary,"executed":False}
@@ -69,5 +71,5 @@ jobs:
               f.write("Change set: `"+name+"`  \n")
               f.write("Code-only, no replacement: **"+str(safe)+"**  \n")
               f.write("No application deployment performed.\n")
-          if not safe: raise SystemExit("Unexpected change set: DO NOT EXECUTE")
+          if not safe: raise SystemExit("BLOCKED: dependent resources would change. Do not execute; investigate live template/dependency chain.")
           PY
