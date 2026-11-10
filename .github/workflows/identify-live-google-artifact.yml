@@ -1,0 +1,69 @@
+name: Identify live Google Lambda artifact (read-only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  identify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-provenance
+      - name: Compare existing immutable Google diagnostics artifacts to live code
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python - <<'PY'
+          import boto3, base64, hashlib, json
+          region="ap-southeast-2"
+          lam=boto3.client("lambda",region_name=region)
+          cf=boto3.client("cloudformation",region_name=region)
+          s3=boto3.client("s3",region_name=region)
+          function="afl-app-dev-google-omni-worker"
+          live=lam.get_function_configuration(FunctionName=function)
+          assert live["State"]=="Active" and live["LastUpdateStatus"]=="Successful"
+          live_sha=live["CodeSha256"]
+          params={x["ParameterKey"]:x["ParameterValue"] for x in cf.describe_stacks(StackName="afl-app-dev-google-video")["Stacks"][0]["Parameters"]}
+          bucket=params["ArtifactBucketName"]
+          prefixes=["google-diagnostics/","google-video/","google-worker/"]
+          matches=[]
+          inspected=0
+          for prefix in prefixes:
+              for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket,Prefix=prefix):
+                  for item in page.get("Contents",[]):
+                      key=item["Key"]
+                      if not key.endswith(".zip"): continue
+                      inspected+=1
+                      if inspected>300: raise RuntimeError("More than 300 candidate ZIPs; refuse unbounded scan")
+                      body=s3.get_object(Bucket=bucket,Key=key)["Body"]
+                      digest=hashlib.sha256()
+                      try:
+                          for chunk in body.iter_chunks(chunk_size=1024*1024): digest.update(chunk)
+                      finally: body.close()
+                      sha=base64.b64encode(digest.digest()).decode("ascii")
+                      if sha==live_sha: matches.append({"s3_key":key,"size":item["Size"],"sha256_base64":sha})
+          report={"function":function,"live_code_sha256":live_sha,"recorded_cfn_key":params["GoogleWorkerArtifactKey"],"candidate_zips_checked":inspected,"matching_artifacts":matches}
+          with open("google-artifact-provenance.json","w") as f: json.dump(report,f,indent=2)
+          print(json.dumps(report,indent=2))
+          with open(__import__("os").environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("## Live Google artifact provenance\n\n")
+              f.write(f"Candidate ZIPs checked: {inspected}  \n")
+              f.write(f"Matching existing artifacts: {len(matches)}  \n")
+              for x in matches: f.write(f"- \`{x['s3_key']}\`\n")
+          if not matches: raise SystemExit("No matching existing S3 ZIP; do not redeploy. A separate GetFunction backup permission may be required.")
+          PY
+      - name: Retain provenance report even on mismatch
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-artifact-provenance
+          path: google-artifact-provenance.json
+          if-no-files-found: warn
+          retention-days: 7
