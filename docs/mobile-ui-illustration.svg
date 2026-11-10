@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="510" viewBox="0 0 1080 510" role="img" aria-labelledby="t d">
+<title id="t">Illustrative AFL Video Lab mobile interface</title>
+<desc id="d">Two schematic phone screens showing the selfie and team setup form, followed by completed reference images and generation statuses. These are mockups, not actual screenshots.</desc>
+<rect width="1080" height="510" rx="24" fill="#f1f5f9"/>
+<text x="40" y="52" font-family="Arial,sans-serif" font-size="25" font-weight="bold" fill="#172432">Current mobile web pilot — illustrated layout</text>
+<text x="40" y="80" font-family="Arial,sans-serif" font-size="15" fill="#475569">Representative UI only · not a capture of the deployed application</text>
+<g font-family="Arial,sans-serif">
+<rect x="70" y="108" width="350" height="362" rx="29" fill="#172432"/>
+<rect x="80" y="119" width="330" height="338" rx="19" fill="#fff"/>
+<rect x="210" y="124" width="70" height="8" rx="4" fill="#cbd5e1"/>
+<text x="103" y="162" font-size="24" font-weight="bold" fill="#172432">AFL Video Lab</text>
+<text x="103" y="188" font-size="14" fill="#64748b">1. Set up your Grand Final moment</text>
+<text x="103" y="218" font-size="13" font-weight="bold" fill="#334155">Team</text>
+<rect x="103" y="228" width="282" height="36" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+<text x="116" y="251" font-size="15" fill="#334155">Select AFL team</text>
+<text x="103" y="290" font-size="13" font-weight="bold" fill="#334155">Your name</text>
+<rect x="103" y="300" width="282" height="36" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+<text x="116" y="323" font-size="14" fill="#64748b">First name · Surname</text>
+<rect x="103" y="353" width="282" height="37" rx="8" fill="#e2e8f0" stroke="#cbd5e1"/>
+<text x="116" y="377" font-size="14" fill="#334155">Choose a selfie</text>
+<rect x="103" y="404" width="282" height="37" rx="8" fill="#17689b"/>
+<text x="244" y="427" font-size="15" fill="#fff" text-anchor="middle" font-weight="bold">Create reference images</text>
+<rect x="660" y="108" width="350" height="362" rx="29" fill="#172432"/>
+<rect x="670" y="119" width="330" height="338" rx="19" fill="#fff"/>
+<rect x="800" y="124" width="70" height="8" rx="4" fill="#cbd5e1"/>
+<text x="693" y="162" font-size="23" font-weight="bold" fill="#172432">Reference Images</text>
+<text x="693" y="186" font-size="14" fill="#64748b">2. Review 3 personalised scenes</text>
+<g transform="translate(693 203)">
+<rect width="86" height="105" rx="9" fill="#e2e8f0"/>
+<circle cx="43" cy="32" r="15" fill="#94a3b8"/>
+<path d="M15 89 Q15 52 43 53 Q71 52 71 89" fill="#94a3b8"/>
+<text x="43" y="100" font-size="12" text-anchor="middle" fill="#334155">Run-up</text>
+</g>
+<g transform="translate(789 203)">
+<rect width="86" height="105" rx="9" fill="#e2e8f0"/>
+<circle cx="43" cy="32" r="15" fill="#94a3b8"/>
+<path d="M15 89 Q15 52 43 53 Q71 52 71 89" fill="#94a3b8"/>
+<text x="43" y="100" font-size="12" text-anchor="middle" fill="#334155">Kick</text>
+</g>
+<g transform="translate(885 203)">
+<rect width="86" height="105" rx="9" fill="#e2e8f0"/>
+<circle cx="43" cy="32" r="15" fill="#94a3b8"/>
+<path d="M15 89 Q15 52 43 53 Q71 52 71 89" fill="#94a3b8"/>
+<text x="43" y="100" font-size="12" text-anchor="middle" fill="#334155">Celebrate</text>
+</g>
+<text x="693" y="333" font-size="14" fill="#16804a" font-weight="bold">✓ 3/3 reference images completed</text>
+<rect x="693" y="349" width="278" height="43" rx="8" fill="#17689b"/>
+<text x="832" y="375" font-size="14" fill="#fff" text-anchor="middle" font-weight="bold">Generate 3 video scenes</text>
+<text x="693" y="416" font-size="12" fill="#64748b">After approval · paid Google generation</text>
+</g>
+<path d="M456 290 H625" stroke="#17689b" stroke-width="4" stroke-linecap="round"/>
+<path d="M609 278 L627 290 L609 302" fill="none" stroke="#17689b" stroke-width="4" stroke-linejoin="round"/>
+</svg>
