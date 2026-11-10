@@ -1,0 +1,47 @@
+name: Inspect Google CloudFormation dependency changes (read-only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Inspect deployed template and dependency references without AWS writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'pyyaml>=6,<7'
+          python - <<'PY'
+          import boto3,json,os,re
+          cf=boto3.client("cloudformation",region_name="ap-southeast-2")
+          stack="afl-app-dev-google-video"
+          response=cf.get_template(StackName=stack,TemplateStage="Original")
+          template=response["TemplateBody"]
+          if isinstance(template,dict):
+              source=json.dumps(template,indent=2)
+          else:
+              source=str(template)
+          # Never publish the complete deployed template, which may contain sensitive values.
+          logical_ids=["GoogleWorkerLambda","DeveloperPreflightInvokePermission","GoogleStateMachineRole","GoogleStateMachine"]
+          references={}
+          for name in logical_ids:
+              # Count literal references in deployed and repository templates; no values or secrets exposed.
+              references[name]={"deployed_mentions":source.count(name),"repo_mentions":open("infrastructure/app/google-video.yaml").read().count(name)}
+          live=cf.describe_stacks(StackName=stack)["Stacks"][0]
+          parameters={x["ParameterKey"]:x["ParameterValue"] for x in live.get("Parameters",[])}
+          result={"stack":stack,"status":live["StackStatus"],"template_stage":"Original","template_format":"dict" if isinstance(template,dict) else "text","logical_references":references,"google_artifact_parameter":parameters.get("GoogleWorkerArtifactKey"),"explanation":"CloudFormation preview reported transitive changes to Lambda invoke permission, state machine role, and state machine definition; existing change set must NOT execute."}
+          print(json.dumps(result,indent=2))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              print("## Google dependency inspection (read-only)",file=f)
+              print("Stack:",stack,file=f)
+              print("Deployed template inspected. No AWS writes.",file=f)
+              for name,counts in references.items():print(name,counts,file=f)
+          PY
