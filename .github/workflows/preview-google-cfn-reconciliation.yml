@@ -1,0 +1,73 @@
+name: Preview Google CloudFormation artifact reconciliation (no execute)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Create and strictly inspect change set (never execute)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python - <<'PY'
+          import boto3,base64,hashlib,os,json,time
+          from botocore.exceptions import WaiterError
+          region="ap-southeast-2"
+          stack="afl-app-dev-google-video"
+          key="google-diagnostics/956c2a9faa7efb1f39ed1a8ecc376510ffb1ec34.zip"
+          expected="RKx1wcvmxcE3Sx7kzlxbTI3NhBlNlt/Ydpy6J4ZOpmI="
+          cf=boto3.client("cloudformation",region_name=region)
+          lam=boto3.client("lambda",region_name=region)
+          s3=boto3.client("s3",region_name=region)
+          current=cf.describe_stacks(StackName=stack)["Stacks"][0]
+          if current["StackStatus"] not in ("CREATE_COMPLETE","UPDATE_COMPLETE"): raise RuntimeError("Stack not stable")
+          params={x["ParameterKey"]:x["ParameterValue"] for x in current["Parameters"]}
+          if params.get("GoogleWorkerArtifactKey")==key: raise RuntimeError("Already reconciled; no change set needed")
+          live=lam.get_function_configuration(FunctionName="afl-app-dev-google-omni-worker")
+          if live["CodeSha256"]!=expected or live["State"]!="Active" or live["LastUpdateStatus"]!="Successful": raise RuntimeError("Live worker changed; refuse preview")
+          body=s3.get_object(Bucket=params["ArtifactBucketName"],Key=key)["Body"]
+          h=hashlib.sha256()
+          try:
+              for chunk in body.iter_chunks(chunk_size=1024*1024): h.update(chunk)
+          finally: body.close()
+          if base64.b64encode(h.digest()).decode()!=expected: raise RuntimeError("Artifact hash mismatch")
+          name="afl-google-reconcile-"+os.environ["GITHUB_RUN_ID"]
+          values=[{"ParameterKey":p["ParameterKey"],**({"ParameterValue":key} if p["ParameterKey"]=="GoogleWorkerArtifactKey" else {"UsePreviousValue":True})} for p in current["Parameters"]]
+          cf.create_change_set(StackName=stack,ChangeSetName=name,ChangeSetType="UPDATE",UsePreviousTemplate=True,Parameters=values,RoleARN="arn:aws:iam::134387458447:role/afl-video-cfn-execution-role",Capabilities=["CAPABILITY_NAMED_IAM"],Description="PREVIEW ONLY: align CFN Google code artifact with SHA-verified live worker; do not execute")
+          try:
+              cf.get_waiter("change_set_create_complete").wait(StackName=stack,ChangeSetName=name,WaiterConfig={"Delay":5,"MaxAttempts":48})
+          except WaiterError:
+              detail=cf.describe_change_set(StackName=stack,ChangeSetName=name)
+              raise RuntimeError("Change set failed: "+str(detail.get("StatusReason")))
+          changes=[]
+          token=None
+          while True:
+              args={"StackName":stack,"ChangeSetName":name}
+              if token: args["NextToken"]=token
+              page=cf.describe_change_set(**args)
+              changes.extend(x["ResourceChange"] for x in page.get("Changes",[]) if "ResourceChange" in x)
+              token=page.get("NextToken")
+              if not token: break
+          summary=[{"logical_id":x.get("LogicalResourceId"),"action":x.get("Action"),"type":x.get("ResourceType"),"replacement":x.get("Replacement"),"details":[{"attribute":d.get("Target",{}).get("Attribute"),"name":d.get("Target",{}).get("Name"),"recreation":d.get("Target",{}).get("RequiresRecreation")} for d in x.get("Details",[])]} for x in changes]
+          safe=(len(changes)==1 and changes[0].get("LogicalResourceId")=="GoogleWorkerLambda" and changes[0].get("Action")=="Modify" and changes[0].get("ResourceType")=="AWS::Lambda::Function" and changes[0].get("Replacement") in (False,"False") and len(changes[0].get("Details",[]))>0 and all(d.get("Target",{}).get("Attribute")=="Properties" and d.get("Target",{}).get("Name")=="Code" and d.get("Target",{}).get("RequiresRecreation")=="Never" for d in changes[0]["Details"]))
+          result={"stack":stack,"change_set":name,"live_sha256":expected,"new_artifact_key":key,"safe_code_only_preview":safe,"changes":summary,"executed":False}
+          print(json.dumps(result,indent=2))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("## Google CFN reconciliation preview (NOT executed)\n\n")
+              f.write("Change set: `"+name+"`  \n")
+              f.write("Code-only, no replacement: **"+str(safe)+"**  \n")
+              f.write("No application deployment performed.\n")
+          if not safe: raise SystemExit("Unexpected change set: DO NOT EXECUTE")
+          PY
