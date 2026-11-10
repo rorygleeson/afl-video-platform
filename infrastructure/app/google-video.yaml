@@ -99,7 +99,7 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-google-omni-worker'
+      FunctionName: !GetAtt GoogleWorkerLambda.Arn
       Principal: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/afl-video-github-deploy-role'
   GoogleWorkerLogs:
     Type: AWS::Logs::LogGroup
@@ -125,31 +125,29 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: lambda:InvokeFunction
-                Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-google-omni-worker'
+                Resource: !GetAtt GoogleWorkerLambda.Arn
   GoogleStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
       StateMachineName: afl-app-dev-google-omni
       StateMachineType: STANDARD
       RoleArn: !GetAtt GoogleStateMachineRole.Arn
-      DefinitionString: !Sub
-        - |
-          {
-            "Comment":"Stage 5A installed but hard-disabled. No Retry on paid submit or polling.",
-            "StartAt":"PaidGate",
-            "TimeoutSeconds":3600,
-            "States":{
-              "PaidGate":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${StableGoogleWorkerArn}","Payload":{"op":"gate","jobId.$":"$.jobId","sceneId.$":"$.sceneId"}},"ResultPath":"$.gate","Next":"Claim"},
-              "Claim":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${StableGoogleWorkerArn}","Payload":{"op":"claim","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.claim","Next":"Submit"},
-              "Submit":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${StableGoogleWorkerArn}","Payload":{"op":"submit","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.submit","Next":"WaitForVideo"},
-              "WaitForVideo":{"Type":"Wait","Seconds":20,"Next":"PollVideo"},
-              "PollVideo":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${StableGoogleWorkerArn}","Payload":{"op":"poll","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.polled","Next":"InspectVideo"},
-              "InspectVideo":{"Type":"Choice","Choices":[{"Variable":"$.polled.Payload.status","StringEquals":"WAITING","Next":"WaitForVideo"},{"Variable":"$.polled.Payload.status","StringEquals":"COMPLETED","Next":"Finalize"},{"Variable":"$.polled.Payload.status","StringEquals":"FAILED","Next":"Finalize"}],"Default":"UnexpectedStatus"},
-              "Finalize":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${StableGoogleWorkerArn}","Payload":{"op":"finalize","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"End":true},
-              "UnexpectedStatus":{"Type":"Fail","Error":"UnexpectedGoogleStatus","Cause":"Manual reconciliation is required. Do not resubmit."}
-            }
+      DefinitionString: !Sub |
+        {
+          "Comment":"Stage 5A installed but hard-disabled. No Retry on paid submit or polling.",
+          "StartAt":"PaidGate",
+          "TimeoutSeconds":3600,
+          "States":{
+            "PaidGate":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"gate","jobId.$":"$.jobId","sceneId.$":"$.sceneId"}},"ResultPath":"$.gate","Next":"Claim"},
+            "Claim":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"claim","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.claim","Next":"Submit"},
+            "Submit":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"submit","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.submit","Next":"WaitForVideo"},
+            "WaitForVideo":{"Type":"Wait","Seconds":20,"Next":"PollVideo"},
+            "PollVideo":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"poll","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.polled","Next":"InspectVideo"},
+            "InspectVideo":{"Type":"Choice","Choices":[{"Variable":"$.polled.Payload.status","StringEquals":"WAITING","Next":"WaitForVideo"},{"Variable":"$.polled.Payload.status","StringEquals":"COMPLETED","Next":"Finalize"},{"Variable":"$.polled.Payload.status","StringEquals":"FAILED","Next":"Finalize"}],"Default":"UnexpectedStatus"},
+            "Finalize":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"finalize","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"End":true},
+            "UnexpectedStatus":{"Type":"Fail","Error":"UnexpectedGoogleStatus","Cause":"Manual reconciliation is required. Do not resubmit."}
           }
-        - StableGoogleWorkerArn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-google-omni-worker'
+        }
 Outputs:
   GoogleWorkerArn:
     Value: !GetAtt GoogleWorkerLambda.Arn
