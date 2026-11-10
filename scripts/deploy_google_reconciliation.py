@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time approved Google CFN reconciliation. No paid video calls."""
+"""One-time user-approved Google CFN reconciliation. No paid video calls."""
 import base64
 import json
 from pathlib import Path
