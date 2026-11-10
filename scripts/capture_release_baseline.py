@@ -44,6 +44,18 @@ def main():
             "resources": [{"logical_id": x["LogicalResourceId"], "physical_id": x.get("PhysicalResourceId"),
                            "type": x["ResourceType"]} for x in resources],
         }
+    # Preserve the exact deployed templates for disaster recovery, not repo HEAD.
+    template_dir = Path(os.environ.get("BASELINE_TEMPLATE_DIR", "dist/release/deployed-templates"))
+    template_dir.mkdir(parents=True, exist_ok=True)
+    for label, name in STACKS.items():
+        response = cf.get_template(StackName=name, TemplateStage="Original")
+        body = response["TemplateBody"]
+        if not isinstance(body, str):
+            body = json.dumps(body, sort_keys=True)
+        template_file = template_dir / (label + ".yaml")
+        template_file.write_text(body)
+        manifest["stacks"][label]["deployed_template_sha256"] = hashlib.sha256(body.encode()).hexdigest()
+        manifest["stacks"][label]["deployed_template_path"] = str(template_file)
     for name in FUNCTIONS:
         fn = lam.get_function_configuration(FunctionName=name)
         manifest["lambdas"][name] = {
