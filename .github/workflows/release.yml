@@ -1,4 +1,4 @@
-name: Unified release (baseline / optional CFN preview; deployment disabled)
+name: Unified release (baseline / preview / controlled backend deployment)
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +11,11 @@ on:
           - offline
           - backend
           - retain_backend
+          - deploy_backend
+      deployment_confirmation:
+        description: 'For deploy_backend only, type DEPLOY_BACKEND to authorize an AWS update'
+        required: false
+        type: string
 permissions:
   contents: read
   id-token: write
@@ -59,8 +64,20 @@ jobs:
           for stack in backend google assembly frontend; do
             python3 scripts/preview_release_change_set.py --baseline release-baseline.json --plan release-plan.json --stack "$stack" --run-id "${{ github.run_id }}"
           done
-      - name: Create and inspect backend change set (preview only; never execute)
-        if: ${{ inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'retain_backend' }}
+      - name: Enforce manual backend deployment authorization
+        if: ${{ inputs.change_set_preview == 'deploy_backend' }}
+        env:
+          CONFIRMATION: ${{ inputs.deployment_confirmation }}
+          REF_NAME: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          test "$REF_NAME" = main && test "$REF_TYPE" = branch && test "$CONFIRMATION" = DEPLOY_BACKEND
+      - name: Publish immutable release packages to S3 for approved deployment
+        if: ${{ inputs.change_set_preview == 'deploy_backend' }}
+        run: |
+          python3 scripts/publish_release_artifacts.py --manifest dist/release/manifest.json --bucket afl-video-bootstrap-artifactbucket-xiuriidgyft4 --upload
+      - name: Create and inspect backend change set
+        if: ${{ inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'retain_backend' || inputs.change_set_preview == 'deploy_backend' }}
         run: |
           python3 scripts/preview_release_change_set.py \
             --baseline release-baseline.json \
@@ -71,9 +88,9 @@ jobs:
             --allow ApiLambda \
             --allow ImageWorkerLambda \
             --allow VideoWorkerLambda \
-            ${{ inputs.change_set_preview == 'retain_backend' && '--retain-reviewed' || '' }}
+            ${{ (inputs.change_set_preview == 'retain_backend' || inputs.change_set_preview == 'deploy_backend') && '--retain-reviewed' || '' }}
       - name: Upload CloudFormation preview result
-        if: ${{ always() && (inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'retain_backend') }}
+        if: ${{ always() && (inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'retain_backend' || inputs.change_set_preview == 'deploy_backend') }}
         uses: actions/upload-artifact@v4
         with:
           name: cfn-preview-${{ github.run_id }}
@@ -104,17 +121,47 @@ jobs:
           name: release-baseline-${{ github.run_id }}
           path: release-baseline.json
           retention-days: 14
-      - name: Enforce deployment-disabled policy
+      - name: Execute the exact validated backend change set (manual opt-in only)
+        if: ${{ inputs.change_set_preview == 'deploy_backend' }}
+        env:
+          CONFIRMATION: ${{ inputs.deployment_confirmation }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          test "$REF_NAME" = main && test "$CONFIRMATION" = DEPLOY_BACKEND
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          preview = json.loads(Path("change-set-preview.json").read_text())
+          if preview.get("verdict") != "SAFE_PREVIEW" or not preview.get("retained_for_separate_approval"):
+              raise SystemExit("No validated retained change set")
+          change_set_id = preview["change_set_id"]
+          import subprocess
+          subprocess.run([
+              "python3", "scripts/execute_release_change_set.py",
+              "--baseline", "release-baseline.json",
+              "--plan", "release-plan.json",
+              "--change-set-id", change_set_id,
+              "--approved-change-set-id", change_set_id,
+              "--execute",
+          ], check=True)
+          PY
+      - name: Wait for backend CloudFormation update
+        if: ${{ inputs.change_set_preview == 'deploy_backend' }}
+        run: aws cloudformation wait stack-update-complete --stack-name afl-app-dev-backend
+      - name: Verify AWS health after backend update
+        if: ${{ inputs.change_set_preview == 'deploy_backend' }}
+        run: python3 scripts/verify_release_health.py --baseline release-baseline.json
         run: |
           python3 - <<'PY'
           from pathlib import Path
           source = Path('.github/workflows/release.yml').read_text()
-          assert ('cloudformation ' + 'execute-change-set') not in source.lower()
-          assert ('aws cloudformation ' + 'deploy') not in source.lower()
-          print('PASS: release workflow contains no CloudFormation execution command')
+          assert 'DEPLOY_BACKEND' in source
+          assert 'scripts/execute_release_change_set.py' in source
+          assert 'aws cloudformation deploy' not in source.lower()
+          print('PASS: deployment requires explicit manual opt-in and exact-change-set executor')
           PY
       - name: Summary
         run: |
-          echo '## Baseline complete — no deployment' >> "$GITHUB_STEP_SUMMARY"
+          echo '## Unified release result' >> "$GITHUB_STEP_SUMMARY"
           echo 'Offline mode makes no AWS changes. Backend preview mode creates and deletes an unexecuted CloudFormation change set. retain_backend keeps only a validated change set for later separate approval; it does not execute it.' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Deployment remains disabled until the unified pipeline passes all ownership and change-set gates.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Backend deployment only runs on explicit deploy_backend selection with DEPLOY_BACKEND confirmation. Google and assembly deployments remain disabled.' >> "$GITHUB_STEP_SUMMARY"
