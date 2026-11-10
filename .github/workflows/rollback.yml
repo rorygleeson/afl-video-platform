@@ -32,6 +32,25 @@ jobs:
         run: |
           [[ "$RELEASE_RUN_ID" =~ ^[0-9]+$ ]] && test "$CONFIRMATION" = ROLLBACK_BACKEND
           python3 -m py_compile scripts/execute_backend_rollback.py
+      - name: Verify selected evidence belongs to a main-branch unified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          run_id=os.environ["RELEASE_RUN_ID"]
+          if not run_id.isdigit():
+              raise SystemExit("Release run ID must be numeric")
+          result=subprocess.run(["gh", "api", f"repos/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run_id}"],
+                                check=True, capture_output=True, text=True)
+          run=json.loads(result.stdout)
+          if run.get("path") != ".github/workflows/release.yml" or run.get("head_branch") != "main" or run.get("event") != "workflow_dispatch":
+              raise SystemExit("Evidence must originate from a manually dispatched main-branch release workflow")
+          if run.get("status") != "completed":
+              raise SystemExit("Release workflow has not finished")
+          print("PASS: release evidence originates from expected workflow and branch")
+          PY
       - name: Download saved rollback evidence from selected release
         env:
           GH_TOKEN: ${{ github.token }}
