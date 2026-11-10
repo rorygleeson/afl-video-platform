@@ -3,14 +3,13 @@ on:
   workflow_dispatch:
     inputs:
       change_set_preview:
-        description: 'AWS CloudFormation preview only (never execute)'
+        description: 'Release mode (deploy_backend can update AWS)'
         required: true
         type: choice
         default: offline
         options:
           - offline
           - backend
-          - retain_backend
           - deploy_backend
       deployment_confirmation:
         description: 'For deploy_backend only, type DEPLOY_BACKEND to authorize an AWS update'
@@ -24,6 +23,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   baseline:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    environment: afl-production-approval
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -77,7 +78,7 @@ jobs:
         run: |
           python3 scripts/publish_release_artifacts.py --manifest dist/release/manifest.json --bucket afl-video-bootstrap-artifactbucket-xiuriidgyft4 --upload
       - name: Create and inspect backend change set
-        if: ${{ inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'retain_backend' || inputs.change_set_preview == 'deploy_backend' }}
+        if: ${{ inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'deploy_backend' }}
         run: |
           python3 scripts/preview_release_change_set.py \
             --baseline release-baseline.json \
@@ -88,9 +89,9 @@ jobs:
             --allow ApiLambda \
             --allow ImageWorkerLambda \
             --allow VideoWorkerLambda \
-            ${{ (inputs.change_set_preview == 'retain_backend' || inputs.change_set_preview == 'deploy_backend') && '--retain-reviewed' || '' }}
+            ${{ (inputs.change_set_preview == 'deploy_backend') && '--retain-reviewed' || '' }}
       - name: Upload CloudFormation preview result
-        if: ${{ always() && (inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'retain_backend' || inputs.change_set_preview == 'deploy_backend') }}
+        if: ${{ always() && (inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'deploy_backend') }}
         uses: actions/upload-artifact@v4
         with:
           name: cfn-preview-${{ github.run_id }}
@@ -164,5 +165,5 @@ jobs:
       - name: Summary
         run: |
           echo '## Unified release result' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Offline mode makes no AWS changes. Backend preview mode creates and deletes an unexecuted CloudFormation change set. retain_backend keeps only a validated change set for later separate approval; it does not execute it.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Offline mode makes no AWS changes. Backend preview mode creates and deletes an unexecuted CloudFormation change set. deploy_backend retains a validated change set and executes it only with explicit confirmation.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Backend deployment only runs on explicit deploy_backend selection with DEPLOY_BACKEND confirmation. Google and assembly deployments remain disabled.' >> "$GITHUB_STEP_SUMMARY"
