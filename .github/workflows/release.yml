@@ -97,18 +97,6 @@ jobs:
           path: change-set-preview.json
           if-no-files-found: warn
           retention-days: 30
-      - name: Capture and verify exact deployed rollback templates
-        run: python3 scripts/prepare_rollback.py --baseline release-baseline.json --plan release-plan.json
-      - name: Verify rollback recovery inputs against live AWS (read only)
-        run: python3 scripts/verify_rollback_readiness.py --manifest rollback-manifest.json
-      - name: Publish rollback inventory and deployed templates
-        uses: actions/upload-artifact@v4
-        with:
-          name: rollback-evidence-${{ github.run_id }}
-          path: |
-            rollback-manifest.json
-            dist/release/deployed-templates/
-          retention-days: 30
       - name: Publish release plan for review
         uses: actions/upload-artifact@v4
         with:
@@ -121,6 +109,18 @@ jobs:
           name: release-baseline-${{ github.run_id }}
           path: release-baseline.json
           retention-days: 14
+      - name: Capture and verify exact deployed rollback templates
+        run: python3 scripts/prepare_rollback.py --baseline release-baseline.json --plan release-plan.json
+      - name: Verify rollback recovery inputs against live AWS (read only)
+        run: python3 scripts/verify_rollback_readiness.py --manifest rollback-manifest.json
+      - name: Publish rollback inventory and deployed templates
+        uses: actions/upload-artifact@v4
+        with:
+          name: rollback-evidence-${{ github.run_id }}
+          path: |
+            rollback-manifest.json
+            dist/release/deployed-templates/
+          retention-days: 30
       - name: Execute the exact validated backend change set (manual opt-in only)
         if: ${{ inputs.change_set_preview == 'deploy_backend' }}
         env:
