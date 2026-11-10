@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/prepare_google_reconciliation.py'
       - 'scripts/preview_release_change_set.py'
+      - 'scripts/validate_change_set.py'
       - 'tests/test_google_reconciliation.py'
       - '.github/workflows/release.yml'
   workflow_dispatch:
