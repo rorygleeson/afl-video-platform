@@ -12,6 +12,7 @@ AWS serverless pilot for personalised AFL Grand Final videos.
 - [Architecture and simple end-to-end flow](docs/ARCHITECTURE.md) — current system overview
 - [Complete API endpoint inventory](docs/API_ENDPOINTS.md) — browser contract for a future replacement frontend
 - [Prioritised bug/risk review](docs/CODE_REVIEW_2026-11-08.md) — what to fix and what not to overbuild
+- [IaC operating model and pause checklist](docs/PRODUCTION_PIPELINE_PLAN.md#iac-operating-model-and-pause-checkpoint--10-november-2026) — CloudFormation ownership, verified release checks and remaining infrastructure work
 
 ## Code map
 
