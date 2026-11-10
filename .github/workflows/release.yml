@@ -102,6 +102,15 @@ jobs:
           name: release-baseline-${{ github.run_id }}
           path: release-baseline.json
           retention-days: 14
+      - name: Enforce deployment-disabled policy
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/release.yml').read_text()
+          assert 'cloudformation execute-change-set' not in source.lower()
+          assert 'aws cloudformation deploy' not in source.lower()
+          print('PASS: release workflow contains no CloudFormation execution command')
+          PY
       - name: Summary
         run: |
           echo '## Baseline complete — no deployment' >> "$GITHUB_STEP_SUMMARY"
