@@ -1,6 +1,15 @@
-name: Unified release baseline (read-only, deployment disabled)
+name: Unified release (baseline / optional CFN preview; deployment disabled)
 on:
   workflow_dispatch:
+    inputs:
+      change_set_preview:
+        description: 'AWS CloudFormation preview only (never execute)'
+        required: true
+        type: choice
+        default: offline
+        options:
+          - offline
+          - backend
 permissions:
   contents: read
   id-token: write
@@ -47,6 +56,26 @@ jobs:
           for stack in backend google assembly frontend; do
             python3 scripts/preview_release_change_set.py --baseline release-baseline.json --plan release-plan.json --stack "$stack" --run-id "${{ github.run_id }}"
           done
+      - name: Create and inspect backend change set (preview only; never execute)
+        if: ${{ inputs.change_set_preview == 'backend' }}
+        run: |
+          python3 scripts/preview_release_change_set.py \
+            --baseline release-baseline.json \
+            --plan release-plan.json \
+            --stack backend \
+            --run-id "${{ github.run_id }}" \
+            --create-preview \
+            --allow ApiLambda \
+            --allow ImageWorkerLambda \
+            --allow VideoWorkerLambda
+      - name: Upload CloudFormation preview result
+        if: ${{ always() && inputs.change_set_preview == 'backend' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: cfn-preview-${{ github.run_id }}
+          path: change-set-preview.json
+          if-no-files-found: warn
+          retention-days: 30
       - name: Capture and verify exact deployed rollback templates
         run: python3 scripts/prepare_rollback.py --baseline release-baseline.json --plan release-plan.json
       - name: Publish rollback inventory and deployed templates
@@ -72,5 +101,5 @@ jobs:
       - name: Summary
         run: |
           echo '## Baseline complete — no deployment' >> "$GITHUB_STEP_SUMMARY"
-          echo 'This workflow does not update Lambda, CloudFormation, S3 objects, or CloudFront.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Offline mode makes no AWS changes. Backend preview mode creates and deletes an unexecuted CloudFormation change set.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Deployment remains disabled until the unified pipeline passes all ownership and change-set gates.' >> "$GITHUB_STEP_SUMMARY"
