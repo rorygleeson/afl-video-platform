@@ -158,7 +158,8 @@ jobs:
           source = Path('.github/workflows/release.yml').read_text()
           assert 'DEPLOY_BACKEND' in source
           assert 'scripts/execute_release_change_set.py' in source
-          assert 'aws cloudformation deploy' not in source.lower()
+          forbidden_command = 'aws cloudformation ' + 'deploy'
+          assert forbidden_command not in source.lower()
           print('PASS: deployment requires explicit manual opt-in and exact-change-set executor')
           PY
       - name: Summary
