@@ -1,0 +1,21 @@
+name: Audit deployment IAM (read only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  audit:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check IAM audit script
+        run: python3 -m py_compile scripts/audit_deployment_iam.py
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Evaluate deployment and recovery permissions without modifying AWS
+        run: python3 scripts/audit_deployment_iam.py
