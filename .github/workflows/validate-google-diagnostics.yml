@@ -6,6 +6,7 @@ on:
       - 'src/google_video_worker/handler.py'
       - 'src/api/handler.py'
       - 'frontend/index.html'
+      - 'frontend/app.js'
       - '.github/workflows/validate-google-diagnostics.yml'
   workflow_dispatch:
 
