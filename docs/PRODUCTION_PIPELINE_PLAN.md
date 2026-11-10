@@ -1,9 +1,55 @@
 # AFL Video Platform — Production-Ready Pipeline Migration Plan
 
-**Status:** APPROVED DIRECTION / AUDIT BASELINE — implementation not started  
+**Status:** AUDIT COMPLETED; RELEASE PIPELINE IMPLEMENTATION PENDING — see execution reset below  
 **Audit date:** 2026-11-10  
 **Scope:** Existing single AWS environment, `ap-southeast-2`; GitHub repository `rorygleeson/afl-video-platform`  
 **Authority:** This document is the implementation checklist. Verify live AWS facts before any cutover.
+
+## Execution reset — 10 November 2026 (authoritative next steps)
+
+**Objective:** production-quality IaC for the *existing single AWS environment*, with no competing writers, no unexplained drift, and a clean repository. This section supersedes earlier speculative Google reconciliation attempts. Do not repeat the failed previews.
+
+**Evidence already gathered:** Five application CFN stacks and five Lambdas inventoried; Google live ZIP SHA verified; deployed Google CFN template byte-identical to GitHub; two Google change-set previews blocked (one proposed permission replacement). Current application is working. Previous experimental Google template edit was reverted.
+
+### Milestones and acceptance gates
+
+| Order | Deliverable | Acceptance criteria | AWS effect |
+| --- | --- | --- | --- |
+| 1 | **Freeze and baseline** | Agree deployment freeze; record all five stack IDs/parameters, Lambda live hashes, Step Functions, frontend object hashes, exact ZIPs and rollback manifest. Inventory unexecuted change sets. | Read-only until explicitly approved |
+| 2 | **Single-writer architecture** | One `release.yml` owns all application CFN stack updates, Lambda code and frontend publication. `publish-scenario-assets.yml` owns only scenario keys. Bootstrap remains separately controlled. Document exact S3 prefix boundaries. | Repo only |
+| 3 | **Build release tooling** | Deterministic packages, SHA256 manifest, immutable S3 keys, pinned dependencies/actions, least-privilege OIDC, explicit CFN parameter preservation, ordered stack change sets, drift checks, deletion/replacement blocks, manual approval and verification. No direct `update_function_code`. | Repo/CI only |
+| 4 | **Dry-run validation** | CI tests and a read-only/preview release against the actual live baseline. All proposed resource changes explained; no unexpected replacements, deletes, or Google worker downgrade. Preview may create change sets only with approval and must delete its own unexecuted change sets. | No live app changes |
+| 5 | **Approved cutover** | Human-approved first controlled deployment; verify deployed hashes, API health, Step Functions, frontend and failure/rollback path. Paid video test only by separate approval. | AWS changes only after approval |
+| 6 | **Remove overlap and leftovers** | Disable/delete the four competing application writers, remove temporary diagnostic workflows and unreferenced preflight/mock templates after proving no dependencies; safely delete old unexecuted change sets; check GitHub workflows and AWS permissions for a single writer. | GitHub cleanup; AWS stack deletion separately approved |
+| 7 | **Production-quality sign-off** | Documented release and rollback runbook, CI green, no unauthorized writers, no known unmanaged code drift, no stale unsafe workflows, auditable release history. | Verification |
+
+### Mandatory engineering rules
+
+- **No deployment until milestone 4 passes and the user explicitly approves milestone 5.**
+- Never delete/recreate `afl-app-dev-assembly` as a recovery tactic.
+- Never run the rejected change sets `afl-google-reconcile-42759304709` or `afl-google-reconcile-42762156285`.
+- Do not resolve Google drift by downgrading to its older CFN S3 key. The verified live ZIP is the baseline. Choose a controlled, reviewable migration strategy in the release design.
+- Do not assume a shared concurrency group solves ownership. Prevent other writers by disabling legacy workflows at cutover and narrowing IAM permissions.
+- No dev/prod split; no paid video generation in CI; no speculative one-off diagnostic workflows.
+- No deleting existing CFN stacks, templates, or data until all references and rollback needs are verified.
+
+### Current progress and immediate work queue
+
+- [x] Repository and AWS stack inventory
+- [x] Identify Google live code ZIP and its hash
+- [x] Confirm deployed Google template matches GitHub
+- [x] Revert unsafe Google template experiment
+- [x] Document workflow collisions and template cleanup candidates
+- [ ] Baseline frontend and all live release artifacts in a machine-readable manifest
+- [ ] Implement `release.yml` and supporting build/preview/verify scripts
+- [ ] Add tests proving no other active workflow can write application stacks, Lambdas, or frontend
+- [ ] Execute safe dry-run and capture evidence
+- [ ] Obtain approval for first deployment and verify
+- [ ] Remove obsolete workflows/templates and reduce IAM permissions
+
+**Progress reporting:** Every implementation update must state exact files/commits, tests run, outstanding blockers and whether AWS was changed. Do not claim production readiness from a green workflow alone.
+
+---
 
 ## 0. Non-negotiable safeguards
 
