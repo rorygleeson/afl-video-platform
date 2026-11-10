@@ -62,6 +62,45 @@ jobs:
             state=$(aws cloudformation describe-stacks --stack-name "$stack" --query 'Stacks[0].StackStatus' --output text)
             test "$state" = CREATE_COMPLETE -o "$state" = UPDATE_COMPLETE
           done
+      - name: Block CloudFormation release if live Lambda code differs from recorded artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import base64
+          import hashlib
+          import boto3
+
+          cf = boto3.client("cloudformation", region_name="ap-southeast-2")
+          lam = boto3.client("lambda", region_name="ap-southeast-2")
+          s3 = boto3.client("s3", region_name="ap-southeast-2")
+          targets = [
+              ("afl-app-dev-google-video", "GoogleWorkerArtifactKey", "afl-app-dev-google-omni-worker"),
+              ("afl-app-dev-backend", "LambdaArtifactKey", "afl-app-dev-api"),
+          ]
+          for stack_name, artifact_parameter, function_name in targets:
+              stack = cf.describe_stacks(StackName=stack_name)["Stacks"][0]
+              parameters = {p["ParameterKey"]: p["ParameterValue"] for p in stack["Parameters"]}
+              bucket = parameters["ArtifactBucketName"]
+              key = parameters[artifact_parameter]
+              live = lam.get_function_configuration(FunctionName=function_name)
+              if live.get("State") != "Active" or live.get("LastUpdateStatus") != "Successful":
+                  raise RuntimeError(f"{function_name}: Lambda not ready; refusing deployment")
+              try:
+                  artifact = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
+              except Exception as exc:
+                  raise RuntimeError(
+                      f"{function_name}: cannot read CloudFormation artifact {key}; refusing deployment"
+                  ) from exc
+              recorded_sha = base64.b64encode(hashlib.sha256(artifact).digest()).decode("ascii")
+              if live["CodeSha256"] != recorded_sha:
+                  raise RuntimeError(
+                      f"{function_name}: LIVE CODE DRIFT detected against {stack_name} "
+                      f"artifact {key}. Refusing to overwrite working Lambda. "
+                      "Reconcile live code and CloudFormation before releasing."
+                  )
+              print(f"{function_name}: live Lambda package matches CloudFormation artifact")
+          PY
       - name: Package Python 3.13 native Google adapter
         run: |
           set -euo pipefail
