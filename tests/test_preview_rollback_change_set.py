@@ -8,6 +8,12 @@ from preview_rollback_change_set import inspect
 
 
 class RollbackChangeSetTests(unittest.TestCase):
+    def test_rejects_failed_change_set(self):
+        with self.assertRaisesRegex(ValueError, "not CREATE_COMPLETE"):
+            inspect({"Status": "FAILED", "Changes": [
+                {"ResourceChange": {"LogicalResourceId": "ApiLambda",
+                                    "Action": "Modify", "Replacement": "False"}}]})
+
     def test_rejects_delete(self):
         with self.assertRaisesRegex(ValueError, "Unsafe rollback"):
             inspect({"Status": "CREATE_COMPLETE", "Changes": [
