@@ -57,7 +57,16 @@ def preflight(cf, lam, events, baseline, plan, change_set_id, expected_change_se
     actual_params = {x["ParameterKey"]: x.get("ParameterValue") for x in result.get("Parameters", [])}
     if actual_params != expected_params:
         raise ValueError("Change set parameters differ from approved plan")
-    verified = verify_reconcile_permission(cf, lam, events, BACKEND, result.get("Changes", []))
+    changes = list(result.get("Changes", []))
+    next_token = result.get("NextToken")
+    while next_token:
+        page = cf.describe_change_set(ChangeSetName=change_set_id, StackName=BACKEND, NextToken=next_token)
+        if page.get("ChangeSetId") != change_set_id or page.get("StackId") != previous["stack_id"]:
+            raise ValueError("Paginated change-set identity changed")
+        changes.extend(page.get("Changes", []))
+        next_token = page.get("NextToken")
+    result["Changes"] = changes
+    verified = verify_reconcile_permission(cf, lam, events, BACKEND, changes)
     problems = validate(result, ALLOWED, verified_reconcile_permission=verified)
     if problems:
         raise ValueError("Unsafe change set: " + "; ".join(problems))
