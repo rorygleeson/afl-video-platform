@@ -6,13 +6,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from preview_release_change_set import check_plan, preview
 
 class PreviewPreflightTests(unittest.TestCase):
+    def test_backend_uses_exact_deployed_template(self):
+        import hashlib
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            deployed = root / "deployed.yaml"
+            deployed.write_text("AWSTemplateFormatVersion: '2010-09-09'\\n")
+            params = {"Foo": "before"}
+            b = {"stacks": {"backend": {"name": "afl-app-dev-backend",
+                "parameters": params, "deployed_template_path": "deployed.yaml",
+                "deployed_template_sha256": hashlib.sha256(deployed.read_bytes()).hexdigest()}},
+                "guardrails": {"deploy_permitted": False}}
+            p = {"deploy_permitted": False, "stacks": {"backend": {
+                "name": "afl-app-dev-backend", "current_parameters": params,
+                "proposed_parameters": params, "changed_parameters": {}}}}
+            name, template, values = check_plan(p, b, "backend", root)
+            self.assertEqual(template, deployed)
+            deployed.write_text("tampered")
+            with self.assertRaisesRegex(ValueError, "digest mismatch"):
+                check_plan(p, b, "backend", root)
     def test_plan_preserves_parameters(self):
         b={"stacks":{"backend":{"name":"afl-app-dev-backend","parameters":{"Foo":"before"}}},
            "guardrails":{"deploy_permitted":False}}
         p={"deploy_permitted":False,"stacks":{"backend":{"name":"afl-app-dev-backend",
            "current_parameters":{"Foo":"before"},"proposed_parameters":{"Foo":"after"},
            "changed_parameters":{"Foo":{"before":"before","after":"after"}}}}}
-        name, template, params=check_plan(p,b,"backend",Path(__file__).resolve().parents[1])
+        import hashlib\n        import tempfile\n        with tempfile.TemporaryDirectory() as d:\n            deployed = Path(d) / "backend.yaml"\n            deployed.write_text("template")\n            b["stacks"]["backend"]["deployed_template_path"] = "backend.yaml"\n            b["stacks"]["backend"]["deployed_template_sha256"] = hashlib.sha256(deployed.read_bytes()).hexdigest()\n            name, template, params=check_plan(p,b,"backend",Path(d))
         self.assertEqual(name,"afl-app-dev-backend")
         self.assertEqual(params,[{"ParameterKey":"Foo","ParameterValue":"after"}])
     def test_detects_undocumented_parameter_change(self):
