@@ -87,9 +87,10 @@ def verify_reconcile_permission(cf, lam, events, stack_name, changes):
         for s in policy.get("Statement", [])
     )
 
-def preview(cf, stack_name, template, parameters, allowed, run_id, verify_permission=None):
+def preview(cf, stack_name, template, parameters, allowed, run_id, verify_permission=None, retain=False):
     name = f"afl-unified-preview-{run_id}"
     created = False
+    safe_to_retain = False
     try:
         cf.create_change_set(
             StackName=stack_name, ChangeSetName=name, ChangeSetType="UPDATE",
@@ -120,9 +121,13 @@ def preview(cf, stack_name, template, parameters, allowed, run_id, verify_permis
             issues = validate(result, allowed, verified_reconcile_permission=verified)
             output["verdict"] = "BLOCKED" if issues else "SAFE_PREVIEW"
             output["issues"] = issues
+            safe_to_retain = not issues
+            if retain and safe_to_retain:
+                output["change_set_id"] = result["ChangeSetId"]
+                output["retained_for_separate_approval"] = True
         return output
     finally:
-        if created:
+        if created and not (retain and safe_to_retain):
             cf.delete_change_set(StackName=stack_name, ChangeSetName=name)
 
 def main():
@@ -134,10 +139,13 @@ def main():
     p.add_argument("--run-id", required=True)
     p.add_argument("--output", type=Path, default=Path("change-set-preview.json"))
     p.add_argument("--create-preview", action="store_true", help="Explicitly authorize AWS change-set creation and deletion")
+    p.add_argument("--retain-reviewed", action="store_true", help="Retain only a SAFE_PREVIEW change set for separate explicit deployment approval")
     args = p.parse_args()
     baseline = json.loads(args.baseline.read_text())
     plan = json.loads(args.plan.read_text())
     stack_name, template, parameters = check_plan(plan, baseline, args.stack, Path(__file__).resolve().parents[1])
+    if args.retain_reviewed and not args.create_preview:
+        raise ValueError("--retain-reviewed requires --create-preview")
     if not args.create_preview:
         print("PRECHECK ONLY; AWS unchanged:", stack_name)
         return
@@ -161,9 +169,12 @@ def main():
     lam = boto3.client('lambda', region_name='ap-southeast-2')
     events = boto3.client('events', region_name='ap-southeast-2')
     output = preview(cf, stack_name, template, parameters, set(args.allow), args.run_id,
-        verify_permission=lambda changes: verify_reconcile_permission(cf, lam, events, stack_name, changes))
+        verify_permission=lambda changes: verify_reconcile_permission(cf, lam, events, stack_name, changes),
+        retain=args.retain_reviewed)
     args.output.write_text(json.dumps(output, indent=2, default=str) + "\n")
     print(output["verdict"], output.get("issues", []))
+    if args.retain_reviewed and output["verdict"] != "SAFE_PREVIEW":
+        raise SystemExit("Refusing to retain change set without SAFE_PREVIEW verdict")
     if output["verdict"] == "BLOCKED":
         raise SystemExit(1)
 if __name__ == "__main__":
