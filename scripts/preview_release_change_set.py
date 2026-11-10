@@ -41,8 +41,6 @@ def check_plan(plan, baseline, label, repo):
     if changed != expected:
         raise ValueError("Parameter diff mismatch")
     template = repo / template_path
-    if not template.is_file():
-        raise ValueError("Missing source template")
     # During reconciliation, preview the actual deployed template rather than
     # replacing it with repository HEAD. The latter caused unrelated IAM,
     # API Gateway and Step Functions changes in preview #6.
@@ -55,6 +53,8 @@ def check_plan(plan, baseline, label, repo):
         if not deployed.is_file() or hashlib.sha256(deployed.read_bytes()).hexdigest() != digest:
             raise ValueError("Deployed backend template missing or digest mismatch")
         template = deployed
+    if not template.is_file():
+        raise ValueError("Missing source template")
     return stack_name, template, [
         {"ParameterKey": key, "ParameterValue": value}
         for key, value in sorted(proposed.items())
