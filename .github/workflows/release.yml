@@ -48,6 +48,8 @@ jobs:
         env:
           BASELINE_OUTPUT: release-baseline.json
         run: python3 scripts/capture_release_baseline.py
+      - name: Verify live resource health and protected Google code (read only)
+        run: python3 scripts/verify_release_health.py --baseline release-baseline.json
       - name: Generate fail-closed offline release plan
         run: |
           python3 scripts/plan_release.py --baseline release-baseline.json --artifacts dist/release/manifest.json --output release-plan.json
