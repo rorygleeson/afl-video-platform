@@ -181,6 +181,22 @@ Resources:
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/afl-app-*/*'
                   - !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/*/*'
+              # Read-only live inventory; no new deployment/write actions.
+              - Sid: AuditApplicationStackResources
+                Effect: Allow
+                Action:
+                  - cloudformation:ListStackResources
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/afl-app-*/*'
+              - Sid: AuditApplicationLambdaConfiguration
+                Effect: Allow
+                Action:
+                  - lambda:GetFunctionConfiguration
+                Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-*'
+              - Sid: AuditApplicationStateMachineNames
+                Effect: Allow
+                Action:
+                  - states:ListStateMachines
+                Resource: '*'
               - Sid: ValidateTemplate
                 Effect: Allow
                 Action: cloudformation:ValidateTemplate
