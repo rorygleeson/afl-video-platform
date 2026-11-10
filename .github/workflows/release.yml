@@ -171,7 +171,7 @@ jobs:
         if: ${{ inputs.change_set_preview == 'deploy_backend' }}
         run: |
           python3 - <<'PY'
-          import base64, boto3, hashlib, json
+          import base64, boto3, json
           from pathlib import Path
           manifest=json.loads(Path("dist/release/manifest.json").read_text())["artifacts"]
           checks={"api":"ApiLambda", "image-worker":"ImageWorkerLambda", "legacy-video-worker":"VideoWorkerLambda"}
@@ -179,6 +179,8 @@ jobs:
           lam=boto3.client("lambda",region_name="ap-southeast-2")
           for artifact, logical_id in checks.items():
               function=cf.describe_stack_resource(StackName="afl-app-dev-backend",LogicalResourceId=logical_id)["StackResourceDetail"]["PhysicalResourceId"]
+              if artifact not in manifest:
+                  raise SystemExit(f"FAIL: missing release manifest artifact {artifact}")
               expected=base64.b64encode(bytes.fromhex(manifest[artifact]["sha256_hex"])).decode()
               current=lam.get_function_configuration(FunctionName=function)
               if current.get("CodeSha256") != expected or current.get("State") != "Active" or current.get("LastUpdateStatus") != "Successful":
