@@ -45,14 +45,14 @@ def check_plan(plan, baseline, label, repo):
     # During reconciliation, preview the actual deployed template rather than
     # replacing it with repository HEAD. The latter caused unrelated IAM,
     # API Gateway and Step Functions changes in preview #6.
-    if label == "backend":
+    if label in ("backend", "google"):
         original = live.get("deployed_template_path")
         digest = live.get("deployed_template_sha256")
         if not original or not digest:
-            raise ValueError("Missing captured deployed backend template")
+            raise ValueError("Missing captured deployed stack template")
         deployed = repo / original
         if not deployed.is_file() or hashlib.sha256(deployed.read_bytes()).hexdigest() != digest:
-            raise ValueError("Deployed backend template missing or digest mismatch")
+            raise ValueError("Deployed stack template missing or digest mismatch")
         template = deployed
     if not template.is_file():
         raise ValueError("Missing source template")
@@ -164,8 +164,17 @@ def main():
     # not suppress a scoped preview of a different stack.
     if baseline.get("verification_gaps"):
         raise ValueError("AWS baseline has unverified resources; refusing preview")
-    if args.stack == "google" and baseline.get("known_drift", {}).get("google_worker"):
-        raise ValueError("Google worker drift: preview requires a separate reconciliation design")
+    if args.stack == "google":
+        if not baseline.get("known_drift", {}).get("google_worker"):
+            raise ValueError("Google drift state changed; review before preview")
+        from prepare_google_reconciliation import prepare
+        reconciliation = prepare(baseline)
+        if reconciliation["verdict"] != "READY_FOR_SEPARATE_CHANGE_SET_PREVIEW":
+            raise ValueError("Google reconciliation not ready")
+        if plan["stacks"]["google"]["proposed_parameters"] != reconciliation["proposed_parameters"]:
+            raise ValueError("Google preview must use exact verified live artifact parameter plan")
+        if set(args.allow) != {"GoogleWorkerLambda"}:
+            raise ValueError("Google preview may modify only GoogleWorkerLambda")
     if args.stack == "assembly":
         raise ValueError("Assembly FFmpeg layer provenance not pinned; preview disabled")
     cf = boto3.client("cloudformation", region_name="ap-southeast-2")
