@@ -46,8 +46,7 @@ jobs:
           if base64.b64encode(h.digest()).decode()!=expected: raise RuntimeError("Artifact hash mismatch")
           name="afl-google-reconcile-"+os.environ["GITHUB_RUN_ID"]
           values=[{"ParameterKey":p["ParameterKey"],**({"ParameterValue":key} if p["ParameterKey"]=="GoogleWorkerArtifactKey" else {"UsePreviousValue":True})} for p in current["Parameters"]]
-          template=open("infrastructure/app/google-video.yaml",encoding="utf-8").read()
-          cf.create_change_set(StackName=stack,ChangeSetName=name,ChangeSetType="UPDATE",TemplateBody=template,Parameters=values,RoleARN="arn:aws:iam::134387458447:role/afl-video-cfn-execution-role",Capabilities=["CAPABILITY_NAMED_IAM"],Description="PREVIEW ONLY: align CFN Google code artifact with SHA-verified live worker; do not execute")
+          cf.create_change_set(StackName=stack,ChangeSetName=name,ChangeSetType="UPDATE",UsePreviousTemplate=True,Parameters=values,RoleARN="arn:aws:iam::134387458447:role/afl-video-cfn-execution-role",Capabilities=["CAPABILITY_NAMED_IAM"],Description="PREVIEW ONLY: align CFN Google code artifact with SHA-verified live worker; do not execute")
           try:
               cf.get_waiter("change_set_create_complete").wait(StackName=stack,ChangeSetName=name,WaiterConfig={"Delay":5,"MaxAttempts":48})
           except WaiterError:
