@@ -2,6 +2,7 @@
 """Read-only AWS release baseline: no CloudFormation writes or paid API calls."""
 import base64
 import boto3
+from botocore.exceptions import ClientError
 import datetime
 import hashlib
 import json
@@ -56,12 +57,22 @@ def main():
     for page in states.get_paginator("list_state_machines").paginate():
         for machine in page["stateMachines"]:
             if machine["name"].startswith("afl-app-dev-"):
-                detail = states.describe_state_machine(stateMachineArn=machine["stateMachineArn"])
-                manifest["state_machines"].append({
-                    "name": machine["name"], "arn": machine["stateMachineArn"],
-                    "status": detail["status"], "definition_sha256": hashlib.sha256(detail["definition"].encode()).hexdigest(),
-                    "role_arn": detail["roleArn"],
-                })
+                entry = {"name": machine["name"], "arn": machine["stateMachineArn"],
+                         "definition_verified": False}
+                try:
+                    detail = states.describe_state_machine(stateMachineArn=machine["stateMachineArn"])
+                except ClientError as exc:
+                    if exc.response.get("Error", {}).get("Code") not in ("AccessDenied", "AccessDeniedException"):
+                        raise
+                    entry["inspection_error"] = "states:DescribeStateMachine permission denied"
+                    manifest.setdefault("verification_gaps", []).append(
+                        f"Step Functions definition unverified: {machine['name']}"
+                    )
+                else:
+                    entry.update({"definition_verified": True, "status": detail["status"],
+                                  "definition_sha256": hashlib.sha256(detail["definition"].encode()).hexdigest(),
+                                  "role_arn": detail["roleArn"]})
+                manifest["state_machines"].append(entry)
     google = manifest["lambdas"]["afl-app-dev-google-omni-worker"]
     if google["sha256"] != GOOGLE_KNOWN_SHA:
         raise RuntimeError("Google live SHA changed; baseline invalid. STOP.")
@@ -81,6 +92,8 @@ def main():
     manifest["known_drift"] = {"google_worker": google_params.get("GoogleWorkerArtifactKey") != key}
     path = Path(os.environ.get("BASELINE_OUTPUT", "release-baseline.json"))
     path.write_text(json.dumps(manifest, indent=2, default=str) + "\n")
+    if manifest.get("verification_gaps"):
+        print("INCOMPLETE BASELINE — inspection gaps:", *manifest["verification_gaps"], sep="\\n  ")
     print(f"Read-only baseline captured: {path}")
     print("NO DEPLOYMENT PERFORMED. Google drift:", manifest["known_drift"]["google_worker"])
 if __name__ == "__main__":
