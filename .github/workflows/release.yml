@@ -107,8 +107,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           source = Path('.github/workflows/release.yml').read_text()
-          assert 'cloudformation execute-change-set' not in source.lower()
-          assert 'aws cloudformation deploy' not in source.lower()
+          assert ('cloudformation ' + 'execute-change-set') not in source.lower()
+          assert ('aws cloudformation ' + 'deploy') not in source.lower()
           print('PASS: release workflow contains no CloudFormation execution command')
           PY
       - name: Summary
