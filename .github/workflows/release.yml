@@ -151,6 +151,7 @@ jobs:
       - name: Verify AWS health after backend update
         if: ${{ inputs.change_set_preview == 'deploy_backend' }}
         run: python3 scripts/verify_release_health.py --baseline release-baseline.json
+      - name: Verify deployment workflow guardrails
         run: |
           python3 - <<'PY'
           from pathlib import Path
