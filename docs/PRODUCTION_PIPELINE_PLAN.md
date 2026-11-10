@@ -106,6 +106,30 @@ The table records **template definitions and workflow references**, not an indep
 
 **Step 1 remains partially open:** Live stack metadata and two Lambda comparisons verified; full resource inventory blocked by IAM. Step 2 baseline is **not yet satisfied**.
 
+## 1.6 Second live inventory — 2026-11-10 (after bootstrap IAM update)
+
+**Evidence:** [Audit run #2](https://github.com/rorygleeson/afl-video-platform/actions/runs/42749371264), job 129609082082; complete GitHub Actions log inspected. Bootstrap stack was updated successfully to `UPDATE_COMPLETE`, adding only the three previously reviewed read-only IAM permissions. The inventory is now complete for the five configured stacks, five configured Lambdas and Step Functions listing.
+
+| Stack | Status | Listed resources |
+|---|---|---:|
+| afl-app-dev-backend | UPDATE_COMPLETE | 27 |
+| afl-app-dev-google-video | UPDATE_COMPLETE | 6 |
+| afl-app-dev-assembly | UPDATE_COMPLETE | 6 |
+| afl-app-dev-frontend | CREATE_COMPLETE | 4 |
+| afl-app-dev-video (mock) | CREATE_COMPLETE | 6 |
+
+| Lambda | State | Live SHA vs recorded artifact |
+|---|---|---|
+| afl-app-dev-api | Active | MATCH |
+| afl-app-dev-image-worker | Active | MATCH |
+| afl-app-dev-video-worker (legacy) | Active | MATCH |
+| afl-app-dev-google-omni-worker | Active | **DRIFT** |
+| afl-app-dev-assembly | Active | MATCH |
+
+Four STANDARD state machines listed: `afl-app-dev-assembly`, `afl-app-dev-google-omni`, `afl-app-dev-scene1-pilot`, `afl-app-dev-video`. Presence does not prove active use. No AWS application changes made by the inventory.
+
+**Outstanding hard gate:** Preserve and verify the **live Google worker code** (SHA256 `RKx1wcvmxcE3Sx7kzlxbTI3NhBlNlt/Ydpy6J4ZOpmI=`) before any Google stack deployment. The stack's current S3 artifact differs; do not overwrite the live worker with the recorded artifact. Identify which direct diagnostics release created the current live version, capture an immutable recoverable copy, and reconcile IaC via a reviewed change set. Inspect dependencies before retiring mock/pilot resources. Step 1 inventory substantially complete; Step 2 immutable rollback baseline **not complete**.
+
 ## 2. Target release architecture
 
 ```text
