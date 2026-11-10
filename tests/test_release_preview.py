@@ -68,6 +68,19 @@ class DependencyPreviewTests(unittest.TestCase):
         self.assertEqual(validate(change, {"ApiLambda"}), [])
         change["Changes"][0]["ResourceChange"]["Details"][0]["CausingEntity"] = "OtherLambda.Arn"
         self.assertTrue(validate(change, {"ApiLambda"}))
+    def test_verified_exact_conditional_permission_is_accepted(self):
+        from validate_change_set import validate
+        change = {"Status": "CREATE_COMPLETE", "Changes": [{"ResourceChange": {
+            "LogicalResourceId": "ImageReconcileInvokePermission",
+            "Action": "Modify", "Replacement": "Conditional",
+            "Details": [{"Target": {"Attribute": "Properties", "Name": "SourceArn",
+                                   "RequiresRecreation": "Always"},
+                         "Evaluation": "Dynamic", "ChangeSource": "ResourceAttribute",
+                         "CausingEntity": "ImageReconcileSchedule.Arn"}]}}]}
+        self.assertTrue(validate(change, set()))
+        self.assertEqual(validate(change, set(), verified_reconcile_permission=True), [])
+        change["Changes"][0]["ResourceChange"]["Details"][0]["CausingEntity"] = "Unknown.Arn"
+        self.assertTrue(validate(change, set(), verified_reconcile_permission=True))
     def test_conditional_permission_remains_blocked(self):
         from validate_change_set import validate
         change = {"Status": "CREATE_COMPLETE", "Changes": [{"ResourceChange": {

@@ -12,6 +12,7 @@ from pathlib import Path
 import boto3
 from botocore.exceptions import ClientError
 from validate_change_set import validate
+import re
 
 STACK_TEMPLATES = {
     "backend": ("afl-app-dev-backend", "infrastructure/app/backend.yaml"),
@@ -60,7 +61,33 @@ def check_plan(plan, baseline, label, repo):
         for key, value in sorted(proposed.items())
     ]
 
-def preview(cf, stack_name, template, parameters, allowed, run_id):
+def verify_reconcile_permission(cf, lam, events, stack_name, changes):
+    """Read-only check of the exact existing EventBridge-to-Lambda permission."""
+    candidates = [x.get("ResourceChange", {}) for x in changes]
+    permission = [x for x in candidates if x.get("LogicalResourceId") == "ImageReconcileInvokePermission"]
+    if len(permission) != 1:
+        return False
+    resource = cf.describe_stack_resource(StackName=stack_name,
+        LogicalResourceId="ImageReconcileInvokePermission")["StackResourceDetail"]
+    if resource.get("PhysicalResourceId") != permission[0].get("PhysicalResourceId"):
+        return False
+    rule = events.describe_rule(Name="afl-app-dev-reconcile-images")
+    arn = rule.get("Arn", "")
+    if not re.fullmatch(r"arn:aws[a-zA-Z-]*:events:ap-southeast-2:134387458447:rule/afl-app-dev-reconcile-images", arn):
+        return False
+    targets = events.list_targets_by_rule(Rule="afl-app-dev-reconcile-images").get("Targets", [])
+    if not any(x.get("Arn") == "arn:aws:lambda:ap-southeast-2:134387458447:function:afl-app-dev-image-worker" for x in targets):
+        return False
+    policy = json.loads(lam.get_policy(FunctionName="afl-app-dev-image-worker")["Policy"])
+    return any(
+        s.get("Effect") == "Allow"
+        and s.get("Principal", {}).get("Service") == "events.amazonaws.com"
+        and s.get("Action") == "lambda:InvokeFunction"
+        and s.get("Condition", {}).get("ArnLike", {}).get("AWS:SourceArn") == arn
+        for s in policy.get("Statement", [])
+    )
+
+def preview(cf, stack_name, template, parameters, allowed, run_id, verify_permission=None):
     name = f"afl-unified-preview-{run_id}"
     created = False
     try:
@@ -88,7 +115,9 @@ def preview(cf, stack_name, template, parameters, allowed, run_id):
         if result["Status"] == "FAILED" and "didn't contain changes" in result.get("StatusReason", ""):
             output["verdict"] = "NO_CHANGES"
         else:
-            issues = validate(result, allowed)
+            verified = bool(verify_permission and verify_permission(result.get('Changes', [])))
+            output['reconcile_permission_live_verified'] = verified
+            issues = validate(result, allowed, verified_reconcile_permission=verified)
             output["verdict"] = "BLOCKED" if issues else "SAFE_PREVIEW"
             output["issues"] = issues
         return output
@@ -129,7 +158,10 @@ def main():
     current_params = {x["ParameterKey"]: x.get("ParameterValue") for x in current.get("Parameters", [])}
     if current_params != baseline["stacks"][args.stack]["parameters"]:
         raise ValueError("Live stack parameters changed since baseline")
-    output = preview(cf, stack_name, template, parameters, set(args.allow), args.run_id)
+    lam = boto3.client('lambda', region_name='ap-southeast-2')
+    events = boto3.client('events', region_name='ap-southeast-2')
+    output = preview(cf, stack_name, template, parameters, set(args.allow), args.run_id,
+        verify_permission=lambda changes: verify_reconcile_permission(cf, lam, events, stack_name, changes))
     args.output.write_text(json.dumps(output, indent=2, default=str) + "\n")
     print(output["verdict"], output.get("issues", []))
     if output["verdict"] == "BLOCKED":

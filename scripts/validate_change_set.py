@@ -36,7 +36,27 @@ def dependency_only(r):
         for d in details
     )
 
-def validate(doc, allowed):
+# A conditional replacement of this permission can be a false-positive:
+# CloudFormation cannot statically resolve the ARN of the *unchanged* named
+# EventBridge rule. Accept only the exact single dynamic reference below,
+# and only after a live AWS check confirms both names and the current policy.
+def expected_reconcile_permission(r, verified=False):
+    if not verified or r.get("LogicalResourceId") != "ImageReconcileInvokePermission":
+        return False
+    if r.get("Action") != "Modify" or r.get("Replacement") != "Conditional":
+        return False
+    details = r.get("Details", [])
+    return len(details) == 1 and all(
+        d.get("Evaluation") == "Dynamic"
+        and d.get("ChangeSource") == "ResourceAttribute"
+        and d.get("CausingEntity") == "ImageReconcileSchedule.Arn"
+        and d.get("Target", {}).get("Attribute") == "Properties"
+        and d.get("Target", {}).get("Name") == "SourceArn"
+        and d.get("Target", {}).get("RequiresRecreation") == "Always"
+        for d in details
+    )
+
+def validate(doc, allowed, verified_reconcile_permission=False):
     errors = []
     status = doc.get("Status")
     if status != "CREATE_COMPLETE":
@@ -49,6 +69,8 @@ def validate(doc, allowed):
         logical = r.get("LogicalResourceId", "<unknown>")
         action = r.get("Action")
         replacement = r.get("Replacement", "Conditional")
+        if expected_reconcile_permission(r, verified_reconcile_permission):
+            continue
         if logical not in allowed and not dependency_only(r):
             errors.append(f"{logical}: not in explicitly approved allowlist")
         if action != "Modify":
