@@ -36,11 +36,11 @@ class VideoPromptTests(unittest.TestCase):
                 self.assertNotIn("videoConcurrency", result)
                 self.assertEqual(result["sceneId"], scene)
         scene3 = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")
-        self.assertEqual(scene3["commentary"], "Tonelli wins it for Geelong Cats! They\u0027re the premiers!")
+        self.assertEqual(scene3["commentary"], "Alex Tonelli has won the premiership for Geelong Cats!")
         expected = {
-            "scene1": ("Tonelli breaks clear! He's charging towards goal!", 5),
-            "scene2": ("He goes for goal! What a kick! He\u0027s scored!", 8),
-            "scene3": ("Tonelli wins it for Geelong Cats! They\u0027re the premiers!", 10),
+            "scene1": ("Tonelli breaks free! SIX SECONDS LEFT!", 4),
+            "scene2": ("He kicks… IT'S A GOAL!", 8),
+            "scene3": ("Alex Tonelli has won the premiership for Geelong Cats!", 5),
         }
         for scene_id, (commentary, duration) in expected.items():
             with self.subTest(scene_id=scene_id):
