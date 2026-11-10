@@ -38,7 +38,7 @@ jobs:
         run: cfn-lint infrastructure/bootstrap/bootstrap.yaml infrastructure/app/frontend.yaml infrastructure/app/backend.yaml --regions ap-southeast-2
       - name: Check application Python, JavaScript and scenario JSON syntax
         run: |
-          python -m py_compile src/api/handler.py src/api/video_prompts.py src/image_worker/handler.py src/video_worker/handler.py src/google_video_worker/handler.py src/assembly_worker/handler.py
+          python -m py_compile src/api/handler.py src/api/video_prompts.py src/image_worker/handler.py src/video_worker/handler.py src/google_video_worker/handler.py src/assembly_worker/handler.py scripts/audit_live_aws.py
           node --check frontend/app.js
           python -m json.tool scenarios/afl-grand-final-winning-kick/v1/config.json > /dev/null
       - name: Test browser polling and scene thumbnails
