@@ -1,12 +1,6 @@
 name: Deploy isolated AFL video mock stack (Stage 3)
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/deploy-video.yml'
-      - 'infrastructure/app/video.yaml'
-      - 'src/video_mock_worker/**'
-      - 'tests/test_video_mock_stage3.py'
+  # Legacy mock stack deploys only when explicitly requested.
   workflow_dispatch:
 permissions:
   contents: read
