@@ -26,6 +26,8 @@ def prepare(manifest, live, template_path):
         raise ValueError("Invalid rollback manifest")
     if manifest.get("deployment_executed") is not False:
         raise ValueError("Expected pre-release snapshot")
+    if manifest.get("stacks", {}).get("backend", {}).get("template_sha256") is None:
+        raise ValueError("Saved backend template checksum missing")
     entry = manifest["stacks"]["backend"]
     if entry["name"] != BACKEND or live["StackId"] != entry["stack_id"]:
         raise ValueError("Backend stack identity mismatch")
@@ -46,6 +48,8 @@ def prepare(manifest, live, template_path):
 
 def inspect(changes, verified_reconcile_permission=False):
     """Reuse the forward release's strict dependency and permission checks."""
+    if changes.get("Status") != "CREATE_COMPLETE":
+        raise ValueError("Rollback CloudFormation change set is not CREATE_COMPLETE")
     issues = validate(changes, ALLOWED, verified_reconcile_permission=verified_reconcile_permission)
     if issues:
         raise ValueError("Unsafe rollback: " + "; ".join(issues))
