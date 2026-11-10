@@ -106,11 +106,20 @@ def preview(cf, stack_name, template, parameters, allowed, run_id, verify_permis
             time.sleep(2)
         else:
             raise RuntimeError("Timed out waiting for preview change set")
+        changes = list(result.get("Changes", []))
+        next_token = result.get("NextToken")
+        while next_token:
+            page = cf.describe_change_set(StackName=stack_name, ChangeSetName=name, NextToken=next_token)
+            if page.get("ChangeSetId") != result.get("ChangeSetId") or page.get("StackId") != result.get("StackId"):
+                raise ValueError("Paginated preview change-set identity changed")
+            changes.extend(page.get("Changes", []))
+            next_token = page.get("NextToken")
+        result["Changes"] = changes
         output = {
             "stack": stack_name, "name": name,
             "status": result["Status"],
             "reason": result.get("StatusReason", ""),
-            "changes": result.get("Changes", []),
+            "changes": changes,
             "executed": False,
         }
         if result["Status"] == "FAILED" and "didn't contain changes" in result.get("StatusReason", ""):
