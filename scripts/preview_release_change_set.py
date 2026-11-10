@@ -102,8 +102,14 @@ def main():
         return
     if not args.run_id.isdigit():
         raise ValueError("run-id must be numeric")
-    if plan.get("blockers"):
-        raise ValueError("Release plan contains blockers; refusing AWS preview")
+    # A preview never executes. Known Google/FFmpeg deployment blockers must
+    # not suppress a scoped preview of a different stack.
+    if baseline.get("verification_gaps"):
+        raise ValueError("AWS baseline has unverified resources; refusing preview")
+    if args.stack == "google" and baseline.get("known_drift", {}).get("google_worker"):
+        raise ValueError("Google worker drift: preview requires a separate reconciliation design")
+    if args.stack == "assembly":
+        raise ValueError("Assembly FFmpeg layer provenance not pinned; preview disabled")
     cf = boto3.client("cloudformation", region_name="ap-southeast-2")
     current = cf.describe_stacks(StackName=stack_name)["Stacks"][0]
     if current["StackId"] != baseline["stacks"][args.stack]["stack_id"]:
