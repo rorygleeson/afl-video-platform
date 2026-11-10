@@ -4,14 +4,14 @@
 
 An AWS serverless video-generation pilot. A user uploads their selfie, chooses an AFL team and enters their name. The system creates **three personalised reference images**, generates **three cinematic video scenes** with spoken commentary, and is designed to join them into one shareable MP4.
 
-> **Current state — 11 November 2026:** Working developer pilot, **not a launched paid product**. Replicate reference-image generation and Google scene generation have been demonstrated. The FFmpeg assembly worker, orchestration, API and final-download UI are in the repository, but an end-to-end live assembly/download test is **not yet verified**. Payments and customer authentication are not implemented. The Google worker's CloudFormation reconciliation was successfully deployed on 10 November; no further Google deployment is required for documentation changes.
+> **Current state — 11 November 2026:** Working developer pilot, **not a launched paid product**. Replicate reference-image generation and Google scene generation have been demonstrated. The FFmpeg assembly worker, orchestration, API and final-download UI are in the repository, and a user-provided mobile screenshot shows **a 17-second final stitched MP4 ready for playback/download**. That is visual evidence of one successful assembly; no independent live AWS verification was performed in this documentation update. Payments and customer authentication are not implemented. The Google worker's CloudFormation reconciliation was successfully deployed on 10 November; no further Google deployment is required for documentation changes.
 
 ## What the customer experiences
 
 1. **Choose a team and upload a selfie.** Provide first and last name for the personalised commentary.
 2. **Create three reference images.** Replicate composites the user's likeness with the run-up, winning-kick and celebration scene designs. Each reference image has its own status.
 3. **Generate three videos.** Following explicit paid-generation confirmation in the developer pilot, Google Gemini Omni 1.2 Flash converts each reference image and its scene prompt into a short MP4. The scenes can run concurrently; the UI shows their independent progress and failures.
-4. **Stitch and download.** The implemented FFmpeg assembly path is intended to normalise and join the three saved MP4s into one final video and expose a signed download link. **Live end-to-end verification remains outstanding.**
+4. **Stitch and download.** The implemented FFmpeg assembly path is intended to normalise and join the three saved MP4s into one final video and expose a signed download link. A supplied mobile screenshot shows a completed 17-second final MP4 with a download button; independent backend verification remains outstanding.
 
 | Scene | Story | Commentary (example) |
 | --- | --- | --- |
@@ -24,6 +24,8 @@ Durations are configurable in versioned scenario assets; do not rely on older do
 ## Mobile web pilot
 
 **No Amazon Cognito is used in the current application.** API Gateway uses an `x-api-key` for developer testing; consumer authentication is not yet built.
+
+Three real mobile screenshots supplied for this documentation update show (1) team/name/selfie input, (2) three completed personalised reference-image cards and (3) a final 17-second MP4 player with its download button. These are stronger evidence of the actual user journey than the illustration below. **The screenshot binaries are not yet committed to this repository**, so the existing illustration is retained until they can be uploaded without broken image links.
 
 The existing interface is a **mobile-friendly developer test application**, not the proposed commercial checkout. It supports selfie upload, three reference images, generation status, diagnostics, video playback and an implemented final-download control.
 
@@ -71,8 +73,8 @@ For a standalone diagram, see [the existing architecture graphic](docs/architect
 | Three Google-generated MP4s | Implemented; previous pilot succeeded, but individual submissions can fail |
 | Asynchronous polling and failure diagnostics | Implemented, with further recovery improvements needed |
 | Per-scene idempotency / duplicate-paid-request protection | Implemented; ambiguous paid submissions are **not automatically retried** |
-| FFmpeg stitching and assembly API | Implemented in repository; **live enablement and complete video test unverified** |
-| Final MP4 playback and timestamped filename download | Frontend implemented; successful live end-to-end test unverified |
+| FFmpeg stitching and assembly API | Implemented; supplied screenshot shows one finished 17-second video; live AWS configuration not independently inspected |
+| Final MP4 playback and timestamped filename download | Implemented; mobile screenshot shows final video ready and download control; download transfer not independently verified |
 | Payments, consumer sign-in and entitlements | Not implemented |
 | Production rate limits, provider costs, abuse prevention | Additional work required |
 
