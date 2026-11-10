@@ -53,6 +53,27 @@ class Tests(unittest.TestCase):
         module.execute(cf, "cs-id", "cs-id", baseline, plan, None, None, execute_confirmed=True)
         self.assertEqual(len(cf.executions), 1)
 
+    @patch.object(module, "verify_reconcile_permission", return_value=False)
+    def test_rejects_forbidden_change_on_second_page(self, permission):
+        cf = CF()
+        original = cf.describe_change_set
+
+        def paged(**kwargs):
+            if kwargs.get("NextToken") == "page-2":
+                return {"ChangeSetId": "cs-id", "StackId": "stack-id",
+                        "Changes": [{"ResourceChange": {
+                            "LogicalResourceId": "GoogleWorkerLambda",
+                            "Action": "Remove", "Replacement": "True"}}]}
+            first = original(**kwargs)
+            first["NextToken"] = "page-2"
+            return first
+
+        cf.describe_change_set = paged
+        baseline, plan = inputs()
+        with self.assertRaisesRegex(ValueError, "Unsafe change set"):
+            module.execute(cf, "cs-id", "cs-id", baseline, plan, None, None, True)
+        self.assertEqual(cf.executions, [])
+
     def test_rejects_wrong_approval(self):
         cf = CF()
         baseline, plan = inputs()
