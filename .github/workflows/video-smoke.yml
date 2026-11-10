@@ -1,11 +1,7 @@
 name: Stage 3 live AWS video mock smoke test
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/video-smoke.yml'
-      - 'infrastructure/app/video-smoke.yaml'
-      - 'tests/aws_video_smoke/**'
+  # This live AWS smoke test creates and deletes a CloudFormation stack.
+  # Run deliberately; code validation remains automatic.
   workflow_dispatch:
 permissions:
   contents: read
