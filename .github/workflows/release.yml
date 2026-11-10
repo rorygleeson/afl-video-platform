@@ -10,6 +10,7 @@ on:
         options:
           - offline
           - backend
+          - retain_backend
 permissions:
   contents: read
   id-token: write
@@ -25,7 +26,7 @@ jobs:
       - name: Validate ownership inventory
         run: python3 scripts/check_deployment_ownership.py
       - name: Verify source scripts compile
-        run: python3 -m py_compile scripts/check_deployment_ownership.py scripts/capture_release_baseline.py scripts/build_release_artifacts.py scripts/plan_release.py scripts/publish_release_artifacts.py scripts/preview_release_change_set.py scripts/validate_change_set.py scripts/prepare_rollback.py scripts/verify_release_health.py scripts/verify_rollback_readiness.py
+        run: python3 -m py_compile scripts/check_deployment_ownership.py scripts/capture_release_baseline.py scripts/build_release_artifacts.py scripts/plan_release.py scripts/publish_release_artifacts.py scripts/preview_release_change_set.py scripts/validate_change_set.py scripts/prepare_rollback.py scripts/verify_release_health.py scripts/verify_rollback_readiness.py scripts/execute_release_change_set.py
       - name: Build deterministic release artifacts
         run: |
           python3 scripts/build_release_artifacts.py
@@ -59,7 +60,7 @@ jobs:
             python3 scripts/preview_release_change_set.py --baseline release-baseline.json --plan release-plan.json --stack "$stack" --run-id "${{ github.run_id }}"
           done
       - name: Create and inspect backend change set (preview only; never execute)
-        if: ${{ inputs.change_set_preview == 'backend' }}
+        if: ${{ inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'retain_backend' }}
         run: |
           python3 scripts/preview_release_change_set.py \
             --baseline release-baseline.json \
@@ -69,9 +70,10 @@ jobs:
             --create-preview \
             --allow ApiLambda \
             --allow ImageWorkerLambda \
-            --allow VideoWorkerLambda
+            --allow VideoWorkerLambda \
+            ${{ inputs.change_set_preview == 'retain_backend' && '--retain-reviewed' || '' }}
       - name: Upload CloudFormation preview result
-        if: ${{ always() && inputs.change_set_preview == 'backend' }}
+        if: ${{ always() && (inputs.change_set_preview == 'backend' || inputs.change_set_preview == 'retain_backend') }}
         uses: actions/upload-artifact@v4
         with:
           name: cfn-preview-${{ github.run_id }}
@@ -114,5 +116,5 @@ jobs:
       - name: Summary
         run: |
           echo '## Baseline complete — no deployment' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Offline mode makes no AWS changes. Backend preview mode creates and deletes an unexecuted CloudFormation change set.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Offline mode makes no AWS changes. Backend preview mode creates and deletes an unexecuted CloudFormation change set. retain_backend keeps only a validated change set for later separate approval; it does not execute it.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Deployment remains disabled until the unified pipeline passes all ownership and change-set gates.' >> "$GITHUB_STEP_SUMMARY"
