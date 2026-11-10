@@ -1,13 +1,7 @@
 name: Deploy Replicate face-fidelity prompt (no paid generation)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/image_worker/handler.py'
-      - 'scenarios/afl-grand-final-winning-kick/v1/config.json'
-      - 'tests/test_replicate_prompts.py'
-      - '.github/workflows/deploy-replicate-identity.yml'
+  # Replicate worker deployment updates the shared backend stack; run after validation.
   workflow_dispatch:
 
 permissions:
