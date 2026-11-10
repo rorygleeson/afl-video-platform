@@ -23,6 +23,8 @@ Durations are configurable in versioned scenario assets; do not rely on older do
 
 ## Mobile web pilot
 
+**No Amazon Cognito is used in the current application.** API Gateway uses an `x-api-key` for developer testing; consumer authentication is not yet built.
+
 The existing interface is a **mobile-friendly developer test application**, not the proposed commercial checkout. It supports selfie upload, three reference images, generation status, diagnostics, video playback and an implemented final-download control.
 
 ![Illustrative two-screen mobile layout showing selfie setup and three reference images](docs/mobile-ui-illustration.svg)
