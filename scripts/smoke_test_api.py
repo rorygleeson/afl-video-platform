@@ -5,6 +5,7 @@ GET only. Never creates jobs, uploads images or calls paid generation.
 """
 import argparse
 import json
+import os
 import urllib.error
 import urllib.request
 
@@ -35,7 +36,10 @@ def main():
     if len(endpoints) != 1:
         raise SystemExit("FAIL: exactly one API Gateway HTTPS output is required")
     url = endpoints[0] + "/scenarios"
-    request = urllib.request.Request(url, headers={"Accept": "application/json"}, method="GET")
+    key = os.environ.get("AFL_API_KEY", "")
+    if not key:
+        raise SystemExit("FAIL: AFL_API_KEY required; refusing unauthenticated API smoke test")
+    request = urllib.request.Request(url, headers={"Accept": "application/json", "x-api-key": key}, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             status = response.status
