@@ -82,6 +82,30 @@ The table records **template definitions and workflow references**, not an indep
 - Confirm whether current S3 prompt objects are consumed by in-flight jobs and whether publication needs immutable per-release keys.
 - Review deployment role's permissions for read-only preflight versus write operations; enforce least privilege without breaking current access.
 
+## 1.5 First live AWS inventory — 2026-11-10 (workflow run #1)
+
+**Evidence:** [GitHub Actions run 42743816772](https://github.com/rorygleeson/afl-video-platform/actions/runs/42743816772), job 129591031514, user-provided log. This run **failed intentionally** after detecting a Google Lambda artifact mismatch. The application was not deployed or changed by this inventory.
+
+| Component | Live finding | Interpretation |
+|---|---|---|
+| Backend stack | Reported present; full resource listing AccessDenied | Stack metadata only |
+| Google stack | Reported present; full resource listing AccessDenied | Stack metadata only |
+| Assembly stack | UPDATE_COMPLETE; full resource listing AccessDenied | Stack metadata only |
+| Frontend stack | CREATE_COMPLETE; full resource listing AccessDenied | Stack metadata only |
+| Mock-video stack | CREATE_COMPLETE; full resource listing AccessDenied | **Confirmed deployed**, not safe to delete without dependency review |
+| API Lambda | Active; code hash **MATCH** against recorded S3 artifact | Verified code/artifact consistency at audit time |
+| Google Omni Lambda | Active; code hash **DRIFT** from recorded S3 artifact | **Critical: do not redeploy old CloudFormation artifact**; preserve live code |
+| Image Lambda | AccessDeniedException | No conclusion about existence or state |
+| Legacy video Lambda | AccessDeniedException | No conclusion about existence or state |
+| Assembly Lambda | AccessDeniedException | No conclusion about existence or state |
+| Step Functions | AccessDeniedException | No conclusion about live state machines |
+
+**Root cause of partial inventory:** The current GitHub OIDC deployment role's inline policy allows `cloudformation:DescribeStacks` but not `cloudformation:ListStackResources`, `lambda:GetFunctionConfiguration` for all worker functions, or `states:ListStateMachines`. These are authorization limitations, not proof of missing resources. The audit uses the existing deployment role, which has write capabilities, but its **script only makes read calls**. Future design should prefer a dedicated read-only audit role; do not modify IAM/bootstrap without separate approval.
+
+**Important:** The Google worker mismatch may reflect a legitimate direct diagnostics deployment. The live code hash and working version must be preserved before reconciling CloudFormation's recorded artifact key. No automatic overwrite, no blind re-release, and no destructive stack recovery.
+
+**Step 1 remains partially open:** Live stack metadata and two Lambda comparisons verified; full resource inventory blocked by IAM. Step 2 baseline is **not yet satisfied**.
+
 ## 2. Target release architecture
 
 ```text
