@@ -80,7 +80,7 @@ jobs:
             python3 scripts/preview_release_change_set.py --baseline release-baseline.json --plan release-plan.json --stack "$stack" --run-id "${{ github.run_id }}"
           done
       - name: Prepare isolated Google reconciliation plan (no AWS changes)
-        if: ${{ inputs.change_set_preview == 'google' }}
+        if: ${{ (inputs.change_set_preview == 'google' || github.event_name == 'push') }}
         run: |
           python3 scripts/prepare_google_reconciliation.py --baseline release-baseline.json --output google-reconciliation-plan.json
           python3 - <<'PY'
@@ -93,20 +93,20 @@ jobs:
           target=plan["stacks"]["google"]
           target["proposed_parameters"]=fix["proposed_parameters"]
           target["changed_parameters"]=fix["changed_parameters"]
-          Path("release-plan.json").write_text(json.dumps(plan,indent=2)+"\\n")
+          Path("release-plan.json").write_text(json.dumps(plan,indent=2)+"\n")
           PY
       - name: Create and inspect isolated Google change set (preview only)
-        if: ${{ inputs.change_set_preview == 'google' }}
+        if: ${{ (inputs.change_set_preview == 'google' || github.event_name == 'push') }}
         run: |
-          python3 scripts/preview_release_change_set.py \\
-            --baseline release-baseline.json \\
-            --plan release-plan.json \\
-            --stack google \\
-            --run-id "${{ github.run_id }}" \\
-            --create-preview \\
+          python3 scripts/preview_release_change_set.py \
+            --baseline release-baseline.json \
+            --plan release-plan.json \
+            --stack google \
+            --run-id "${{ github.run_id }}" \
+            --create-preview \
             --allow GoogleWorkerLambda
       - name: Upload Google preview result
-        if: ${{ always() && inputs.change_set_preview == 'google' }}
+        if: ${{ always() && (inputs.change_set_preview == 'google' || github.event_name == 'push') }}
         uses: actions/upload-artifact@v4
         with:
           name: google-preview-${{ github.run_id }}
