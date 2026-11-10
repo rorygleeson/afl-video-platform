@@ -5,6 +5,44 @@
 **Scope:** Existing single AWS environment, `ap-southeast-2`; GitHub repository `rorygleeson/afl-video-platform`  
 **Authority:** This document is the implementation checklist. Verify live AWS facts before any cutover.
 
+## IaC operating model and pause checkpoint — 10 November 2026
+
+**Decision: pause IaC feature work after successful backend preflight; return to product development.** This section records what is proven, what is not, and the exact resumption checklist. It supersedes stale progress checkboxes below where they conflict. No AWS application deployment was performed by this documentation update.
+
+### Plain-language model
+
+- **GitHub Actions is the release coordinator**; CloudFormation defines and updates AWS infrastructure. A release can sequence several stacks, but each physical resource must have exactly one authoritative owner.
+- **Five main stacks in the release inventory:** foundation `afl-video-bootstrap`; application `afl-app-dev-backend`, `afl-app-dev-google-video`, `afl-app-dev-assembly`, and `afl-app-dev-frontend`. A separately inventoried legacy `afl-app-dev-video` stack may also exist: do not equate the five main stacks with a complete live-stack count; verify before deletion.
+- **Step Functions:** the backend template defines `afl-app-dev-scene1-pilot`; Google video defines `afl-app-dev-google-omni`; assembly defines `afl-app-dev-assembly`. The image workflow is also referenced by the backend API through an ARN parameter. Verify live ownership and wiring rather than assuming all state machines belong to one stack.
+- **Code updates:** the target is immutable Lambda ZIP artifacts deployed by the owning stack through reviewed CloudFormation change sets, not untracked direct Lambda updates. Frontend objects need a single release owner too. Scenario asset publishing may remain separate only for disjoint, documented S3 prefixes.
+- **Preview is not deployment.** The `backend` mode creates, validates and deletes an unexecuted change set. `deploy_backend` is a separate explicitly authorised path; Google, assembly and frontend deployment are not yet enabled in the unified workflow. A green workflow does not mean those stacks were updated.
+- **Rollback:** exact deployed templates, parameters and artifact references are captured and verified. A live rollback has **not** been exercised; don't describe recovery as production-proven.
+
+### Verified checkpoint
+
+- [x] Unified `.github/workflows/release.yml` exists with baseline capture, deterministic build/manifest, backend preview, explicit backend deployment guardrails and rollback evidence.
+- [x] Run [42799344278](https://github.com/rorygleeson/afl-video-platform/actions/runs/42799344278) on commit `2254100` completed successfully on 2026-11-10.
+- [x] Backend preview reported `SAFE_PREVIEW []` — **zero proposed backend resource changes**, not proof of a successful real deployment.
+- [x] Read-only live resource health and protected-code checks passed; rollback snapshots, identities, parameters and artifacts were verified.
+- [x] The Google worker's live code mismatch with its CloudFormation artifact reference was detected and protected from an inadvertent downgrade.
+- [x] No application deployment or paid video generation was performed by the preview.
+- [ ] Reconcile Google worker drift **without replacing the known-good live ZIP with the older template artifact**.
+- [ ] Confirm complete live stack/resource inventory and one owner per physical resource, including legacy `afl-app-dev-video`, Step Functions, frontend keys and S3 prefixes.
+- [ ] Complete unified release support and safe deployment verification for Google, assembly and frontend; backend is currently the only controlled deployment mode.
+- [ ] Explicitly approve, execute and verify a real controlled deployment, including recovery testing; no automatic paid-video tests.
+- [ ] Retire obsolete writers, temporary diagnostic workflows and unused templates only after dependency review; narrow AWS IAM permissions to enforce ownership.
+- [ ] Update architecture diagram, runbook and checklist after the actual cutover; verify no known drift and no competing writers before claiming enterprise-ready sign-off.
+
+### Resume rules
+
+1. Keep the working application and current Google Lambda code unchanged while paused.
+2. Before the next AWS write, capture a fresh live baseline and preview the exact change; review any replacement/deletion, IAM changes and cross-stack dependencies.
+3. Never execute a change set or delete a stack without explicit approval. Never use assembly stack delete/recreate as recovery.
+4. Do not mistake the backend no-op preview for completion of Google reconciliation or full IaC migration.
+5. Prioritise shipping the AFL product; resume IaC from the unchecked items above rather than repeating today's successful preview.
+
+---
+
 ## Execution reset — 10 November 2026 (authoritative next steps)
 
 **Objective:** production-quality IaC for the *existing single AWS environment*, with no competing writers, no unexplained drift, and a clean repository. This section supersedes earlier speculative Google reconciliation attempts. Do not repeat the failed previews.
