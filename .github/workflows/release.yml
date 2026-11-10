@@ -158,9 +158,11 @@ jobs:
           import base64, boto3, hashlib, json
           from pathlib import Path
           manifest=json.loads(Path("dist/release/manifest.json").read_text())["artifacts"]
-          checks={"api":"afl-app-dev-api", "image-worker":"afl-app-dev-image-worker", "legacy-video-worker":"afl-app-dev-video-worker"}
+          checks={"api":"ApiLambda", "image-worker":"ImageWorkerLambda", "legacy-video-worker":"VideoWorkerLambda"}
+          cf=boto3.client("cloudformation",region_name="ap-southeast-2")
           lam=boto3.client("lambda",region_name="ap-southeast-2")
-          for artifact, function in checks.items():
+          for artifact, logical_id in checks.items():
+              function=cf.describe_stack_resource(StackName="afl-app-dev-backend",LogicalResourceId=logical_id)["StackResourceDetail"]["PhysicalResourceId"]
               expected=base64.b64encode(bytes.fromhex(manifest[artifact]["sha256_hex"])).decode()
               current=lam.get_function_configuration(FunctionName=function)
               if current.get("CodeSha256") != expected or current.get("State") != "Active" or current.get("LastUpdateStatus") != "Successful":
