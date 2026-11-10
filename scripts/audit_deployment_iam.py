@@ -4,8 +4,8 @@
 IAM simulation is advisory: it cannot prove CloudFormation resource execution,
 service role permissions, SCPs, or all resource conditions. Fail closed.
 """
-import json
 import boto3
+from botocore.exceptions import ClientError
 
 REGION = "ap-southeast-2"
 ROLE = "arn:aws:iam::134387458447:role/afl-video-github-deploy-role"
@@ -50,8 +50,20 @@ def main():
     for action in ACTIONS:
         prefix = action.split(":")[0] + ":"
         resource = RESOURCES[prefix]
-        response = iam.simulate_principal_policy(
-            PolicySourceArn=ROLE, ActionNames=[action], ResourceArns=[resource])
+        try:
+            response = iam.simulate_principal_policy(
+                PolicySourceArn=ROLE, ActionNames=[action], ResourceArns=[resource])
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") in ("AccessDenied", "AccessDeniedException"):
+                raise SystemExit(
+                    "AUDIT BLOCKED (NOT A DEPLOYMENT PERMISSION FAILURE): "
+                    "GitHub deployment role lacks iam:SimulatePrincipalPolicy. "
+                    "Do not grant broad IAM privileges to the deployment role. "
+                    "Have an AWS administrator run this read-only simulation separately "
+                    "or verify exact permissions through a separately authorized audit role. "
+                    "Deployment readiness remains UNVERIFIED."
+                ) from None
+            raise
         failures.extend(evaluate(response["EvaluationResults"]))
     if failures:
         for failure in failures:
