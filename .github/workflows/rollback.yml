@@ -22,7 +22,6 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'ROLLBACK_BACKEND' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: afl-production-approval
     steps:
       - uses: actions/checkout@v4
       - name: Check rollback inputs
