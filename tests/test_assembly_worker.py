@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / "src/assembly_worker/handler.py"
 API = ROOT / "src/api/handler.py"
 FRONTEND = ROOT / "frontend/index.html"
+FRONTEND_JS = ROOT / "frontend/app.js"
 
 
 class AssemblyContractTests(unittest.TestCase):
@@ -28,6 +29,7 @@ class AssemblyContractTests(unittest.TestCase):
     def test_assembly_is_gated_and_never_auto_runs_paid_generation(self):
         api = API.read_text(encoding="utf-8")
         front = FRONTEND.read_text(encoding="utf-8")
+        front_js = FRONTEND_JS.read_text(encoding="utf-8")
         infra = (ROOT / "infrastructure/app/backend.yaml").read_text(encoding="utf-8")
         self.assertIn("def start_assembly(job_id):", api)
         self.assertIn("attribute_not_exists(assembly)", api)
@@ -35,9 +37,9 @@ class AssemblyContractTests(unittest.TestCase):
         self.assertIn('"ASSEMBLY_STATE_MACHINE_ARN"', api)
         self.assertIn("AssemblyEnabled:", infra)
         self.assertIn("AssemblyOn:", infra)
-        self.assertIn("readyForAssembly = realStates.every", front)
-        self.assertIn("st.mode === 'REAL' && st.status === 'COMPLETED'", front)
-        self.assertIn("POST", front)
+        self.assertIn("readyForAssembly = realStates.every", front_js)
+        self.assertIn("st.mode === 'REAL' && st.status === 'COMPLETED'", front_js)
+        self.assertIn("POST", front_js)
         self.assertIn("Download Final Video MP4", front)
 
     def test_existing_scene_download_contract_preserved(self):
