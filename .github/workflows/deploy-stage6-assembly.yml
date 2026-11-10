@@ -1,12 +1,6 @@
 name: Deploy Stage 6 final MP4 assembly (no paid video generation)
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/deploy-stage6-assembly.yml'
-      - 'src/assembly_worker/**'
-      - 'infrastructure/app/assembly.yaml'
-      - 'tests/test_assembly_worker.py'
+  # Deployment is deliberate; validation runs separately on main.
   workflow_dispatch:
 permissions:
   contents: read
@@ -117,7 +111,11 @@ jobs:
           set -euo pipefail
           bucket=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue | [0]' --output text)
           distribution=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue | [0]' --output text)
+          aws s3 cp frontend/styles.css "s3://$bucket/styles.css" \
+            --content-type 'text/css; charset=utf-8' --cache-control 'max-age=60, must-revalidate'
+          aws s3 cp frontend/app.js "s3://$bucket/app.js" \
+            --content-type 'application/javascript; charset=utf-8' --cache-control 'max-age=60, must-revalidate'
           aws s3 cp frontend/index.html "s3://$bucket/index.html" \
             --content-type 'text/html; charset=utf-8' --cache-control 'max-age=60, must-revalidate'
-          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /styles.css /app.js /
           echo 'Stage 6 UI published. No scene generation or assembly requested.'
