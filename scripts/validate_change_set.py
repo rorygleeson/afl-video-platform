@@ -56,6 +56,45 @@ def expected_reconcile_permission(r, verified=False):
         for d in details
     )
 
+
+# CloudFormation flags unchanged GetAtt references as dynamic when the named
+# Google Lambda code changes. These are the exact observed dependencies.
+GOOGLE_DEPENDENCIES = {
+    "GoogleStateMachineRole": {("Policies", "GoogleWorkerLambda.Arn")},
+    "GoogleStateMachine": {("DefinitionString", "GoogleWorkerLambda.Arn"),
+                           ("RoleArn", "GoogleStateMachineRole.Arn")},
+}
+
+def google_dependency_only(r):
+    expected = GOOGLE_DEPENDENCIES.get(r.get("LogicalResourceId"))
+    if not expected or r.get("Action") != "Modify" or r.get("Replacement") != "False":
+        return False
+    details = r.get("Details", [])
+    return bool(details) and all(
+        d.get("Evaluation") == "Dynamic"
+        and d.get("ChangeSource") == "ResourceAttribute"
+        and d.get("Target", {}).get("Attribute") == "Properties"
+        and d.get("Target", {}).get("RequiresRecreation") == "Never"
+        and (d.get("Target", {}).get("Name"), d.get("CausingEntity")) in expected
+        for d in details
+    )
+
+def google_preflight_permission_only(r):
+    if r.get("LogicalResourceId") != "DeveloperPreflightInvokePermission":
+        return False
+    if r.get("Action") != "Modify" or r.get("Replacement") != "Conditional":
+        return False
+    details = r.get("Details", [])
+    return len(details) == 1 and all(
+        d.get("Evaluation") == "Dynamic"
+        and d.get("ChangeSource") == "ResourceAttribute"
+        and d.get("CausingEntity") == "GoogleWorkerLambda.Arn"
+        and d.get("Target", {}).get("Attribute") == "Properties"
+        and d.get("Target", {}).get("Name") == "FunctionName"
+        and d.get("Target", {}).get("RequiresRecreation") == "Always"
+        for d in details
+    )
+
 def validate(doc, allowed, verified_reconcile_permission=False):
     errors = []
     status = doc.get("Status")
@@ -70,6 +109,8 @@ def validate(doc, allowed, verified_reconcile_permission=False):
         action = r.get("Action")
         replacement = r.get("Replacement", "Conditional")
         if expected_reconcile_permission(r, verified_reconcile_permission):
+            continue
+        if allowed == {"GoogleWorkerLambda"} and (google_dependency_only(r) or google_preflight_permission_only(r)):
             continue
         if logical not in allowed and not dependency_only(r):
             errors.append(f"{logical}: not in explicitly approved allowlist")
