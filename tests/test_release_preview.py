@@ -12,7 +12,8 @@ class PreviewPreflightTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             deployed = root / "deployed.yaml"
-            deployed.write_text("AWSTemplateFormatVersion: '2010-09-09'\\n")
+            deployed.write_text("AWSTemplateFormatVersion: '2010-09-09'\
+")
             params = {"Foo": "before"}
             b = {"stacks": {"backend": {"name": "afl-app-dev-backend",
                 "parameters": params, "deployed_template_path": "deployed.yaml",
@@ -32,7 +33,14 @@ class PreviewPreflightTests(unittest.TestCase):
         p={"deploy_permitted":False,"stacks":{"backend":{"name":"afl-app-dev-backend",
            "current_parameters":{"Foo":"before"},"proposed_parameters":{"Foo":"after"},
            "changed_parameters":{"Foo":{"before":"before","after":"after"}}}}}
-        import hashlib\n        import tempfile\n        with tempfile.TemporaryDirectory() as d:\n            deployed = Path(d) / "backend.yaml"\n            deployed.write_text("template")\n            b["stacks"]["backend"]["deployed_template_path"] = "backend.yaml"\n            b["stacks"]["backend"]["deployed_template_sha256"] = hashlib.sha256(deployed.read_bytes()).hexdigest()\n            name, template, params=check_plan(p,b,"backend",Path(d))
+        import hashlib
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            deployed = Path(d) / "backend.yaml"
+            deployed.write_text("template")
+            b["stacks"]["backend"]["deployed_template_path"] = "backend.yaml"
+            b["stacks"]["backend"]["deployed_template_sha256"] = hashlib.sha256(deployed.read_bytes()).hexdigest()
+            name, template, params=check_plan(p,b,"backend",Path(d))
         self.assertEqual(name,"afl-app-dev-backend")
         self.assertEqual(params,[{"ParameterKey":"Foo","ParameterValue":"after"}])
     def test_detects_undocumented_parameter_change(self):
