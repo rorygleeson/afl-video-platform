@@ -1,0 +1,34 @@
+name: Audit live AWS deployment state (read-only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inventory:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate audit script without AWS access
+        run: python -m py_compile scripts/audit_live_aws.py
+      - name: Assume existing GitHub OIDC AWS role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-readonly-inventory
+      - name: Inspect live stack metadata and Lambda code hashes (no AWS writes)
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python scripts/audit_live_aws.py
+      - name: Preserve sanitized inventory even on drift or read-access failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-live-inventory
+          path: aws-live-inventory.json
+          if-no-files-found: warn
+          retention-days: 7
