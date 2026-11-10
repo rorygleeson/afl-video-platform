@@ -16,7 +16,7 @@ jobs:
       - name: Validate ownership inventory
         run: python3 scripts/check_deployment_ownership.py
       - name: Verify source scripts compile
-        run: python3 -m py_compile scripts/check_deployment_ownership.py scripts/capture_release_baseline.py scripts/build_release_artifacts.py
+        run: python3 -m py_compile scripts/check_deployment_ownership.py scripts/capture_release_baseline.py scripts/build_release_artifacts.py scripts/plan_release.py
       - name: Build deterministic release artifacts
         run: |
           python3 scripts/build_release_artifacts.py
@@ -37,6 +37,15 @@ jobs:
         env:
           BASELINE_OUTPUT: release-baseline.json
         run: python3 scripts/capture_release_baseline.py
+      - name: Generate fail-closed offline release plan
+        run: |
+          python3 scripts/plan_release.py --baseline release-baseline.json --artifacts dist/release/manifest.json --output release-plan.json
+      - name: Publish release plan for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-plan-${{ github.run_id }}
+          path: release-plan.json
+          retention-days: 14
       - name: Publish release baseline as restricted workflow artifact
         uses: actions/upload-artifact@v4
         with:
