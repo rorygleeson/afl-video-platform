@@ -1,14 +1,6 @@
 name: Deploy Stage 4 mock video API and frontend
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/deploy-stage4.yml'
-      - 'src/api/**'
-      - 'frontend/index.html'
-      - 'infrastructure/app/backend.yaml'
-      - 'tests/test_frontend_poll.cjs'
-      - 'tests/test_video_api_stage4.py'
+  # Legacy Stage 4 deployment must be explicitly requested.
   workflow_dispatch:
 permissions:
   contents: read
@@ -76,6 +68,8 @@ jobs:
           distribution=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue | [0]' --output text)
           test -n "$bucket" && test "$bucket" != None
           test -n "$distribution" && test "$distribution" != None
+          aws s3 cp frontend/styles.css "s3://$bucket/styles.css" --content-type 'text/css; charset=utf-8' --cache-control 'max-age=60, must-revalidate' --region ap-southeast-2
+          aws s3 cp frontend/app.js "s3://$bucket/app.js" --content-type 'application/javascript; charset=utf-8' --cache-control 'max-age=60, must-revalidate' --region ap-southeast-2
           aws s3 cp frontend/index.html "s3://$bucket/index.html" --content-type 'text/html; charset=utf-8' --cache-control 'max-age=60, must-revalidate' --region ap-southeast-2
-          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /styles.css /app.js /
           echo "Stage 4 API and frontend deployed in MOCK_ONLY mode; no paid model calls."
