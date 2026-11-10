@@ -186,12 +186,25 @@ Resources:
                 Effect: Allow
                 Action:
                   - cloudformation:ListStackResources
+                  - cloudformation:DescribeStackResource
                 Resource: !Sub 'arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/afl-app-*/*'
               - Sid: AuditApplicationLambdaConfiguration
                 Effect: Allow
                 Action:
                   - lambda:GetFunctionConfiguration
                 Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-*'
+              # Read-only inspection required by the backend permission preview.
+              - Sid: AuditImageReconcileLambdaPolicy
+                Effect: Allow
+                Action:
+                  - lambda:GetPolicy
+                Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-image-worker'
+              - Sid: AuditImageReconcileRule
+                Effect: Allow
+                Action:
+                  - events:DescribeRule
+                  - events:ListTargetsByRule
+                Resource: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/afl-app-dev-reconcile-images'
               - Sid: AuditApplicationStateMachineNames
                 Effect: Allow
                 Action:
