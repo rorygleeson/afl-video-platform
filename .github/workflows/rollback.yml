@@ -1,0 +1,63 @@
+name: Controlled backend rollback
+on:
+  workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: 'GitHub release workflow run ID containing rollback evidence and plan'
+        required: true
+        type: string
+      confirmation:
+        description: 'Type ROLLBACK_BACKEND to restore the saved backend release'
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  rollback:
+    if: ${{ github.ref == 'refs/heads/main' && inputs.confirmation == 'ROLLBACK_BACKEND' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: afl-production-approval
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check rollback inputs
+        env:
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          [[ "$RELEASE_RUN_ID" =~ ^[0-9]+$ ]] && test "$CONFIRMATION" = ROLLBACK_BACKEND
+          python3 -m py_compile scripts/execute_backend_rollback.py
+      - name: Download saved rollback evidence from selected release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_RUN_ID: ${{ inputs.release_run_id }}
+        run: |
+          gh run download "$RELEASE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "rollback-evidence-$RELEASE_RUN_ID" --dir .
+          gh run download "$RELEASE_RUN_ID" --repo "$GITHUB_REPOSITORY" --name "release-plan-$RELEASE_RUN_ID" --dir .
+      - name: Validate saved evidence before assuming AWS permissions
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          m=json.loads(Path("rollback-manifest.json").read_text())
+          p=json.loads(Path("release-plan.json").read_text())
+          assert m["region"] == "ap-southeast-2"
+          assert m["rollback_executable"] is False
+          assert m["stacks"]["backend"]["previous_parameters"] == p["stacks"]["backend"]["current_parameters"]
+          assert Path(m["stacks"]["backend"]["template_path"]).is_file()
+          print("PASS: saved rollback evidence and plan present")
+          PY
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Execute strictly validated backend rollback
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          python3 scripts/execute_backend_rollback.py --manifest rollback-manifest.json --plan release-plan.json --run-id "$GITHUB_RUN_ID" --confirmation "$CONFIRMATION"
