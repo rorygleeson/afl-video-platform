@@ -55,6 +55,32 @@ class PreviewPreflightTests(unittest.TestCase):
         b={"stacks":{},"guardrails":{"deploy_permitted":False}}
         with self.assertRaises(ValueError):
             check_plan({"deploy_permitted":True},b,"backend",Path("."))
+class DependencyPreviewTests(unittest.TestCase):
+    def test_expected_dynamic_dependency_is_accepted(self):
+        from validate_change_set import validate
+        change = {"Status": "CREATE_COMPLETE", "Changes": [{"ResourceChange": {
+            "LogicalResourceId": "ProxyAny", "Action": "Modify",
+            "Replacement": "False", "Details": [{
+                "Target": {"Attribute": "Properties", "Name": "Integration",
+                           "RequiresRecreation": "Never"},
+                "Evaluation": "Dynamic", "ChangeSource": "ResourceAttribute",
+                "CausingEntity": "ApiLambda.Arn"}]}}]}
+        self.assertEqual(validate(change, {"ApiLambda"}), [])
+        change["Changes"][0]["ResourceChange"]["Details"][0]["CausingEntity"] = "OtherLambda.Arn"
+        self.assertTrue(validate(change, {"ApiLambda"}))
+    def test_conditional_permission_remains_blocked(self):
+        from validate_change_set import validate
+        change = {"Status": "CREATE_COMPLETE", "Changes": [{"ResourceChange": {
+            "LogicalResourceId": "ImageReconcileInvokePermission",
+            "Action": "Modify", "Replacement": "Conditional",
+            "Details": [{"Target": {"Attribute": "Properties", "Name": "SourceArn",
+                                   "RequiresRecreation": "Always"},
+                         "Evaluation": "Dynamic", "ChangeSource": "ResourceAttribute",
+                         "CausingEntity": "ImageReconcileSchedule.Arn"}]}}]}
+        errors = validate(change, set())
+        self.assertTrue(any("replacement" in e for e in errors))
+        self.assertTrue(any("recreation" in e for e in errors))
+
 class FakeCloudFormation:
     def __init__(self, changes, status="CREATE_COMPLETE", reason=""):
         self.changes = changes

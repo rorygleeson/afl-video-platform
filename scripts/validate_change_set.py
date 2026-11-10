@@ -9,6 +9,33 @@ import argparse
 import json
 from pathlib import Path
 
+# Dependency-only modifications observed in AWS preview #7. These are NOT
+# blanket approvals: only these exact dynamic attribute references qualify.
+EXPECTED_DEPENDENCIES = {
+    "ApiRole": {("Policies", "VideoWorkerLambda.Arn")},
+    "ImageReconcileSchedule": {("Targets", "ImageWorkerLambda.Arn")},
+    "ImageStateMachineRole": {("Policies", "ImageWorkerLambda.Arn")},
+    "ImageStateMachine": {("DefinitionSubstitutions", "ImageWorkerLambda.Arn"),
+                          ("RoleArn", "ImageStateMachineRole.Arn")},
+    "ProxyAny": {("Integration", "ApiLambda.Arn")},
+}
+
+def dependency_only(r):
+    expected = EXPECTED_DEPENDENCIES.get(r.get("LogicalResourceId"))
+    if not expected or r.get("Action") != "Modify" or r.get("Replacement") != "False":
+        return False
+    details = r.get("Details", [])
+    if not details:
+        return False
+    return all(
+        d.get("Evaluation") == "Dynamic"
+        and d.get("ChangeSource") == "ResourceAttribute"
+        and d.get("Target", {}).get("Attribute") == "Properties"
+        and d.get("Target", {}).get("RequiresRecreation") == "Never"
+        and (d.get("Target", {}).get("Name"), d.get("CausingEntity")) in expected
+        for d in details
+    )
+
 def validate(doc, allowed):
     errors = []
     status = doc.get("Status")
@@ -22,7 +49,7 @@ def validate(doc, allowed):
         logical = r.get("LogicalResourceId", "<unknown>")
         action = r.get("Action")
         replacement = r.get("Replacement", "Conditional")
-        if logical not in allowed:
+        if logical not in allowed and not dependency_only(r):
             errors.append(f"{logical}: not in explicitly approved allowlist")
         if action != "Modify":
             errors.append(f"{logical}: forbidden action {action}")
