@@ -1,5 +1,7 @@
 # AFL Video Platform
 
+<img src="docs/screenshots/00-hero-video-sample.jpg" alt="Example AI-generated AFL premiership video playing on a phone" width="420">
+
 **Turn your selfie into an AFL Grand Final winning-goal video.**
 
 A mobile-friendly AI video application where you choose an AFL team, upload a selfie and enter your name. It creates a personalised football highlight with cinematic action and commentary featuring your name and team.
