@@ -1,17 +1,6 @@
 name: Deploy all three paid MP4 scene controls (no generation)
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/deploy-stage5c-paid-scenes.yml'
-      - 'src/google_video_worker/handler.py'
-      - 'src/api/handler.py'
-      - 'src/api/video_prompts.py'
-      - 'frontend/index.html'
-      - 'infrastructure/app/google-video.yaml'
-      - 'scenarios/afl-grand-final-winning-kick/v1/video/**'
-      - 'tests/test_google_video_stage5a.py'
-      - 'tests/test_frontend_poll.cjs'
+  # This workflow updates live paid-video infrastructure; run deliberately after validation.
   workflow_dispatch:
 permissions:
   contents: read
@@ -159,7 +148,11 @@ jobs:
           distribution=$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue | [0]' --output text)
           test -n "$bucket" && test "$bucket" != None
           test -n "$distribution" && test "$distribution" != None
+          aws s3 cp frontend/styles.css "s3://$bucket/styles.css" \
+            --content-type 'text/css; charset=utf-8' --cache-control 'max-age=60, must-revalidate'
+          aws s3 cp frontend/app.js "s3://$bucket/app.js" \
+            --content-type 'application/javascript; charset=utf-8' --cache-control 'max-age=60, must-revalidate'
           aws s3 cp frontend/index.html "s3://$bucket/index.html" \
             --content-type 'text/html; charset=utf-8' --cache-control 'max-age=60, must-revalidate'
-          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /
+          aws cloudfront create-invalidation --distribution-id "$distribution" --paths /index.html /styles.css /app.js /
           echo 'Three individual paid scene buttons enabled; no paid MP4 has been triggered.'
