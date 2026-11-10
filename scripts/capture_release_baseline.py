@@ -26,6 +26,7 @@ def main():
     cf = boto3.client("cloudformation", region_name=REGION)
     lam = boto3.client("lambda", region_name=REGION)
     s3 = boto3.client("s3", region_name=REGION)
+    states = boto3.client("stepfunctions", region_name=REGION)
     manifest = {"captured_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 "region": REGION, "stacks": {}, "lambdas": {}, "guardrails": {"deploy_permitted": False}}
     for label, name in STACKS.items():
@@ -51,6 +52,16 @@ def main():
         }
         if fn.get("State") != "Active" or fn.get("LastUpdateStatus") != "Successful":
             raise RuntimeError(f"Lambda not ready: {name}")
+    manifest["state_machines"] = []
+    for page in states.get_paginator("list_state_machines").paginate():
+        for machine in page["stateMachines"]:
+            if machine["name"].startswith("afl-app-dev-"):
+                detail = states.describe_state_machine(stateMachineArn=machine["stateMachineArn"])
+                manifest["state_machines"].append({
+                    "name": machine["name"], "arn": machine["stateMachineArn"],
+                    "status": detail["status"], "definition_sha256": hashlib.sha256(detail["definition"].encode()).hexdigest(),
+                    "role_arn": detail["roleArn"],
+                })
     google = manifest["lambdas"]["afl-app-dev-google-omni-worker"]
     if google["sha256"] != GOOGLE_KNOWN_SHA:
         raise RuntimeError("Google live SHA changed; baseline invalid. STOP.")
