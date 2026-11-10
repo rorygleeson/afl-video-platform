@@ -36,6 +36,8 @@ def plan(baseline, artifacts):
               "blockers": ["Google CloudFormation code drift requires separately reviewed reconciliation",
                            "FFmpeg layer immutable binary provenance is not pinned",
                            "No change sets have been created, reviewed or executed"]}
+    for gap in baseline.get("verification_gaps", []):
+        result["blockers"].append(f"Unverified live AWS resource: {gap}")
     for label, (name, required) in STACKS.items():
         current = baseline.get("stacks", {}).get(label)
         if not current or current.get("name") != name or current.get("status") not in ("CREATE_COMPLETE", "UPDATE_COMPLETE"):
