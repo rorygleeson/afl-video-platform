@@ -129,6 +129,15 @@ def preview(cf, stack_name, template, parameters, allowed, run_id, verify_permis
             output['reconcile_permission_live_verified'] = verified
             issues = validate(result, allowed, verified_reconcile_permission=verified)
             output["verdict"] = "BLOCKED" if issues else "SAFE_PREVIEW"
+            if issues:
+                for item in changes:
+                    change = item.get("ResourceChange", {})
+                    print("BLOCKED_RESOURCE_DETAIL:", json.dumps({
+                        "logical_id": change.get("LogicalResourceId"),
+                        "action": change.get("Action"),
+                        "replacement": change.get("Replacement"),
+                        "details": change.get("Details", []),
+                    }, default=str))
             output["issues"] = issues
             safe_to_retain = not issues
             if retain and safe_to_retain:
