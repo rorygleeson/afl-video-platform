@@ -33,7 +33,9 @@ def main():
         if stack["StackStatus"] not in ("CREATE_COMPLETE", "UPDATE_COMPLETE"):
             raise RuntimeError(f"Unstable stack {name}: {stack['StackStatus']}")
         parameters = {p["ParameterKey"]: p.get("ParameterValue") for p in stack.get("Parameters", [])}
-        resources = cf.list_stack_resources(StackName=name)["StackResourceSummaries"]
+        resources = []
+        for page in cf.get_paginator("list_stack_resources").paginate(StackName=name):
+            resources.extend(page["StackResourceSummaries"])
         manifest["stacks"][label] = {
             "name": name, "stack_id": stack["StackId"], "status": stack["StackStatus"],
             "parameters": parameters,
