@@ -15,9 +15,21 @@ The developer pilot uses **Replicate** for reference-image generation and **Goog
 
 ## Mobile app screenshots
 
-Three screenshots of the working pilot show selfie/team selection, the three generated reference images and a completed **17-second final video** with a download button.
+Actual screenshots from the developer pilot, in order:
 
-*Screenshots to be added to `docs/screenshots/`.*
+**1. Select your team and upload a selfie**
+
+<img src="docs/screenshots/01-selfie-upload.jpg" alt="Mobile AFL app showing team, name and selfie upload" width="320">
+
+**2. Generate three personalised reference images**
+
+<img src="docs/screenshots/02-reference-images.jpg" alt="Three completed personalised AFL scene reference images" width="520">
+
+**3. See an example of the generated video**
+
+<img src="docs/screenshots/03-generated-video-sample.jpg" alt="Gallery view of an AFL video scene with a personalised player" width="320">
+
+*The third screenshot is a frame shown in the phone gallery, not the final-video download screen.*
 
 ## Project status
 
