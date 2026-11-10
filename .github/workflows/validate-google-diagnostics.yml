@@ -19,17 +19,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compile Python worker and API
         run: python3 -m py_compile src/google_video_worker/handler.py src/api/handler.py
-      - name: Check frontend inline JavaScript syntax
+      - name: Check separated frontend JavaScript syntax
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          source = Path('frontend/index.html').read_text()
-          scripts = re.findall(r'<script(?:\s[^>]*)?>([\s\S]*?)</script>', source)
-          assert scripts, 'No inline frontend scripts found'
-          Path('/tmp/afl-frontend-check.js').write_text('\n'.join(scripts))
-          PY
-          node --check /tmp/afl-frontend-check.js
+          test -s frontend/app.js
+          grep -Fq '<script src="./app.js"></script>' frontend/index.html
+          node --check frontend/app.js
       - name: Confirm diagnostics are read-only and preserve failure evidence
         run: |
           python3 - <<'PY'
