@@ -5,6 +5,7 @@ Only an explicitly rejected HTTP 429 is retried. All ambiguous failures are term
 """
 import base64
 import binascii
+from io import BytesIO
 from datetime import datetime, timezone
 import json
 import math
@@ -198,32 +199,76 @@ def request_body(prompt, master, selfie):
     }}
 
 
+class GoogleOutputError(ValueError):
+    """An allowlisted output error that is safe to persist without raw content."""
+    def __init__(self, code):
+        self.code = code
+        super().__init__(code)
+
+
+def normalise_image_png(data, declared_mime):
+    """Keep existing PNG S3 paths while accepting valid Google JPEG/WEBP images."""
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except (ValueError, binascii.Error):
+        raise GoogleOutputError("GOOGLE_BAD_IMAGE_ENCODING") from None
+    if not raw or len(raw) > MAX_IMAGE:
+        raise GoogleOutputError("GOOGLE_BAD_IMAGE_SIZE")
+    try:
+        actual_mime = image_type(raw)
+    except ValueError:
+        raise GoogleOutputError("GOOGLE_UNSUPPORTED_IMAGE_TYPE") from None
+    if actual_mime != declared_mime:
+        raise GoogleOutputError("GOOGLE_IMAGE_MIME_MISMATCH")
+    if actual_mime == "image/png":
+        if len(raw) < 24 or raw[12:16] != b"IHDR":
+            raise GoogleOutputError("GOOGLE_BAD_PNG_HEADER")
+        width = int.from_bytes(raw[16:20], "big")
+        height = int.from_bytes(raw[20:24], "big")
+        output = raw
+    elif actual_mime in ("image/jpeg", "image/webp"):
+        # These formats may legitimately be returned even when PNG was requested.
+        # Do not mislabel a JPEG as a .png S3 object.
+        from PIL import Image, ImageOps, UnidentifiedImageError
+        try:
+            with Image.open(BytesIO(raw)) as src:
+                if src.width * src.height > 20_000_000:
+                    raise GoogleOutputError("GOOGLE_IMAGE_TOO_LARGE")
+                rgb = ImageOps.exif_transpose(src).convert("RGB")
+                width, height = rgb.size
+                buf = BytesIO()
+                rgb.save(buf, format="PNG")
+                output = buf.getvalue()
+        except (OSError, ValueError, UnidentifiedImageError):
+            raise GoogleOutputError("GOOGLE_IMAGE_CONVERSION_FAILED") from None
+    else:
+        raise GoogleOutputError("GOOGLE_UNSUPPORTED_IMAGE_TYPE")
+    # 9:16 crops can be rounded to model-specific pixel grids. Accept up to
+    # five-percent aspect deviation; validate size and vertical orientation.
+    if width < 720 or height < 1280 or not 0.53 <= width / height <= 0.60:
+        raise GoogleOutputError("GOOGLE_IMAGE_DIMENSIONS")
+    if len(output) > MAX_IMAGE:
+        raise GoogleOutputError("GOOGLE_PNG_TOO_LARGE")
+    return output
+
+
 def extract_png(result):
     candidates = result.get("candidates") if isinstance(result, dict) else None
-    if not isinstance(candidates, list):
-        raise ValueError("Google returned no candidates")
+    if not isinstance(candidates, list) or not candidates:
+        raise GoogleOutputError("GOOGLE_NO_CANDIDATES")
     for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
         for part in (candidate.get("content") or {}).get("parts", []):
             data = part.get("inlineData") if isinstance(part, dict) else None
             if not isinstance(data, dict) or not data.get("data"):
                 continue
-            try:
-                payload = base64.b64decode(data["data"], validate=True)
-            except (ValueError, binascii.Error) as exc:
-                raise ValueError("Invalid Google image encoding") from exc
-            if not payload or len(payload) > MAX_IMAGE:
-                raise ValueError("Google output image size invalid")
-            if image_type(payload) != data.get("mimeType") or data["mimeType"] != "image/png":
-                # Preserve the existing *.png S3/resultKey contract; don't mislabel JPEG.
-                raise ValueError("Google did not return PNG output")
-            if len(payload) < 24 or payload[12:16] != b"IHDR":
-                raise ValueError("Google PNG header invalid")
-            width = int.from_bytes(payload[16:20], "big")
-            height = int.from_bytes(payload[20:24], "big")
-            if width < 720 or height < 1280 or abs(width * 16 - height * 9) > max(width, height) // 50:
-                raise ValueError("Google output is not high-resolution vertical 9:16")
-            return payload
-    raise ValueError("Google returned no image content")
+            return normalise_image_png(data["data"], data.get("mimeType"))
+    # Distinguish an image-less completion from invalid bytes or S3 failures.
+    if any(c.get("finishReason") in ("SAFETY", "PROHIBITED_CONTENT", "IMAGE_SAFETY")
+           for c in candidates if isinstance(c, dict)):
+        raise GoogleOutputError("GOOGLE_IMAGE_SAFETY_BLOCK")
+    raise GoogleOutputError("GOOGLE_NO_IMAGE_CONTENT")
 
 
 def retry_delay(error, attempt):
@@ -301,15 +346,24 @@ def generate(worker, job_id, scene_id):
             raise
     try:
         image = extract_png(result)
-        key = f"results/{job_id}/{scene_id}.png"
-        worker.S3.put_object(Bucket=worker.UPLOAD_BUCKET, Key=key, Body=image,
-                             ContentType="image/png", ServerSideEncryption="AES256")
-        worker.scene_update(job_id, scene_id, "COMPLETED",
-                            {"resultKey": key,
-                             "completedAt": datetime.now(timezone.utc).isoformat()},
-                            expected="GENERATING")
-        return {"sceneId": scene_id, "status": "COMPLETED"}
+    except GoogleOutputError as exc:
+        worker.scene_update(job_id, scene_id, "GENERATING",
+                            {"errorCode": exc.code}, expected="GENERATING")
+        raise
     except Exception:
         worker.scene_update(job_id, scene_id, "GENERATING",
-                            {"errorCode": "GOOGLE_OUTPUT_ERROR"}, expected="GENERATING")
+                            {"errorCode": "GOOGLE_IMAGE_PARSE_FAILED"}, expected="GENERATING")
         raise
+    key = f"results/{job_id}/{scene_id}.png"
+    try:
+        worker.S3.put_object(Bucket=worker.UPLOAD_BUCKET, Key=key, Body=image,
+                             ContentType="image/png", ServerSideEncryption="AES256")
+    except Exception:
+        worker.scene_update(job_id, scene_id, "GENERATING",
+                            {"errorCode": "GOOGLE_S3_SAVE_FAILED"}, expected="GENERATING")
+        raise
+    worker.scene_update(job_id, scene_id, "COMPLETED",
+                        {"resultKey": key,
+                         "completedAt": datetime.now(timezone.utc).isoformat()},
+                        expected="GENERATING")
+    return {"sceneId": scene_id, "status": "COMPLETED"}

@@ -119,6 +119,61 @@ class ImageContractTests(unittest.TestCase):
                                  f"results/{'a' * 32}/{scene}.png")
                 self.assertEqual(m.scene_update.call_args.args[2], "COMPLETED")
 
+    def test_google_jpeg_output_is_converted_to_png_contract(self):
+        from io import BytesIO
+        from PIL import Image
+        buf = BytesIO()
+        Image.new("RGB", (1152, 2048), (35, 55, 70)).save(buf, "JPEG")
+        result = {"candidates": [{"content": {"parts": [{"inlineData": {
+            "mimeType": "image/jpeg",
+            "data": base64.b64encode(buf.getvalue()).decode()
+        }}]}}]}
+        mock = setup_scene()
+        with patch.object(google, "s3_image", return_value={"inlineData": {
+                 "mimeType": "image/png", "data": "sample"}}), \
+             patch.object(google, "access_token", return_value="test-token"), \
+             patch.object(google, "post_json", return_value=result):
+            response = google.generate(mock, "a" * 32, "scene1")
+        self.assertEqual(response["status"], "COMPLETED")
+        kwargs = mock.S3.put_object.call_args.kwargs
+        self.assertEqual(kwargs["ContentType"], "image/png")
+        self.assertEqual(kwargs["Key"], f"results/{'a' * 32}/scene1.png")
+        self.assertTrue(kwargs["Body"].startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+
+    def test_output_failures_are_specific_and_never_saved(self):
+        cases = [
+            ({}, "GOOGLE_NO_CANDIDATES"),
+            ({"candidates": [{"content": {"parts": [{"text": "no image"}]}}]},
+             "GOOGLE_NO_IMAGE_CONTENT"),
+            ({"candidates": [{"finishReason": "SAFETY"}]}, "GOOGLE_IMAGE_SAFETY_BLOCK"),
+            ({"candidates": [{"content": {"parts": [{"inlineData": {
+                "mimeType": "image/png", "data": "??"}}]}}]},
+             "GOOGLE_BAD_IMAGE_ENCODING"),
+        ]
+        for result, error in cases:
+            with self.subTest(error=error):
+                mock = setup_scene()
+                with patch.object(google, "s3_image", return_value={"inlineData": {
+                         "mimeType": "image/png", "data": "x"}}), \
+                     patch.object(google, "access_token", return_value="test-token"), \
+                     patch.object(google, "post_json", return_value=result):
+                    with self.assertRaises(google.GoogleOutputError):
+                        google.generate(mock, "a" * 32, "scene1")
+                self.assertEqual(mock.scene_update.call_args.args[3]["errorCode"], error)
+                mock.S3.put_object.assert_not_called()
+
+    def test_output_s3_failure_is_identifiable(self):
+        mock = setup_scene()
+        mock.S3.put_object.side_effect = RuntimeError("AccessDenied private bucket")
+        with patch.object(google, "s3_image", return_value={"inlineData": {
+                 "mimeType": "image/png", "data": "x"}}), \
+             patch.object(google, "access_token", return_value="test-token"), \
+             patch.object(google, "post_json", return_value=result_image()):
+            with self.assertRaises(RuntimeError):
+                google.generate(mock, "a" * 32, "scene1")
+        self.assertEqual(mock.scene_update.call_args.args[3]["errorCode"],
+                         "GOOGLE_S3_SAVE_FAILED")
+
     def test_no_double_submission_of_completed_scene(self):
         m = setup_scene()
         m.job_by_id.return_value["scenes"]["scene1"]["status"] = "COMPLETED"
