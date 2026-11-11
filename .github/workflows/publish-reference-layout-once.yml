@@ -1,0 +1,63 @@
+name: One-time publish reference progress layout
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-reference-layout-once.yml'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify precise single-file HTML change and existing identifiers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          source=Path('frontend/index.html').read_text()
+          expected='<div id="results" aria-label="Reference images"></div>\n    <p id="status" role="status"></p>\n    <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>'
+          assert source.count(expected)==1, 'Unexpected position or missing elements'
+          for marker in ('id="jobProgressSection"', 'id="videoTestSection"', 'id="developerDiagnostics"', 'id="diagnosticsSection"'):
+              assert source.count(marker)==1, marker
+          print('PASS: same elements and IDs, reordered only')
+          PY
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-layout-publisher
+      - name: Resolve existing AFL frontend stack, verify expected domain
+        shell: bash
+        run: |
+          set -euo pipefail
+          bucket="$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`FrontendBucketName`].OutputValue | [0]' --output text)"
+          domain="$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`FrontendUrl`].OutputValue | [0]' --output text)"
+          dist="$(aws cloudformation describe-stacks --stack-name afl-app-dev-frontend --query 'Stacks[0].Outputs[?OutputKey==`DistributionId`].OutputValue | [0]' --output text)"
+          test "$domain" = "https://d9i3mlqvt0ks6.cloudfront.net" || { echo "::error::Wrong CloudFront site: $domain"; exit 1; }
+          test "$bucket" = "afl-app-dev-frontend-134387458447-ap-southeast-2" || { echo "::error::Unexpected bucket $bucket"; exit 1; }
+          test -n "$dist" && test "$dist" != None
+          echo "BUCKET=$bucket" >> "$GITHUB_ENV"
+          echo "DISTRIBUTION=$dist" >> "$GITHUB_ENV"
+          echo "PASS: AFL frontend domain $domain"
+      - name: Upload only index.html and byte-verify S3 copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws s3 cp frontend/index.html "s3://$BUCKET/index.html" --content-type "text/html; charset=utf-8" --cache-control "no-cache, max-age=0" --only-show-errors
+          tempfile="$(mktemp)"
+          trap 'rm -f "$tempfile"' EXIT
+          aws s3 cp "s3://$BUCKET/index.html" "$tempfile" --only-show-errors
+          cmp frontend/index.html "$tempfile"
+          echo "PASS: S3 index.html matches reviewed GitHub"
+      - name: Invalidate only index.html and root
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths /index.html / --query 'Invalidation.{Id:Id,Status:Status}' --output json
+          echo "PASS: CloudFront invalidation requested for HTML only"
