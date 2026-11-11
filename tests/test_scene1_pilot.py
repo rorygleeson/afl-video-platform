@@ -234,6 +234,8 @@ class ImageContractTests(unittest.TestCase):
         assertion = json.loads(post.call_args_list[0].args[1]["subjectToken"])
         self.assertEqual(assertion["method"], "POST")
         self.assertIn("x-goog-cloud-target-resource", {h["key"] for h in assertion["headers"]})
+        self.assertEqual(post.call_args_list[0].args[1]["grant_type"], "urn:ietf:params:oauth:grant-type:token-exchange")
+        self.assertIn("subject_token_type", post.call_args_list[0].args[1])
         self.assertTrue(post.call_args_list[0].kwargs["form"])
         self.assertEqual(post.call_args_list[1].kwargs["bearer"], "federated")
         signer.assert_called_once()

@@ -104,11 +104,11 @@ def access_token():
     }, separators=(",", ":"))
     token = post_json("https://sts.googleapis.com/v1/token", {
         "audience": audience,
-        "grantType": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "requestedTokenType": "urn:ietf:params:oauth:token-type:access_token",
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+        "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
         "scope": "https://www.googleapis.com/auth/cloud-platform",
-        "subjectTokenType": "urn:ietf:params:aws:token-type:aws4_request",
-        "subjectToken": assertion,
+        "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
+        "subject_token": assertion,
     }, form=True).get("access_token")
     if not token or not isinstance(token, str):
         raise RuntimeError("Google WIF exchange failed")
