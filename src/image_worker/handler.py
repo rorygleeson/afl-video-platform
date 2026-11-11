@@ -248,7 +248,7 @@ def probe_google_auth_once():
     existing read-only deployment role can inspect it without CloudWatch access.
     Does not invoke Vertex AI or access customer job data.
     """
-    key = "__google_image_auth_probe_20261112"
+    key = "__google_image_auth_probe_after_iam_20261112"
     now = int(time.time())
     try:
         TABLE.update_item(
