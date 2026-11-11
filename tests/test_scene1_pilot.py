@@ -138,7 +138,7 @@ class ImageContractTests(unittest.TestCase):
         kwargs = mock.S3.put_object.call_args.kwargs
         self.assertEqual(kwargs["ContentType"], "image/png")
         self.assertEqual(kwargs["Key"], f"results/{'a' * 32}/scene1.png")
-        self.assertTrue(kwargs["Body"].startswith(b"\\x89PNG\\r\\n\\x1a\\n"))
+        self.assertTrue(kwargs["Body"].startswith(bytes.fromhex("89504e470d0a1a0a")))
 
     def test_output_failures_are_specific_and_never_saved(self):
         cases = [
