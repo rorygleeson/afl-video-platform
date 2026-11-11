@@ -36,6 +36,12 @@ jobs:
         run: python -m pip install --disable-pip-version-check 'cfn-lint>=1,<2'
       - name: Lint all application CloudFormation templates
         run: cfn-lint infrastructure/bootstrap/bootstrap.yaml infrastructure/app/frontend.yaml infrastructure/app/backend.yaml --regions ap-southeast-2
+      - name: Verify isolated image-provider migration scope (offline)
+        if: ${{ github.event_name == 'pull_request' && github.head_ref == 'feature/direct-vertex-nano-banana-pro' }}
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          git show FETCH_HEAD:infrastructure/app/backend.yaml > /tmp/afl-backend-base.yaml
+          python scripts/check_image_migration_scope.py --before /tmp/afl-backend-base.yaml --after infrastructure/app/backend.yaml
       - name: Check application Python, JavaScript and scenario JSON syntax
         run: |
           python -m py_compile src/api/handler.py src/api/video_prompts.py src/image_worker/handler.py src/video_worker/handler.py src/google_video_worker/handler.py src/assembly_worker/handler.py scripts/audit_live_aws.py scripts/check_deployment_ownership.py scripts/capture_release_baseline.py scripts/build_release_artifacts.py scripts/validate_change_set.py scripts/plan_release.py scripts/publish_release_artifacts.py scripts/preview_release_change_set.py scripts/prepare_rollback.py scripts/verify_release_health.py scripts/verify_rollback_readiness.py scripts/preview_rollback_change_set.py scripts/authorize_deployment.py scripts/execute_release_change_set.py
