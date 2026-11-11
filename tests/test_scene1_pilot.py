@@ -214,10 +214,12 @@ class ImageContractTests(unittest.TestCase):
 
     def test_watchdog_never_starts_paid_generation(self):
         with patch.object(worker.TABLE, "scan", return_value={"Items": [{"jobId": "a" * 32}]}), \
+             patch.object(worker, "probe_google_auth_once") as probe, \
              patch.object(worker, "recover", return_value={"status": "FAILED"}) as recovered, \
              patch.object(google, "post_json") as paid:
             worker.reconcile_stalled()
         recovered.assert_called_once()
+        probe.assert_called_once()
         paid.assert_not_called()
 
 
