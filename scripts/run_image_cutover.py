@@ -23,7 +23,7 @@ STACK = "afl-app-dev-backend"
 SM_ARN = "arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-scene1-pilot"
 CONFIG_KEY = "scenarios/afl-grand-final-winning-kick/v1/config.json"
 ALLOW = {"ImageWorkerLambda", "ImageWorkerRole", "ImageStateMachine"}
-PIN = "759ee6efc932343e2b075693d03ac266bbbb256b"
+PIN = "526cd2c4b3f01d04654b98bd6ad1f69abb87350d"
 
 
 def write_report(report):
@@ -186,7 +186,7 @@ def main():
         machine = states.describe_state_machine(stateMachineArn=SM_ARN)
         definition = json.loads(machine["definition"])
         branch = definition["States"]["ParallelScenes"]["ItemProcessor"]
-        if machine["status"] != "ACTIVE" or branch["StartAt"] != "Generate" or branch["MaxConcurrency"] != 3:
+        if machine["status"] != "ACTIVE" or branch["StartAt"] != "Generate" or definition["States"]["ParallelScenes"]["MaxConcurrency"] != 3:
             raise RuntimeError("Deployed image state machine not updated properly")
         # Lambda now accepts old and new scenario model IDs: switch model last.
         new_payload = json.dumps(updated, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
