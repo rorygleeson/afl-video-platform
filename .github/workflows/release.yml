@@ -45,6 +45,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - name: Install AWS SDK for release audit
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
       - name: Test Google reconciliation offline
         run: python3 -m unittest discover -s tests -p 'test_google_reconciliation.py' -v
       - name: Validate ownership inventory
