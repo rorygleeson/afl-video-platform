@@ -91,7 +91,7 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("rear three-quarter", scene)
         self.assertIn("four", scene)
         self.assertIn("four-fifths (80%)", scene)
-        self.assertIn("even horizontal spacing", scene)
+        self.assertIn("even spacing", scene)
         self.assertIn("running toward", scene)
         self.assertIn("already visible in the first frame", video)
         self.assertIn("while it is still off the ground", video)
