@@ -12,6 +12,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Checkout trusted main workflow
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Fetch only proposed backend template for semantic diff
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin feature/direct-vertex-nano-banana-pro
+          git show FETCH_HEAD:infrastructure/app/backend.yaml > /tmp/afl-proposed-backend.yaml
+      - name: Install YAML reader for audit
+        run: python3 -m pip install --disable-pip-version-check 'PyYAML>=6,<7'
       - name: Configure existing AWS OIDC role
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -73,4 +84,34 @@ jobs:
           print("LIVE_IMAGE_MIGRATION_PREFLIGHT="+json.dumps(result,sort_keys=True))
           if stack["StackStatus"] != "UPDATE_COMPLETE" or fn.get("State")!="Active" or fn.get("LastUpdateStatus")!="Successful" or workflow["status"]!="ACTIVE":
               raise SystemExit("BLOCKED: live resources unhealthy")
+          PY
+      - name: Compare actual deployed template against proposed migration (NO WRITE)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3, json, yaml
+          from pathlib import Path
+          class Loader(yaml.SafeLoader): pass
+          def intrinsic(loader, suffix, node):
+              if isinstance(node, yaml.ScalarNode): value=loader.construct_scalar(node)
+              elif isinstance(node, yaml.SequenceNode): value=loader.construct_sequence(node,deep=True)
+              else: value=loader.construct_mapping(node,deep=True)
+              return {("Ref" if suffix == "Ref" else "Fn::"+suffix): value}
+          Loader.add_multi_constructor("!",intrinsic)
+          cf=boto3.client("cloudformation",region_name="ap-southeast-2")
+          live=cf.get_template(StackName="afl-app-dev-backend",TemplateStage="Original")["TemplateBody"]
+          if isinstance(live,str): live=yaml.load(live,Loader=Loader)
+          candidate=yaml.load(Path("/tmp/afl-proposed-backend.yaml").read_text(),Loader=Loader)
+          old=live.get("Resources",{})
+          new=candidate.get("Resources",{})
+          added=sorted(set(new)-set(old))
+          removed=sorted(set(old)-set(new))
+          changed=sorted(k for k in old.keys() & new.keys() if old[k]!=new[k])
+          out={"resource_count_live":len(old),"resource_count_proposed":len(new),
+               "added":added,"removed":removed,"changed":changed,
+               "image_only":not added and not removed and set(changed)<={"ImageWorkerLambda","ImageWorkerRole","ImageStateMachine"},
+               "parameters_match":live.get("Parameters")==candidate.get("Parameters")}
+          print("LIVE_TEMPLATE_VS_PR39="+json.dumps(out,sort_keys=True))
+          if not out["image_only"]:
+              print("BLOCKED: repository template has unrelated live CloudFormation changes")
           PY
