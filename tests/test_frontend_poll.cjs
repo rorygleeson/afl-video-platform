@@ -176,7 +176,7 @@ function setup(options = {}) {
     if (url.endsWith('/images')) return {
       ok: true, async json() { return {
         images: Array.from({length: Math.min(statusPolls, 3)},
-          (_, i) => ({sceneId: 'scene' + (i + 1), url: 'https://replicate.example.com/img' + i})),
+          (_, i) => ({sceneId: 'scene' + (i + 1), url: 'https://images.example.com/img' + i})),
       }; },
     };
     if (/\/jobs\/a{32}$/.test(url)) {
@@ -244,7 +244,7 @@ test('auto polls every 5 seconds, adds each image once and stops when complete',
   assert.equal(h.timers.size, 1, 'Reference image polling ends; video status continues polling automatically');
   assert.equal(h.els.pollStatus.hidden, true);
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1,
-               'Polling cannot trigger new Replicate generation');
+               'Polling cannot trigger new Google generation');
 });
 
 test('polling pauses while tab is hidden and resumes when visible', async () => {
@@ -328,7 +328,7 @@ test('video controls appear after three reference images without prompt toggles'
 
 test('one click automatically submits exactly one image generation and never shows a second button', async () => {
   const h = setup();
-  assert.doesNotMatch(html, /id="generateScene1"|Generate 3 reference images with Replicate/);
+  assert.doesNotMatch(html, /id="generateScene1"|Generate 3 reference images with Google/);
   await h.els.generate.listeners.click();
   assert.equal(h.calls.filter(c => c.url === 'https://s3.example.com/upload').length, 1);
   assert.equal(h.calls.filter(c => c.url.endsWith('/jobs') && c.opts.method === 'POST').length, 1);
@@ -349,7 +349,7 @@ test('rapid double click does not create another upload, job, or paid image requ
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1);
 });
 
-test('failed selfie upload stops before job creation or Replicate generation', async () => {
+test('failed selfie upload stops before job creation or Google generation', async () => {
   const h = setup({failSelfieUpload:true});
   await h.els.generate.listeners.click();
   assert.equal(h.calls.filter(c => c.url === 'https://s3.example.com/upload').length, 1);

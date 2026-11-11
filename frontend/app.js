@@ -818,7 +818,7 @@ const input = document.getElementById('selfie');
 
       // This is the same existing server-side image workflow, submitted once
       // after successful S3 upload AND successful job creation.
-      setPhase('Starting three Replicate reference images');
+      setPhase('Starting three Google reference images');
       showStatus('Selfie uploaded. Starting three reference images…');
       try {
         const result = await api('/jobs/' + currentJobId + '/generate', {method:'POST'});

@@ -6,7 +6,7 @@
       "id": "scene1",
       "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene1-start.png",
       "operation": "image_edit",
-      "model": "google/nano-banana-pro",
+      "model": "gemini-3-pro-image",
       "enabled": true,
       "promptInstructions": "SCENE 1 — BREAKING CLEAR, START FRAME BEFORE ANIMATION. TEMPLATE: Central player faces the camera nearly head-on, running hard with ONE red AFL football in BOTH hands low across his torso. An Essendon defender on the LEFT is very close behind, reaching toward/touching the player's upper arm. Keep the defender's exact face, reaching arm and close separation as photographed: the escape happens later in the VIDEO, not in this image. Keep the runner's running-leg pose and close front-facing framing. There are NO visible goalposts. Replace ONLY the central player's head/identity and selected-team playing kit as required by shared instructions. The defender remains in Essendon BLACK with a BOLD RED DIAGONAL SASH. Do not move the ball, replace the defender, create another player, show a completed tackle, show a kick or insert goals. Focused, recognisable customer face, no forced grin."
     },
@@ -15,14 +15,14 @@
       "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene2-start.png",
       "operation": "image_edit",
       "enabled": true,
-      "model": "google/nano-banana-pro",
+      "model": "gemini-3-pro-image",
       "promptInstructions": "SCENE 2 — NEW CAMERA, PRE-KICK START FRAME INSIDE ATTACKING 50. TEMPLATE: Central athlete occupies RIGHT side of the frame, running diagonally TOWARD the camera, face looking nearly straight at it. He holds ONE red AFL football LOW near his waist in BOTH hands; it has NOT been dropped or kicked yet. Preserve this exact right-side framing, full running pose, face orientation and ball position. The player is in the ATTACKING FORWARD 50, approximately 30–35 metres from the unseen attacking goals situated AHEAD / BEHIND the opening camera. NO GOALPOSTS of either end are visible anywhere in the supplied template and NONE must be generated. Do not add distant goalposts, centre circle, midfield markings or a defensive-half setting. Two small, naturally blurred chasing players remain in the left background, wearing Essendon BLACK with RED DIAGONAL SASH; preserve their positions and separation. Preserve the stadium, floodlights, crowd and grass. Do not invent posts or background players, bring defenders closer, change camera angle, lift ball to chest height or show any ball flight. Replace central athlete's head/identity and selected-team kit as required by shared prompt, with credible face-to-neck and exposed-limb skin matching."
     },
     {
       "id": "scene3",
       "masterKey": "scenarios/afl-grand-final-winning-kick/v1/scene3-start.png",
       "operation": "image_edit",
-      "model": "google/nano-banana-pro",
+      "model": "gemini-3-pro-image",
       "enabled": true,
       "promptInstructions": "SCENE 3 — PREMIERS CELEBRATION, NEW CAMERA, EXACT START FRAME. TEMPLATE: Central player is facing the camera between TWO teammates, tightly embraced by them; ONE clenched fist is raised toward the camera, and his mouth is open in a triumphant cheer. Two teammates on the LEFT and RIGHT are already shouting/celebrating; preserve their distinct original faces, hands, arm contact and positions. Preserve the NIGHT stadium, existing drifting GOLD CONFETTI and distant 'PREMIER CHAMPIONS' display exactly; do not create new captions or alter its lettering. Replace only the central player's whole head with the selfie person's recognisable identity and hairstyle: adapt the excited open-mouth expression to the real customer's features rather than copying the template player's teeth, jaw or stretched mouth. Natural excitement without grotesque distortion or loss of likeness. Dress the central player and BOTH teammates in the selected team's coordinated kit, preserving cloth shape and physical contact. No Essendon opponents, extra teammates, extra fists, added confetti blasts, new trophies or camera change."
     }

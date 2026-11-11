@@ -29,6 +29,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
 
       - name: Validate scenario and rendered video prompts BEFORE any AWS write
         shell: bash
@@ -58,7 +60,7 @@ jobs:
           assert [x["id"] for x in video_scenes] == ["scene1", "scene2", "scene3"]
           for scene in image_scenes:
               assert scene["enabled"] is True
-              assert scene["model"] == "google/nano-banana-pro"
+              assert scene["model"] == "gemini-3-pro-image"
               assert scene["masterKey"] == f"scenarios/afl-grand-final-winning-kick/v1/{scene['id']}-start.png"
               assert 100 <= len(scene["promptInstructions"]) <= 5000
 
@@ -77,7 +79,7 @@ jobs:
               assert 100 <= len(rendered) <= 12000
               assert "9:16" in rendered
           assert video_config["requiredVariables"] == ["firstName", "lastName", "fullName", "teamName", "guernsey", "commentary"]
-          print("Validated Replicate configuration and three Google video templates.")
+          print("Validated Google image configuration and three Google video templates.")
           PY
 
       - name: Validate optional PNG template images (before AWS writes)
@@ -121,9 +123,31 @@ jobs:
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
 
+          # On push, publish ONLY the explicitly changed scenario files.
+          # In particular, a model-config migration must never overwrite
+          # working S3 master PNGs or video prompts from unrelated commits.
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            before="${{ github.event.before }}"
+            case "$before" in
+              ""|0000000000000000000000000000000000000000)
+                echo "::error::Missing prior commit; refusing S3 writes"
+                exit 1 ;;
+            esac
+            git diff --name-only "$before" "$GITHUB_SHA" -- "$base" > "$tmp/changed"
+          fi
+
+          should_publish() {
+            [ "$GITHUB_EVENT_NAME" != "push" ] ||
+              grep -Fxq "$base/$1" "$tmp/changed"
+          }
+
           upload_and_verify() {
             local rel="$1"
             local mime="$2"
+            if ! should_publish "$rel"; then
+              echo "Unchanged: $rel (S3 asset preserved)"
+              return 0
+            fi
             local src="$base/$rel"
             local key="$base/$rel"
             local dest="$tmp/${rel//\//_}"

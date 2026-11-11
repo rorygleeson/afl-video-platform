@@ -42,6 +42,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
       - name: Test Google reconciliation offline
         run: python3 -m unittest discover -s tests -p 'test_google_reconciliation.py' -v
       - name: Validate ownership inventory
