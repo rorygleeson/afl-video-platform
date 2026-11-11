@@ -1,4 +1,4 @@
-"""Direct Vertex AI Nano Banana Pro adapter. No third-party credentials or dependencies.
+"""Direct Vertex AI Nano Banana Pro adapter with Google's supported WIF auth.
 
 Runs within the existing image Lambda and preserves its DynamoDB/S3 contracts.
 Only an explicitly rejected HTTP 429 is retried. All ambiguous failures are terminal.
@@ -17,8 +17,6 @@ import urllib.request
 from email.utils import parsedate_to_datetime
 
 import boto3
-from botocore.auth import SigV4Auth
-from botocore.awsrequest import AWSRequest
 
 MODEL = "gemini-3-pro-image"
 PROJECT = os.environ["GOOGLE_PROJECT_ID"]
@@ -85,41 +83,38 @@ def post_json(url, body, bearer=None, limit=1024 * 1024, timeout=20, form=False)
 
 
 def access_token():
-    """Google-documented AWS SigV4 subject token -> STS -> service-account token."""
-    region = os.environ["AWS_REGION"]
-    audience = (f"//iam.googleapis.com/projects/{NUMBER}/locations/global/"
-                f"workloadIdentityPools/{POOL}/providers/{PROVIDER}")
-    host = f"sts.{region}.amazonaws.com"
-    request = AWSRequest(
-        method="POST",
-        url=f"https://{host}/?Action=GetCallerIdentity&Version=2011-06-15",
-        headers={"Host": host, "x-goog-cloud-target-resource": audience})
-    credentials = boto3.Session().get_credentials()
-    if credentials is None:
-        raise RuntimeError("No AWS Lambda role credentials")
-    SigV4Auth(credentials.get_frozen_credentials(), "sts", region).add_auth(request)
-    assertion = json.dumps({
-        "url": request.url, "method": request.method,
-        "headers": [{"key": k, "value": v} for k, v in request.headers.items()],
-    }, separators=(",", ":"))
-    token = post_json("https://sts.googleapis.com/v1/token", {
-        "audience": audience,
-        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-        "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
-        "scope": "https://www.googleapis.com/auth/cloud-platform",
+    """Reuse the exact keyless google-auth AWS WIF flow from Google video worker."""
+    from google.auth import load_credentials_from_dict
+    from google.auth.transport.requests import Request
+    info = {
+        "type": "external_account",
+        "audience": (f"//iam.googleapis.com/projects/{NUMBER}/locations/global/"
+                     f"workloadIdentityPools/{POOL}/providers/{PROVIDER}"),
         "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
-        "subject_token": urllib.parse.quote(assertion, safe=""),
-    }, form=True).get("access_token")
-    if not token or not isinstance(token, str):
-        raise RuntimeError("Google WIF exchange failed")
-    impersonation = post_json(
-        f"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{ACCOUNT}:generateAccessToken",
-        {"scope": ["https://www.googleapis.com/auth/cloud-platform"], "lifetime": "3600s"},
-        bearer=token)
-    result = impersonation.get("accessToken")
-    if not isinstance(result, str) or not result:
-        raise RuntimeError("Google service-account impersonation failed")
-    return result
+        "token_url": "https://sts.googleapis.com/v1/token",
+        "service_account_impersonation_url":
+            f"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{ACCOUNT}:generateAccessToken",
+        "credential_source": {
+            "environment_id": "aws1",
+            "region_url": "http://169.254.169.254/latest/meta-data/placement/availability-zone",
+            "url": "http://169.254.169.254/latest/meta-data/iam/security-credentials",
+            "regional_cred_verification_url":
+                "https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15",
+            "imdsv2_session_token_url": "http://169.254.169.254/latest/api/token",
+        },
+    }
+    try:
+        credentials, _ = load_credentials_from_dict(
+            info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        credentials.refresh(Request())
+        if not credentials.valid or not credentials.token:
+            raise RuntimeError("No Google WIF access token")
+        return credentials.token
+    except Exception as exc:
+        # Never pass provider errors or signed identities to logs/UI.
+        if type(exc).__name__ in ("RefreshError", "OAuthError"):
+            raise RuntimeError("GOOGLE_WIF_TOKEN_EXCHANGE_FAILED") from None
+        raise RuntimeError("GOOGLE_WIF_CREDENTIAL_ERROR") from None
 
 
 def image_type(payload):

@@ -215,31 +215,26 @@ class ImageContractTests(unittest.TestCase):
                 self.assertEqual(paid.call_count, 1)
                 self.assertEqual(m.scene_update.call_args.args[3]["errorCode"], code)
 
-    def test_wif_uses_signed_aws_identity_without_static_key(self):
-        signed_headers = {"Host": "sts.ap-southeast-2.amazonaws.com",
-                          "x-goog-cloud-target-resource": "//iam.googleapis.com/projects/345956846110/locations/global/workloadIdentityPools/afl-video-aws/providers/afl-aws-dev",
-                          "Authorization": "AWS4-HMAC-SHA256 mock"}
-        with patch.object(google, "AWSRequest") as request, \
-             patch.object(google, "SigV4Auth") as signer, \
-             patch.object(google.boto3, "Session") as session, \
-             patch.object(google, "post_json",
-                          side_effect=[{"access_token": "federated"},
-                                       {"accessToken": "impersonated"}]) as post:
-            request.return_value.url = "https://sts.ap-southeast-2.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
-            request.return_value.method = "POST"
-            request.return_value.headers = signed_headers
-            session.return_value.get_credentials.return_value.get_frozen_credentials.return_value = "test-creds"
+    def test_wif_reuses_working_google_auth_external_account_config(self):
+        from google.auth import load_credentials_from_dict
+        credentials = Mock(valid=True, token="impersonated")
+        with patch("google.auth.load_credentials_from_dict",
+                   return_value=(credentials, None)) as load, \
+             patch("google.auth.transport.requests.Request") as transport:
             self.assertEqual(google.access_token(), "impersonated")
-        self.assertEqual(post.call_count, 2)
-        assertion = json.loads(google.urllib.parse.unquote(post.call_args_list[0].args[1]["subject_token"]))
-        self.assertTrue(post.call_args_list[0].args[1]["subject_token"].startswith("%7B"))
-        self.assertEqual(assertion["method"], "POST")
-        self.assertIn("x-goog-cloud-target-resource", {h["key"] for h in assertion["headers"]})
-        self.assertEqual(post.call_args_list[0].args[1]["grant_type"], "urn:ietf:params:oauth:grant-type:token-exchange")
-        self.assertIn("subject_token_type", post.call_args_list[0].args[1])
-        self.assertTrue(post.call_args_list[0].kwargs["form"])
-        self.assertEqual(post.call_args_list[1].kwargs["bearer"], "federated")
-        signer.assert_called_once()
+        info = load.call_args.args[0]
+        self.assertEqual(info["type"], "external_account")
+        self.assertEqual(info["subject_token_type"],
+                         "urn:ietf:params:aws:token-type:aws4_request")
+        self.assertEqual(info["audience"],
+                         "//iam.googleapis.com/projects/345956846110/locations/global/workloadIdentityPools/afl-video-aws/providers/afl-aws-dev")
+        self.assertEqual(info["service_account_impersonation_url"],
+                         "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/afl-video-worker@afl-video-platform.iam.gserviceaccount.com:generateAccessToken")
+        self.assertIn("sts.{region}.amazonaws.com", info["credential_source"]["regional_cred_verification_url"])
+        self.assertEqual(load.call_args.kwargs["scopes"],
+                         ["https://www.googleapis.com/auth/cloud-platform"])
+        credentials.refresh.assert_called_once()
+        transport.assert_called_once()
 
     def test_preparation_stage_is_sanitised_without_billing(self):
         cases = [
