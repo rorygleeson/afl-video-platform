@@ -1,5 +1,5 @@
 name: One-time deploy sanitised Google image preparation diagnostics
-# Replace custom signing with official Google auth (verified CI).
+# One-time nonbillable scheduled WIF diagnostic after CI passed.
 on:
   push:
     branches: [main]
@@ -22,8 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin f9b851d082be34d69cbf86bd63aeae61ef199b82
-          test "$(git rev-parse FETCH_HEAD)" = f9b851d082be34d69cbf86bd63aeae61ef199b82
+          git fetch --no-tags --depth=1 origin 8a332efe6a18b6c5faedc1a0cfeef674610726c9
+          test "$(git rev-parse FETCH_HEAD)" = 8a332efe6a18b6c5faedc1a0cfeef674610726c9
           git worktree add --detach /tmp/afl-image-diagnostic FETCH_HEAD
           python3 /tmp/afl-image-diagnostic/scripts/build_release_artifacts.py > /dev/null
           python3 -m py_compile scripts/deploy_image_diagnostic.py
