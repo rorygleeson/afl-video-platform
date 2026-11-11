@@ -83,6 +83,23 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("both teammates",
                       self.config["scenes"][2]["promptInstructions"].lower())
 
+    def test_scene2_rear_camera_master_and_video_match(self):
+        scene = self.config["scenes"][1]["promptInstructions"].lower()
+        shared = self.config["sharedPrompt"].lower()
+        video = (ROOT / "scenarios/afl-grand-final-winning-kick/v1/video/scene2-video.txt").read_text().lower()
+        self.assertIn("scene 2", shared)
+        self.assertIn("rear three-quarter", scene)
+        self.assertIn("four", scene)
+        self.assertIn("four-fifths (80%)", scene)
+        self.assertIn("even horizontal spacing", scene)
+        self.assertIn("running toward", scene)
+        self.assertIn("already visible in the first frame", video)
+        self.assertIn("while it is still off the ground", video)
+        self.assertIn("camera stays fixed", video)
+        self.assertIn("two tall middle posts", video)
+        self.assertNotIn("no goalposts are visible", scene)
+        self.assertNotIn("drop punt", video)
+
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):
             with self.subTest(shared=invalid):
