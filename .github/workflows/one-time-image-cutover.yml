@@ -1,5 +1,5 @@
 name: ONE TIME image provider cutover - approved 2026-11-11
-# Retry after least-privilege read-only AWS job-state permissions were added.
+# Retry after verified rollback; fixes Map concurrency verification and Google STS form fields.
 on:
   push:
     branches: [main]
@@ -22,8 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin 759ee6efc932343e2b075693d03ac266bbbb256b
-          test "$(git rev-parse FETCH_HEAD)" = 759ee6efc932343e2b075693d03ac266bbbb256b
+          git fetch --no-tags --depth=1 origin 526cd2c4b3f01d04654b98bd6ad1f69abb87350d
+          test "$(git rev-parse FETCH_HEAD)" = 526cd2c4b3f01d04654b98bd6ad1f69abb87350d
           git worktree add --detach /tmp/image-migration FETCH_HEAD
           python3 /tmp/image-migration/scripts/build_release_artifacts.py > /dev/null
           python3 -m py_compile scripts/run_image_cutover.py
