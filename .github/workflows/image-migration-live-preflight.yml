@@ -115,3 +115,34 @@ jobs:
           if not out["image_only"]:
               print("BLOCKED: repository template has unrelated live CloudFormation changes")
           PY
+      - name: Probe alternative read-only active-job signals (no mutation)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3,json,datetime
+          r="ap-southeast-2"
+          cw=boto3.client("cloudwatch",region_name=r)
+          l=boto3.client("lambda",region_name=r)
+          logs=boto3.client("logs",region_name=r)
+          probes={}
+          try:
+              l.invoke(FunctionName="afl-app-dev-image-worker",InvocationType="DryRun")
+              probes["lambda_invoke_dry_run"]="ALLOWED"
+          except Exception as e:
+              probes["lambda_invoke_dry_run"]="DENIED:"+getattr(e,"response",{}).get("Error",{}).get("Code",type(e).__name__)
+          try:
+              end=datetime.datetime.now(datetime.timezone.utc)
+              start=end-datetime.timedelta(minutes=60)
+              resp=cw.get_metric_statistics(Namespace="AWS/States",MetricName="OpenExecutionCount",
+                  Dimensions=[{"Name":"StateMachineArn","Value":"arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-scene1-pilot"}],
+                  StartTime=start,EndTime=end,Period=300,Statistics=["Maximum"])
+              probes["open_execution_metric"]={"allowed":True,"datapoints":resp.get("Datapoints",[])}
+          except Exception as e:
+              probes["open_execution_metric"]="DENIED:"+getattr(e,"response",{}).get("Error",{}).get("Code",type(e).__name__)
+          try:
+              resp=logs.describe_log_streams(logGroupName="/aws/vendedlogs/states/afl-app-dev-scene1-pilot",orderBy="LastEventTime",descending=True,limit=1)
+              probes["image_sfn_log_streams"]="ALLOWED"
+          except Exception as e:
+              probes["image_sfn_log_streams"]="DENIED:"+getattr(e,"response",{}).get("Error",{}).get("Code",type(e).__name__)
+          print("IMAGE_READ_ACCESS_PROBE="+json.dumps(probes,default=str))
+          PY
