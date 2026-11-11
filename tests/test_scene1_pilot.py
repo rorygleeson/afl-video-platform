@@ -277,7 +277,7 @@ class ImageContractTests(unittest.TestCase):
              patch.object(google, "access_token", side_effect=RuntimeError("provider private error body")):
             with self.assertRaises(RuntimeError):
                 google.generate(m, "a" * 32, "scene1")
-        self.assertEqual(m.scene_update.call_args.args[3], {"errorCode": "GOOGLE_PREPARATION_ERROR"})
+        self.assertEqual(m.scene_update.call_args.args[3], {"errorCode": "GOOGLE_AUTH_INVALID_RESPONSE"})
 
 
 
