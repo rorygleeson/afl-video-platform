@@ -478,32 +478,32 @@ Resources:
             ItemProcessor:
               ProcessorConfig:
                 Mode: INLINE
-               StartAt: Generate
-               States:
-                 Generate:
-                   Type: Task
-                   Resource: arn:aws:states:::lambda:invoke
-                   Parameters:
-                     FunctionName: ${WorkerArn}
-                     Payload:
-                       op: generate
-                       jobId.$: $.jobId
-                       sceneId.$: $.sceneId
-                   Catch:
-                     - ErrorEquals: [States.ALL]
-                       ResultPath: $.error
-                       Next: MarkSceneFailed
-                   End: true
-                 MarkSceneFailed:
-                   Type: Task
-                   Resource: arn:aws:states:::lambda:invoke
-                   Parameters:
-                     FunctionName: ${WorkerArn}
-                     Payload:
-                       op: failed
-                       jobId.$: $.jobId
-                       sceneId.$: $.sceneId
-                   End: true
+              StartAt: Generate
+              States:
+                Generate:
+                  Type: Task
+                  Resource: arn:aws:states:::lambda:invoke
+                  Parameters:
+                    FunctionName: ${WorkerArn}
+                    Payload:
+                      op: generate
+                      jobId.$: $.jobId
+                      sceneId.$: $.sceneId
+                  Catch:
+                    - ErrorEquals: [States.ALL]
+                      ResultPath: $.error
+                      Next: MarkSceneFailed
+                  End: true
+                MarkSceneFailed:
+                  Type: Task
+                  Resource: arn:aws:states:::lambda:invoke
+                  Parameters:
+                    FunctionName: ${WorkerArn}
+                    Payload:
+                      op: failed
+                      jobId.$: $.jobId
+                      sceneId.$: $.sceneId
+                  End: true
             Next: Finalize
           Finalize:
             Type: Task
