@@ -22,8 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin e2b43a613c817b8fff3046df2e8240160a2eddf0
-          test "$(git rev-parse FETCH_HEAD)" = e2b43a613c817b8fff3046df2e8240160a2eddf0
+          git fetch --no-tags --depth=1 origin 08434f31fb427d8dc39388b918ef72f7eee809eb
+          test "$(git rev-parse FETCH_HEAD)" = 08434f31fb427d8dc39388b918ef72f7eee809eb
           git worktree add --detach /tmp/afl-image-diagnostic FETCH_HEAD
           python3 /tmp/afl-image-diagnostic/scripts/build_release_artifacts.py > /dev/null
           python3 -m py_compile scripts/deploy_image_diagnostic.py
