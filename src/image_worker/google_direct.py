@@ -108,7 +108,7 @@ def access_token():
         "requested_token_type": "urn:ietf:params:oauth:token-type:access_token",
         "scope": "https://www.googleapis.com/auth/cloud-platform",
         "subject_token_type": "urn:ietf:params:aws:token-type:aws4_request",
-        "subject_token": assertion,
+        "subject_token": urllib.parse.quote(assertion, safe=""),
     }, form=True).get("access_token")
     if not token or not isinstance(token, str):
         raise RuntimeError("Google WIF exchange failed")
