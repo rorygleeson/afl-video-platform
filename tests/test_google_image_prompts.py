@@ -1,4 +1,4 @@
-"""Offline tests for S3-owned Replicate image prompts; no AWS calls or billing."""
+"""Offline tests for S3-owned Google image prompts; no AWS calls or billing."""
 import ast
 import json
 from pathlib import Path
@@ -20,7 +20,7 @@ validate_prompt_config = namespace["validate_prompt_config"]
 build_image_prompt = namespace["build_image_prompt"]
 
 
-class ReplicatePromptTests(unittest.TestCase):
+class GooglePromptTests(unittest.TestCase):
     def setUp(self):
         self.config = json.loads(CONFIG.read_text(encoding="utf-8"))
 
@@ -35,7 +35,7 @@ class ReplicatePromptTests(unittest.TestCase):
                 self.assertIn("the ONLY source for the central player's identity", result)
                 self.assertIn("Geelong Cats: navy blue and white horizontal hoops", result)
                 self.assertIn(scene["promptInstructions"], result)
-                self.assertEqual(scene["model"], "google/nano-banana-pro")
+                self.assertEqual(scene["model"], "gemini-3-pro-image")
                 self.assertIn("selfie", result.lower())
 
     def test_all_scenes_have_explicit_face_and_uniform_rules(self):
@@ -97,17 +97,13 @@ class ReplicatePromptTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     validate_prompt_config(cfg)
 
-    def test_replicate_request_contract_unchanged(self):
-        source = WORKER.read_text(encoding="utf-8")
-        for required in (
-            '"image_input": [master_url, selfie_url]',
-            '"aspect_ratio": "9:16", "resolution": "2K"',
-            '"output_format": "png", "allow_fallback_model": False',
-            'https://api.replicate.com/v1/models/google/nano-banana-pro/predictions',
-            'prompt = build_image_prompt(config, scene, job["team"])',
-        ):
-            self.assertIn(required, source)
-        self.assertNotIn('Photorealistic cinematic Australian rules football image edit.', source)
+    def test_google_request_contract(self):
+        source = (ROOT / "src/image_worker/google_direct.py").read_text(encoding="utf-8")
+        self.assertIn('MODEL = "gemini-3-pro-image"', source)
+        self.assertIn('"aspectRatio": "9:16", "imageSize": "2K"', source)
+        self.assertIn('f"results/{job_id}/{scene_id}.png"', source)
+        self.assertIn('{"text": prompt}, master, selfie', source)
+        self.assertNotIn("api.replicate.com", source)
 
 
 if __name__ == "__main__":
