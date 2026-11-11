@@ -1,4 +1,5 @@
 name: One-time Vertex image migration live preflight (read-only)
+# Inspect state after deployment-verification typo triggered rollback.
 on:
   push:
     branches: [main]
