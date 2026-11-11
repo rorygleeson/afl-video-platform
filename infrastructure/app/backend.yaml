@@ -1,5 +1,13 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: AFL Stage 1B serverless API foundation for selfie uploads and jobs.
+# ReplicateSecretName is retained temporarily to preserve the existing stack
+# parameter set and make rollback to the previous image-worker artifact safe.
+# Remove it in a separately reviewed post-cutover cleanup.
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks:
+        - W2001
 Parameters:
   ArtifactBucketName:
     Type: String
