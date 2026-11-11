@@ -1,0 +1,71 @@
+name: One-time Vertex image migration live preflight (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/image-migration-live-preflight.yml'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Configure existing AWS OIDC role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-image-migration-preflight
+      - name: Inspect only existing resource metadata
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3, json, hashlib, sys
+          r = "ap-southeast-2"
+          cf = boto3.client("cloudformation", region_name=r)
+          lam = boto3.client("lambda", region_name=r)
+          states = boto3.client("stepfunctions", region_name=r)
+          s3 = boto3.client("s3", region_name=r)
+          stack = cf.describe_stacks(StackName="afl-app-dev-backend")["Stacks"][0]
+          params = {p["ParameterKey"]: p.get("ParameterValue") for p in stack.get("Parameters", [])}
+          fn = lam.get_function_configuration(FunctionName="afl-app-dev-image-worker")
+          workflow = states.describe_state_machine(stateMachineArn="arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-scene1-pilot")
+          details = json.loads(workflow["definition"])
+          step = details["States"]["ParallelScenes"]
+          active = states.list_executions(stateMachineArn=workflow["stateMachineArn"],statusFilter="RUNNING",maxResults=20)["executions"]
+          asset_bucket = params.get("ScenarioAssetsBucket", "afl-video-bootstrap-artifactbucket-xiuriidgyft4")
+          config_key = "scenarios/afl-grand-final-winning-kick/v1/config.json"
+          obj = s3.get_object(Bucket=asset_bucket,Key=config_key)
+          payload = obj["Body"].read(200000)
+          if len(payload) >= 200000:
+              raise RuntimeError("Scenario config unexpectedly large")
+          config = json.loads(payload)
+          result = {
+              "stack_status":stack["StackStatus"],
+              "stack_id_matches_expected": stack["StackId"].split("/")[1] == "afl-app-dev-backend",
+              "image_lambda_runtime":fn.get("Runtime"),
+              "image_lambda_status":fn.get("State"),
+              "image_lambda_last_update":fn.get("LastUpdateStatus"),
+              "image_lambda_timeout":fn.get("Timeout"),
+              "image_lambda_memory":fn.get("MemorySize"),
+              "image_lambda_role":fn.get("Role"),
+              "image_lambda_code_sha256":fn.get("CodeSha256"),
+              "image_lambda_has_replicate_secret":bool(fn.get("Environment",{}).get("Variables",{}).get("REPLICATE_SECRET_NAME")),
+              "state_machine_status":workflow["status"],
+              "state_machine_sha256":hashlib.sha256(workflow["definition"].encode()).hexdigest(),
+              "parallel_scene_concurrency":step["MaxConcurrency"],
+              "parallel_scene_start":step["ItemProcessor"]["StartAt"],
+              "running_executions_first_20":len(active),
+              "scenario_config_bucket":asset_bucket,
+              "scenario_config_key":config_key,
+              "scenario_config_version":obj.get("VersionId","unversioned"),
+              "scenario_config_sha256":hashlib.sha256(payload).hexdigest(),
+              "scenario_models":[x.get("model") for x in config.get("scenes",[])],
+              "image_artifact_param":params.get("ImageWorkerArtifactKey"),
+          }
+          print("LIVE_IMAGE_MIGRATION_PREFLIGHT="+json.dumps(result,sort_keys=True))
+          if stack["StackStatus"] != "UPDATE_COMPLETE" or fn.get("State")!="Active" or fn.get("LastUpdateStatus")!="Successful" or workflow["status"]!="ACTIVE":
+              raise SystemExit("BLOCKED: live resources unhealthy")
+          PY
