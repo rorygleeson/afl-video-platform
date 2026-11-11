@@ -240,6 +240,37 @@ class ImageContractTests(unittest.TestCase):
         self.assertEqual(post.call_args_list[1].kwargs["bearer"], "federated")
         signer.assert_called_once()
 
+    def test_preparation_stage_is_sanitised_without_billing(self):
+        cases = [
+            ("MASTER_READ", "GOOGLE_MASTER_READ_ERROR", 0),
+            ("SELFIE_READ", "GOOGLE_SELFIE_READ_ERROR", 1),
+            ("PROMPT", "GOOGLE_PROMPT_ERROR", 2),
+            ("AUTH", "GOOGLE_AUTH_HTTP_403", 2),
+        ]
+        for stage, expected, completed_reads in cases:
+            with self.subTest(stage=stage):
+                worker_mock = setup_scene()
+                def read(*args, **kwargs):
+                    if read.call_count == completed_reads:
+                        raise ValueError("private_image_url")
+                    read.call_count += 1
+                    return {"inlineData": {"mimeType": "image/png", "data": "x"}}
+                read.call_count = 0
+                with patch.object(google, "s3_image", side_effect=read), \
+                     patch.object(google, "access_token", side_effect=google.GoogleHTTPError(403) if stage == "AUTH" else None), \
+                     patch.object(google, "post_json") as paid:
+                    if stage == "PROMPT":
+                        worker_mock.build_image_prompt = Mock(side_effect=ValueError("private_prompt"))
+                    if stage in ("MASTER_READ", "SELFIE_READ"):
+                        expected_exception = ValueError
+                    else:
+                        expected_exception = google.GoogleHTTPError if stage == "AUTH" else ValueError
+                    with self.assertRaises(expected_exception):
+                        google.generate(worker_mock, "a" * 32, "scene1")
+                    self.assertEqual(worker_mock.scene_update.call_args.args[3]["errorCode"], expected)
+                    self.assertNotIn("private", worker_mock.scene_update.call_args.args[3]["errorCode"])
+                    paid.assert_not_called()
+
     def test_no_credentials_exposed_in_sanitised_error(self):
         m = setup_scene()
         with patch.object(google, "s3_image", return_value={"inlineData": {"mimeType": "image/png", "data": "x"}}), \

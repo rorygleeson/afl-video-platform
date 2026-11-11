@@ -196,15 +196,33 @@ def generate(worker, job_id, scene_id):
     scene = next(s for s in config["scenes"] if s["id"] == scene_id)
     worker.scene_update(job_id, scene_id, "SUBMITTING",
                         {"submissionStartedAt": int(time.time())}, expected="PENDING")
+    stage = "MASTER_READ"
     try:
         master = s3_image(worker.S3, worker.ASSET_BUCKET, scene["masterKey"])
+        stage = "SELFIE_READ"
         selfie = s3_image(worker.S3, worker.UPLOAD_BUCKET, job["uploadKey"])
+        stage = "PROMPT"
         prompt = worker.build_image_prompt(config, scene, job["team"])
+        stage = "AUTH"
         token = access_token()
+        stage = "REQUEST_FORMAT"
         payload = request_body(prompt, master, selfie)
-    except Exception:
+    except Exception as exc:
+        # Failure category only: no credentials, signed identity token, prompts,
+        # presigned S3 URLs, customer photos or provider response bodies.
+        if stage == "AUTH":
+            if isinstance(exc, GoogleHTTPError):
+                code = "GOOGLE_AUTH_HTTP_" + str(exc.status)
+            elif isinstance(exc, (TimeoutError, OSError)):
+                code = "GOOGLE_AUTH_NETWORK"
+            elif isinstance(exc, (RuntimeError, ValueError)):
+                code = "GOOGLE_AUTH_INVALID_RESPONSE"
+            else:
+                code = "GOOGLE_AUTH_UNEXPECTED"
+        else:
+            code = "GOOGLE_" + stage + "_ERROR"
         worker.scene_update(job_id, scene_id, "SUBMITTING",
-                            {"errorCode": "GOOGLE_PREPARATION_ERROR"}, expected="SUBMITTING")
+                            {"errorCode": code}, expected="SUBMITTING")
         raise
     worker.scene_update(job_id, scene_id, "GENERATING",
                         {"generationStartedAt": int(time.time())}, expected="SUBMITTING")
