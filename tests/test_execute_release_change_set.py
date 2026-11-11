@@ -33,8 +33,10 @@ class CF:
 
 def inputs():
     baseline = {"region": "ap-southeast-2", "guardrails": {"deploy_permitted": False},
-                "known_drift": {"google_worker": True},
-                "stacks": {"backend": {"name": "afl-app-dev-backend", "stack_id": "stack-id",
+                "known_drift": {"google_worker": False},
+                "google_known_live_artifact": {"key": "verified.zip"},
+                "stacks": {"google": {"parameters": {"GoogleWorkerArtifactKey": "verified.zip"}},
+                           "backend": {"name": "afl-app-dev-backend", "stack_id": "stack-id",
                                       "parameters": {"LambdaArtifactKey": "old"}}}}
     plan = {"deploy_permitted": False, "stacks": {"backend": {
         "name": "afl-app-dev-backend", "current_parameters": {"LambdaArtifactKey": "old"},
@@ -79,6 +81,22 @@ class Tests(unittest.TestCase):
         baseline, plan = inputs()
         with self.assertRaises(ValueError):
             module.execute(cf, "cs-id", "another-id", baseline, plan, None, None, True)
+        self.assertEqual(cf.executions, [])
+
+    def test_rejects_unreconciled_google_drift(self):
+        cf = CF()
+        baseline, plan = inputs()
+        baseline["known_drift"]["google_worker"] = True
+        with self.assertRaisesRegex(ValueError, "Google worker reconciliation"):
+            module.execute(cf, "cs-id", "cs-id", baseline, plan, None, None, True)
+        self.assertEqual(cf.executions, [])
+
+    def test_rejects_mismatched_google_artifact(self):
+        cf = CF()
+        baseline, plan = inputs()
+        baseline["stacks"]["google"]["parameters"]["GoogleWorkerArtifactKey"] = "stale.zip"
+        with self.assertRaisesRegex(ValueError, "Google artifact"):
+            module.execute(cf, "cs-id", "cs-id", baseline, plan, None, None, True)
         self.assertEqual(cf.executions, [])
 
     def test_rejects_changed_live_stack(self):

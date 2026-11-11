@@ -30,8 +30,12 @@ def preflight(cf, lam, events, baseline, plan, change_set_id, expected_change_se
         raise ValueError("Release plan safety guard changed")
     if baseline.get("verification_gaps"):
         raise ValueError("Unverified AWS baseline")
-    if not baseline.get("known_drift", {}).get("google_worker"):
-        raise ValueError("Expected protected Google drift not captured")
+    if baseline.get("known_drift", {}).get("google_worker") is not False:
+        raise ValueError("Google worker reconciliation not verified")
+    artifact = baseline.get("google_known_live_artifact")
+    google = baseline.get("stacks", {}).get("google", {})
+    if not artifact or google.get("parameters", {}).get("GoogleWorkerArtifactKey") != artifact.get("key"):
+        raise ValueError("Google artifact parameter no longer matches verified ZIP")
     previous = baseline["stacks"]["backend"]
     proposed = plan["stacks"]["backend"]
     if previous["name"] != BACKEND or proposed["name"] != BACKEND:

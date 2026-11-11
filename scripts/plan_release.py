@@ -2,8 +2,8 @@
 """Offline, fail-closed release plan for existing stacks. No AWS writes.
 
 Uses a captured AWS baseline and deterministic release artifact manifest.
-Refuses to plan if the Google worker has drift, until a separately reviewed
-Google migration is designed. Does not silently update any CFN parameter.
+Requires the already-reconciled Google worker stack to remain aligned with its
+verified working ZIP. Does not silently update any CFN parameter.
 """
 import argparse
 import json
@@ -26,15 +26,16 @@ def plan(baseline, artifacts):
         raise ValueError("Wrong AWS region")
     if baseline.get("guardrails", {}).get("deploy_permitted") is not False:
         raise ValueError("Unexpected baseline deployment guard")
-    if baseline.get("known_drift", {}).get("google_worker") is not True:
-        raise ValueError("Expected Google drift baseline changed; recapture and review")
-    if not baseline.get("google_known_live_artifact"):
-        raise ValueError("Verified live Google artifact missing")
+    if baseline.get("known_drift", {}).get("google_worker") is not False:
+        raise ValueError("Google worker reconciliation not verified; recapture baseline")
+    google_artifact = baseline.get("google_known_live_artifact")
+    google_stack = baseline.get("stacks", {}).get("google", {})
+    if not google_artifact or google_stack.get("parameters", {}).get("GoogleWorkerArtifactKey") != google_artifact.get("key"):
+        raise ValueError("Google CloudFormation artifact does not match verified working ZIP")
     if artifacts.get("format") != 1:
         raise ValueError("Unsupported artifact manifest")
     result = {"schema": 1, "deploy_permitted": False, "stacks": {},
-              "blockers": ["Google CloudFormation code drift requires separately reviewed reconciliation",
-                           "FFmpeg layer immutable binary provenance is not pinned",
+              "blockers": ["FFmpeg layer immutable binary provenance is not pinned",
                            "No change sets have been created, reviewed or executed"]}
     for gap in baseline.get("verification_gaps", []):
         result["blockers"].append(f"Unverified live AWS resource: {gap}")
