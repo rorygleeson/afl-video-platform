@@ -82,6 +82,16 @@ jobs:
               "scenario_models":[x.get("model") for x in config.get("scenes",[])],
               "image_artifact_param":params.get("ImageWorkerArtifactKey"),
           }
+          if not (
+              fn.get("State") == "Active"
+              and fn.get("LastUpdateStatus") == "Successful"
+              and fn.get("MemorySize") == 1024
+              and not result["image_lambda_has_replicate_secret"]
+              and result["parallel_scene_start"] == "Generate"
+              and result["parallel_scene_concurrency"] == 3
+              and result["scenario_models"] == ["gemini-3-pro-image"] * 3
+          ):
+              raise SystemExit("BLOCKED: Google image cutover is not fully active")
           print("LIVE_IMAGE_MIGRATION_PREFLIGHT="+json.dumps(result,sort_keys=True))
           if stack["StackStatus"] != "UPDATE_COMPLETE" or fn.get("State")!="Active" or fn.get("LastUpdateStatus")!="Successful" or workflow["status"]!="ACTIVE":
               raise SystemExit("BLOCKED: live resources unhealthy")
