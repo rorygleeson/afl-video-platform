@@ -58,7 +58,7 @@ jobs:
           assert [x["id"] for x in video_scenes] == ["scene1", "scene2", "scene3"]
           for scene in image_scenes:
               assert scene["enabled"] is True
-              assert scene["model"] == "google/nano-banana-pro"
+              assert scene["model"] == "gemini-3-pro-image"
               assert scene["masterKey"] == f"scenarios/afl-grand-final-winning-kick/v1/{scene['id']}-start.png"
               assert 100 <= len(scene["promptInstructions"]) <= 5000
 
@@ -77,7 +77,7 @@ jobs:
               assert 100 <= len(rendered) <= 12000
               assert "9:16" in rendered
           assert video_config["requiredVariables"] == ["firstName", "lastName", "fullName", "teamName", "guernsey", "commentary"]
-          print("Validated Replicate configuration and three Google video templates.")
+          print("Validated Google image configuration and three Google video templates.")
           PY
 
       - name: Validate optional PNG template images (before AWS writes)

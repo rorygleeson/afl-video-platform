@@ -16,7 +16,7 @@ SOURCES = {
         "handler.py": "src/api/handler.py",
         "video_prompts.py": "src/api/video_prompts.py",
     },
-    "image-worker": {"handler.py": "src/image_worker/handler.py"},
+    "image-worker": {"handler.py": "src/image_worker/handler.py", "google_direct.py": "src/image_worker/google_direct.py"},
     "assembly-worker": {"handler.py": "src/assembly_worker/handler.py"},
     "legacy-video-worker": {"handler.py": "src/video_worker/handler.py"},
 }

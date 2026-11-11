@@ -237,7 +237,7 @@ def start_images(job_id):
         return response(202, {"jobId": job_id, "status": "GENERATING_IMAGES",
                               "message": "Generation already requested"})
     return response(202, {"jobId": job_id, "status": "GENERATING_IMAGES",
-                          "message": "Three parallel scene edits started; these may incur Replicate charges"})
+                          "message": "Three parallel scene edits started; these may incur Google image generation charges"})
 
 
 def images_for_job(job):

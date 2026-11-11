@@ -381,10 +381,6 @@ Resources:
                 Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub 'arn:${AWS::Partition}:s3:::${ScenarioAssetsBucket}/scenarios/afl-grand-final-winning-kick/v1/*'
-              - Sid: ReadReplicateToken
-                Effect: Allow
-                Action: secretsmanager:GetSecretValue
-                Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ReplicateSecretName}-*'
               - Sid: UpdateAndReadJobs
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Scan]
@@ -399,7 +395,7 @@ Resources:
       FunctionName: afl-app-dev-image-worker
       Runtime: python3.13
       Handler: handler.lambda_handler
-      MemorySize: 256
+      MemorySize: 1024
       Timeout: 600
       Role: !GetAtt ImageWorkerRole.Arn
       Code:
@@ -410,7 +406,12 @@ Resources:
           UPLOAD_BUCKET: !Ref UploadsBucket
           ASSET_BUCKET: !Ref ScenarioAssetsBucket
           JOBS_TABLE: !Ref JobsTable
-          REPLICATE_SECRET_NAME: !Ref ReplicateSecretName
+          GOOGLE_PROJECT_ID: afl-video-platform
+          GOOGLE_PROJECT_NUMBER: '345956846110'
+          GOOGLE_WIF_POOL_ID: afl-video-aws
+          GOOGLE_WIF_PROVIDER_ID: afl-aws-dev
+          GOOGLE_SERVICE_ACCOUNT: afl-video-worker@afl-video-platform.iam.gserviceaccount.com
+          GOOGLE_IMAGE_MODEL: gemini-3-pro-image
           SCENARIO_CONFIG_KEY: scenarios/afl-grand-final-winning-kick/v1/config.json
   ImageWorkerLogs:
     Type: AWS::Logs::LogGroup
@@ -444,7 +445,7 @@ Resources:
       StateMachineType: STANDARD
       RoleArn: !GetAtt ImageStateMachineRole.Arn
       Definition:
-        Comment: Parallel, independently tracked Replicate edits for all configured scenes.
+        Comment: Parallel direct Google Nano Banana Pro image edits for all configured scenes.
         StartAt: Prepare
         TimeoutSeconds: 1800
         States:
@@ -477,84 +478,32 @@ Resources:
             ItemProcessor:
               ProcessorConfig:
                 Mode: INLINE
-              StartAt: Submit
-              States:
-                Submit:
-                  Type: Task
-                  Resource: arn:aws:states:::lambda:invoke
-                  Parameters:
-                    FunctionName: ${WorkerArn}
-                    Payload:
-                      op: submit
-                      jobId.$: $.jobId
-                      sceneId.$: $.sceneId
-                  ResultPath: $.submitted
-                  Catch:
-                    - ErrorEquals: [States.ALL]
-                      ResultPath: $.error
-                      Next: MarkSceneFailed
-                  Next: WaitForPrediction
-                WaitForPrediction:
-                  Type: Wait
-                  Seconds: 12
-                  Next: Poll
-                Poll:
-                  Type: Task
-                  Resource: arn:aws:states:::lambda:invoke
-                  Parameters:
-                    FunctionName: ${WorkerArn}
-                    Payload:
-                      op: check
-                      jobId.$: $.jobId
-                      sceneId.$: $.sceneId
-                      predictionId.$: $.submitted.Payload.predictionId
-                  ResultPath: $.poll
-                  Retry:
-                    - ErrorEquals: [States.TaskFailed]
-                      IntervalSeconds: 4
-                      MaxAttempts: 2
-                      BackoffRate: 2
-                  Catch:
-                    - ErrorEquals: [States.ALL]
-                      ResultPath: $.error
-                      Next: MarkSceneFailed
-                  Next: PredictionStatus
-                PredictionStatus:
-                  Type: Choice
-                  Choices:
-                    - Variable: $.poll.Payload.status
-                      StringEquals: succeeded
-                      Next: SaveScene
-                    - Variable: $.poll.Payload.status
-                      StringEquals: failed
-                      Next: MarkSceneFailed
-                  Default: WaitForPrediction
-                SaveScene:
-                  Type: Task
-                  Resource: arn:aws:states:::lambda:invoke
-                  Parameters:
-                    FunctionName: ${WorkerArn}
-                    Payload:
-                      op: save
-                      jobId.$: $.jobId
-                      sceneId.$: $.sceneId
-                      predictionId.$: $.submitted.Payload.predictionId
-                      output.$: $.poll.Payload.output
-                  Catch:
-                    - ErrorEquals: [States.ALL]
-                      ResultPath: $.error
-                      Next: MarkSceneFailed
-                  End: true
-                MarkSceneFailed:
-                  Type: Task
-                  Resource: arn:aws:states:::lambda:invoke
-                  Parameters:
-                    FunctionName: ${WorkerArn}
-                    Payload:
-                      op: failed
-                      jobId.$: $.jobId
-                      sceneId.$: $.sceneId
-                  End: true
+               StartAt: Generate
+               States:
+                 Generate:
+                   Type: Task
+                   Resource: arn:aws:states:::lambda:invoke
+                   Parameters:
+                     FunctionName: ${WorkerArn}
+                     Payload:
+                       op: generate
+                       jobId.$: $.jobId
+                       sceneId.$: $.sceneId
+                   Catch:
+                     - ErrorEquals: [States.ALL]
+                       ResultPath: $.error
+                       Next: MarkSceneFailed
+                   End: true
+                 MarkSceneFailed:
+                   Type: Task
+                   Resource: arn:aws:states:::lambda:invoke
+                   Parameters:
+                     FunctionName: ${WorkerArn}
+                     Payload:
+                       op: failed
+                       jobId.$: $.jobId
+                       sceneId.$: $.sceneId
+                   End: true
             Next: Finalize
           Finalize:
             Type: Task
