@@ -1,4 +1,5 @@
 name: One-time deploy sanitised Google image preparation diagnostics
+# Targeted Google STS subject-token encoding correction.
 on:
   push:
     branches: [main]
@@ -21,8 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin bfc151f77c60463ac8891bab58142e0c901ba193
-          test "$(git rev-parse FETCH_HEAD)" = bfc151f77c60463ac8891bab58142e0c901ba193
+          git fetch --no-tags --depth=1 origin b2ccad3a2f7126b3ffce584f181c494d9f5f3a6c
+          test "$(git rev-parse FETCH_HEAD)" = b2ccad3a2f7126b3ffce584f181c494d9f5f3a6c
           git worktree add --detach /tmp/afl-image-diagnostic FETCH_HEAD
           python3 /tmp/afl-image-diagnostic/scripts/build_release_artifacts.py > /dev/null
           python3 -m py_compile scripts/deploy_image_diagnostic.py
