@@ -1,5 +1,5 @@
 name: One-time deploy sanitised Google image preparation diagnostics
-# Rerun free WIF probe after provider condition updated on Google.
+# One-time safe image-only provider response conversion and error reporting.
 on:
   push:
     branches: [main]
@@ -22,8 +22,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin c6631290a28f5d0b5743234ecf01c333c57beec7
-          test "$(git rev-parse FETCH_HEAD)" = c6631290a28f5d0b5743234ecf01c333c57beec7
+          git fetch --no-tags --depth=1 origin e2b43a613c817b8fff3046df2e8240160a2eddf0
+          test "$(git rev-parse FETCH_HEAD)" = e2b43a613c817b8fff3046df2e8240160a2eddf0
           git worktree add --detach /tmp/afl-image-diagnostic FETCH_HEAD
           python3 /tmp/afl-image-diagnostic/scripts/build_release_artifacts.py > /dev/null
           python3 -m py_compile scripts/deploy_image_diagnostic.py
