@@ -34,7 +34,12 @@ jobs:
           workflow = states.describe_state_machine(stateMachineArn="arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-scene1-pilot")
           details = json.loads(workflow["definition"])
           step = details["States"]["ParallelScenes"]
-          active = states.list_executions(stateMachineArn=workflow["stateMachineArn"],statusFilter="RUNNING",maxResults=20)["executions"]
+          try:
+              active_count = len(states.list_executions(stateMachineArn=workflow["stateMachineArn"],statusFilter="RUNNING",maxResults=20)["executions"])
+          except Exception as exc:
+              if getattr(exc, "response", {}).get("Error", {}).get("Code") not in ("AccessDenied", "AccessDeniedException"):
+                  raise
+              active_count = "UNVERIFIED_DEPLOY_ROLE_MISSING_LIST_EXECUTIONS"
           asset_bucket = params.get("ScenarioAssetsBucket", "afl-video-bootstrap-artifactbucket-xiuriidgyft4")
           config_key = "scenarios/afl-grand-final-winning-kick/v1/config.json"
           obj = s3.get_object(Bucket=asset_bucket,Key=config_key)
@@ -57,7 +62,7 @@ jobs:
               "state_machine_sha256":hashlib.sha256(workflow["definition"].encode()).hexdigest(),
               "parallel_scene_concurrency":step["MaxConcurrency"],
               "parallel_scene_start":step["ItemProcessor"]["StartAt"],
-              "running_executions_first_20":len(active),
+              "running_executions_first_20":active_count,
               "scenario_config_bucket":asset_bucket,
               "scenario_config_key":config_key,
               "scenario_config_version":obj.get("VersionId","unversioned"),
