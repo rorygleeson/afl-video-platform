@@ -231,7 +231,7 @@ class ImageContractTests(unittest.TestCase):
             session.return_value.get_credentials.return_value.get_frozen_credentials.return_value = "test-creds"
             self.assertEqual(google.access_token(), "impersonated")
         self.assertEqual(post.call_count, 2)
-        assertion = json.loads(post.call_args_list[0].args[1]["subjectToken"])
+        assertion = json.loads(post.call_args_list[0].args[1]["subject_token"])
         self.assertEqual(assertion["method"], "POST")
         self.assertIn("x-goog-cloud-target-resource", {h["key"] for h in assertion["headers"]})
         self.assertEqual(post.call_args_list[0].args[1]["grant_type"], "urn:ietf:params:oauth:grant-type:token-exchange")
