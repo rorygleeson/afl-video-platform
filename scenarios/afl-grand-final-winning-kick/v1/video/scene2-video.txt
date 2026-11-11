@@ -1,20 +1,85 @@
-# AFL Grand Final — Scene 2: ONE FORWARD KICK, ONE GOAL
+# AFL Grand Final — Scene 2: The Winning Kick
 # Variables: $fullName, $teamName, $guernsey, $commentary
 
-FORMAT: 8 seconds, vertical 9:16, realistic live Australian rules football broadcast, natural full-speed movement and football physics. The supplied PERSONALIZED Scene 2 image is the EXACT FIRST FRAME. Maintain the SAME rear three-quarter camera position behind and slightly to the RIGHT of the player: athlete LARGE on LEFT, running AWAY from the camera, facing the existing four goalposts ahead. The player wears $teamName's $guernsey. Never turn him around to face the camera.
+FORMAT: 8 seconds, vertical 9:16, photorealistic live Australian rules football broadcast. Natural full-speed movement, realistic ball physics and authentic stadium atmosphere.
 
-FIXED GEOGRAPHY: The goal line is directly AHEAD, approximately 30–35 metres from the kick, inside the attacking forward 50. All FOUR white posts are ALREADY visible in the first frame, equally spaced on ONE goal line: shorter outer behind post (80% of the tall height), tall central goalpost, tall central goalpost, shorter outer behind post (80% of tall height). Preserve precisely these same FOUR posts, their red base pads and their positions throughout. No extra upright, moving posts, crossbar, second goal mouth, or midfield markings. Keep the distant Essendon defenders softly blurred, facing and watching the kicker; the nearest defender continues running toward him without reaching him.
+STARTING FRAME
 
-0.0–1.8 seconds — KICK PREPARATION: The athlete takes quick natural steps FORWARD, away from camera. The red ball remains visibly cradled in both hands low in front of his body. The CAMERA STAYS FIXED. He prepares one ordinary running Australian football KICK. No backwards leg swing toward the camera, no stationary set shot and no bounce.
+Use the supplied personalised Scene 2 reference image as the exact opening frame.
 
-1.8–2.4 seconds — KICK: Show the single uninterrupted physical action clearly: hands lower and release ONE red ball, the ball falls only a SHORT distance directly in front of the kicking boot, and the boot strikes the ball cleanly WHILE IT IS STILL OFF THE GROUND. The leg follows through toward the GOALS, never backward over the head. The ball accelerates FORWARD, away from the camera and toward the space BETWEEN THE TWO TALL CENTRAL POSTS. Keep the original camera fixed until visible boot-to-ball impact. "He kicks" coincides with contact; the final siren sounds immediately AFTER contact.
+Preserve the player's appearance, selected team uniform, camera angle, surrounding players, stadium and four existing goalposts.
 
-2.4–5.8 seconds — FLIGHT: Only AFTER impact may the SAME camera gently tilt up and widen a little to follow the ONE ball. No camera reversal, orbit, angle change, teleport, abrupt broadcast cut, replay or second ball. Ball stays on one uninterrupted, fast, high, forward arc; it gradually gets smaller as it approaches the four fixed posts. Do not allow it to touch the grass, stop, fly backwards, or enlarge toward the viewer.
+The camera is behind and slightly to the right of the player. The player runs towards the goals approximately 30–35 metres ahead.
 
-5.8–6.5 seconds — GOAL: Show the ball crossing the GOAL LINE IN THE AIR directly THROUGH THE OPEN GAP BETWEEN THE TWO TALL MIDDLE POSTS, not outside the posts and not through a behind gap. The posts stay fixed and fully consistent with the first frame. The commentator calls "IT'S A GOAL!" at the crossing, never earlier.
+The entire sequence follows one continuous football action.
 
-6.5–8.0 seconds — FOLLOW-THROUGH: In the SAME continuous camera view and flight, the ball travels beyond the central goalposts HIGH toward the PACKED GRANDSTAND directly behind them, shrinking away until it disappears naturally into the crowd. The crowd roars. No ground bounce, instant disappearance, catch close-up or new event.
+0.0–1.5 seconds — APPROACH
 
-AUDIO: One authentic Australian AFL commentator delivering exactly "$commentary" ONCE, timed to the kick and goal. One final siren just after impact; stadium crowd ambience and clean boot impact; no other speech, music, captions or subtitles.
+The player continues running naturally towards the goals, carrying the red football in both hands.
 
-CRITICAL: Correct forward human kicking biomechanics, ONE ball, ONE kick, ONE scoring flight, SAME four equally spaced posts with outer posts 80% as tall, SAME rear three-quarter viewpoint, no camera motion before contact. Preserve the customer's chosen team strip and hairstyle.
+A distant Essendon defender runs towards him but remains too far away to interfere.
+
+The camera remains stationary, preserving the original angle and framing.
+
+1.5–2.5 seconds — THE KICK
+
+The player performs one natural running AFL kick.
+
+While moving forward, he lowers the football in his hands and releases it directly in front of his kicking foot.
+
+His foot swings forward and makes clear contact with the ball while it is still airborne, before the ball touches the grass.
+
+The ball immediately accelerates forward and upward towards the goals, travelling away from the player and camera.
+
+His kicking leg completes a natural forward follow-through.
+
+Show the entire release, boot contact and launch as one smooth, physically believable movement.
+
+The commentator says "He kicks…" as the player kicks.
+
+The final siren sounds immediately after the kick.
+
+2.5–5.8 seconds — BALL FLIGHT
+
+Only after the kick is completed, the camera gently tilts upward and widens slightly to follow the football.
+
+The camera maintains the same general viewing direction throughout.
+
+The ball travels in one continuous, fast, rising arc towards the existing goalposts, becoming gradually smaller as it moves farther away.
+
+Maintain clear visual continuity between the kicked ball and the ball approaching the goals.
+
+The goalposts remain fixed in their original positions, with exactly four white uprights: two taller central goalposts and two shorter outer behind posts, approximately 80% of the central height.
+
+5.8–6.5 seconds — THE WINNING GOAL
+
+The football passes high through the open space between the two tall central goalposts, clearly crossing the goal line in the air.
+
+The commentator erupts: "IT'S A GOAL!"
+
+The packed stadium immediately erupts in celebration.
+
+6.5–8.0 seconds — INTO THE CROWD
+
+Continue following the same football as it travels beyond the goal line, high towards the packed grandstand behind the posts.
+
+The ball continues naturally along its existing flight path, becoming smaller as it disappears into the crowd.
+
+The crowd roars as the stadium celebrates the premiership-winning kick.
+
+AUDIO
+
+Use one excited Australian AFL commentator speaking exactly "$commentary" ONCE, using the existing commentary wording. Synchronise "He kicks" with the kick and "IT'S A GOAL!" with the ball crossing between the central posts.
+
+Include authentic football impact, one final siren immediately after the kick, and a powerful crowd roar after the goal.
+
+No additional commentary, music or subtitles.
+
+ESSENTIAL CONTINUITY
+
+- One football, one running kick, one uninterrupted scoring trajectory.
+- The football leaves the hands, is struck directly by the boot and remains airborne throughout the scoring flight.
+- Camera movement begins only after the kick.
+- Preserve the original four goalposts and their exact positions.
+- The ball crosses between the two tall central posts before continuing into the crowd.
+- Maintain realistic speed, natural player movement and consistent ball physics.
