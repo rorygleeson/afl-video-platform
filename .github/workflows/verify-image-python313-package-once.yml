@@ -1,0 +1,67 @@
+name: One-time verified Google image worker Python 3.13 package update
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/verify-image-python313-package-once.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  image-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout approved repository
+        uses: actions/checkout@v4
+      - name: Set up exact AWS Lambda Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install deployment SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Build pinned Google image worker (no external image generation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 --version
+          git fetch --no-tags --depth=1 origin eb889db1f5d9857b553a560247040b0a9e24888b
+          test "$(git rev-parse FETCH_HEAD)" = eb889db1f5d9857b553a560247040b0a9e24888b
+          git worktree add --detach /tmp/afl-image-diagnostic FETCH_HEAD
+          python3 /tmp/afl-image-diagnostic/scripts/build_release_artifacts.py > /dev/null
+          python3 -m py_compile scripts/deploy_image_diagnostic.py
+          python3 - <<'PY'
+          import json,sys,zipfile
+          from pathlib import Path
+          assert sys.version_info[:2] == (3,13), "Wrong Python version"
+          base=Path("/tmp/afl-image-diagnostic")
+          artifact=json.loads((base/"dist/release/manifest.json").read_text())["artifacts"]["image-worker"]
+          with zipfile.ZipFile(base/artifact["local_file"]) as z:
+              files=set(z.namelist())
+          required={"handler.py","google_direct.py","google/auth/__init__.py","PIL/__init__.py"}
+          assert required <= files, "Missing image-worker or Google auth/Pillow"
+          assert any(f.startswith("PIL/_imaging.cpython-313-") and f.endswith(".so") for f in files), "Pillow compiled for wrong Python ABI"
+          assert not any("cpython-312" in f or "cpython-311" in f for f in files), "Old Python extension in Lambda ZIP"
+          print("IMAGE_PACKAGE_ABI_VALIDATED=python3.13; model=gemini-3-pro-image")
+          PY
+      - name: Assume existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-image-python313-fix
+      - name: Image Lambda only - zero image API invocations
+        env:
+          IMAGE_DIAGNOSTIC_APPROVAL: DEPLOY_IMAGE_DIAGNOSTIC_ONLY
+        run: python3 scripts/deploy_image_diagnostic.py
+      - name: Preserve exact change-set audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: afl-image-python313-package-${{ github.run_id }}
+          path: image-diagnostic-deploy-report.json
+          if-no-files-found: warn
+          retention-days: 30
