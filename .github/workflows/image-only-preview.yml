@@ -32,7 +32,8 @@ jobs:
           from pathlib import Path
           from botocore.exceptions import ClientError
           sys.path.insert(0,"scripts")
-          from validate_change_set import validate
+          from validate_change_set import validate, dependency_only, expected_reconcile_permission
+          from preview_release_change_set import verify_reconcile_permission
           source=Path("/tmp/image-migration")
           artifact=json.loads((source/"dist/release/manifest.json").read_text())["artifacts"]["image-worker"]
           image=(source/artifact["local_file"]).read_bytes()
@@ -98,15 +99,21 @@ jobs:
                   changes.extend(page.get("Changes",[]))
                   token=page.get("NextToken")
               allowed={"ImageWorkerLambda","ImageWorkerRole","ImageStateMachine"}
-              errors=validate(dict(doc,Changes=changes),allowed)
+              events=boto3.client("events",region_name="ap-southeast-2")
+              permission_verified=verify_reconcile_permission(cf,lam,events,stack,changes)
+              errors=validate(dict(doc,Changes=changes),allowed,verified_reconcile_permission=permission_verified)
               results=[{"logical_id":c.get("ResourceChange",{}).get("LogicalResourceId"),
                         "action":c.get("ResourceChange",{}).get("Action"),
                         "replacement":c.get("ResourceChange",{}).get("Replacement"),
                         "details":c.get("ResourceChange",{}).get("Details",[])} for c in changes]
-              extra=[x["logical_id"] for x in results if x["logical_id"] not in allowed]
+              extra=[x["logical_id"] for x,c in zip(results,changes)
+                     if x["logical_id"] not in allowed and
+                     not (dependency_only(c.get("ResourceChange",{})) or
+                          expected_reconcile_permission(c.get("ResourceChange",{}),permission_verified))]
               if extra: errors.append("Unexpected resources: "+repr(extra))
               report.update({"verdict":"SAFE_PREVIEW" if not errors else "BLOCKED",
-                             "changes":results,"issues":errors})
+                             "changes":results,"issues":errors,
+                             "conditional_permission_live_verified":permission_verified})
               print("IMAGE_ONLY_CHANGE_SET="+json.dumps(report,default=str))
               if errors: raise RuntimeError("Image change set contains forbidden changes")
           finally:
