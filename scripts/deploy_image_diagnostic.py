@@ -21,7 +21,7 @@ REGION = "ap-southeast-2"
 STACK = "afl-app-dev-backend"
 ARN = "arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-scene1-pilot"
 TARGET = "afl-app-dev-image-worker"
-SOURCE_SHA = "8a332efe6a18b6c5faedc1a0cfeef674610726c9"
+SOURCE_SHA = "c6631290a28f5d0b5743234ecf01c333c57beec7"
 
 
 def check_idle(cf, states):

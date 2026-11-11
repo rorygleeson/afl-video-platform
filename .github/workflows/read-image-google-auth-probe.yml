@@ -31,7 +31,7 @@ jobs:
               page=ddb.scan(
                   TableName="afl-app-dev-jobs",
                   FilterExpression="jobId = :id",
-                  ExpressionAttributeValues={":id":{"S":"__google_image_auth_probe_20261112"}},
+                  ExpressionAttributeValues={":id":{"S":"__google_image_auth_probe_after_iam_20261112"}},
                   ProjectionExpression="jobId, authDiagnosticCode, #status",
                   ExpressionAttributeNames={"#status":"status"})
               for item in page.get("Items",[]):
