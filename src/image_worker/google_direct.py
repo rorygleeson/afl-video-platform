@@ -82,10 +82,8 @@ def post_json(url, body, bearer=None, limit=1024 * 1024, timeout=20, form=False)
         raise GoogleHTTPError(code, retry_after) from None
 
 
-def access_token():
-    """Reuse the exact keyless google-auth AWS WIF flow from Google video worker."""
-    from google.auth import load_credentials_from_dict
-    from google.auth.transport.requests import Request
+def credential_info():
+    """Match the working video worker's keyless AWS external-account config."""
     info = {
         "type": "external_account",
         "audience": (f"//iam.googleapis.com/projects/{NUMBER}/locations/global/"
@@ -103,18 +101,72 @@ def access_token():
             "imdsv2_session_token_url": "http://169.254.169.254/latest/api/token",
         },
     }
+
+    return info
+
+
+def auth_diagnostic(exc):
+    """Allowlisted error classification only; no provider bodies or credentials."""
+    detail = " ".join(str(a) for a in getattr(exc, "args", ())).lower()
+    cls = type(exc).__name__
+    patterns = (
+        ("invalid_target", "STS_INVALID_TARGET"),
+        ("invalid_subject_token", "STS_INVALID_SUBJECT_TOKEN"),
+        ("invalid_grant", "STS_INVALID_GRANT"),
+        ("invalid_request", "STS_INVALID_REQUEST"),
+        ("unauthorized_client", "STS_UNAUTHORIZED_CLIENT"),
+        ("permission_denied", "IAM_PERMISSION_DENIED"),
+        ("permission denied", "IAM_PERMISSION_DENIED"),
+        ("getaccesstoken", "IAM_IMPERSONATION_DENIED"),
+        ("impersonated credentials", "IAM_IMPERSONATION_FAILED"),
+        ("service_disabled", "API_DISABLED"),
+        ("not been used", "API_DISABLED"),
+        ("invalid_scope", "INVALID_SCOPE"),
+        ("metadata server", "AWS_METADATA_ERROR"),
+        ("aws region", "AWS_REGION_ERROR"),
+        ("aws security credentials", "AWS_CREDENTIALS_ERROR"),
+        ("failed to establish a new connection", "NETWORK_ERROR"),
+        ("name resolution", "NETWORK_ERROR"),
+        ("timeout", "NETWORK_TIMEOUT"),
+        ("response is not json", "INVALID_PROVIDER_RESPONSE"),
+    )
+    for needle, code in patterns:
+        if needle in detail:
+            return code
+    return "EXCEPTION_" + (cls if cls in ("RefreshError", "TransportError",
+                                          "DefaultCredentialsError", "ImportError",
+                                          "ModuleNotFoundError", "ValueError", "TypeError",
+                                          "RuntimeError", "AttributeError") else "OTHER")
+
+
+def access_token():
+    """Reuse working video Lambda's google-auth AWS WIF implementation."""
+    from google.auth import load_credentials_from_dict
+    from google.auth.transport.requests import Request
     try:
         credentials, _ = load_credentials_from_dict(
-            info, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+            credential_info(), scopes=["https://www.googleapis.com/auth/cloud-platform"])
         credentials.refresh(Request())
         if not credentials.valid or not credentials.token:
             raise RuntimeError("No Google WIF access token")
         return credentials.token
     except Exception as exc:
-        # Never pass provider errors or signed identities to logs/UI.
-        if type(exc).__name__ in ("RefreshError", "OAuthError"):
-            raise RuntimeError("GOOGLE_WIF_TOKEN_EXCHANGE_FAILED") from None
-        raise RuntimeError("GOOGLE_WIF_CREDENTIAL_ERROR") from None
+        raise RuntimeError("GOOGLE_WIF_" + auth_diagnostic(exc)) from None
+
+
+def probe_auth():
+    """No paid image API call: only STS and IAMCredentials authentication."""
+    from google.auth import load_credentials_from_dict
+    from google.auth.transport.requests import Request
+    try:
+        credentials, _ = load_credentials_from_dict(
+            credential_info(), scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        credentials.refresh(Request())
+        if not credentials.valid or not credentials.token:
+            return "GOOGLE_AUTH_NO_ACCESS_TOKEN"
+        return "GOOGLE_AUTH_OK"
+    except Exception as exc:
+        return "GOOGLE_AUTH_" + auth_diagnostic(exc)
 
 
 def image_type(payload):

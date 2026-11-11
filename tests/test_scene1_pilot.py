@@ -193,6 +193,25 @@ class ImageContractTests(unittest.TestCase):
              patch.object(worker, "update_job"):
             self.assertEqual(worker.finalize("a" * 32)["status"], "PARTIAL_SUCCESS")
 
+    def test_nonbillable_auth_probe_records_only_sanitised_code(self):
+        with patch.object(worker.TABLE, "update_item") as update, \
+             patch.object(google, "probe_auth", return_value="GOOGLE_AUTH_STS_INVALID_TARGET") as check, \
+             patch.object(google, "post_json") as paid:
+            worker.probe_google_auth_once()
+        self.assertEqual(update.call_count, 2)
+        check.assert_called_once()
+        paid.assert_not_called()
+        self.assertEqual(update.call_args.kwargs["ExpressionAttributeValues"][":code"],
+                         "GOOGLE_AUTH_STS_INVALID_TARGET")
+
+    def test_google_auth_error_allowlist(self):
+        self.assertEqual(google.auth_diagnostic(RuntimeError("invalid_subject_token")),
+                         "STS_INVALID_SUBJECT_TOKEN")
+        self.assertEqual(google.auth_diagnostic(RuntimeError("permission_denied")),
+                         "IAM_PERMISSION_DENIED")
+        self.assertEqual(google.auth_diagnostic(ValueError("secret=123")),
+                         "EXCEPTION_ValueError")
+
     def test_watchdog_never_starts_paid_generation(self):
         with patch.object(worker.TABLE, "scan", return_value={"Items": [{"jobId": "a" * 32}]}), \
              patch.object(worker, "recover", return_value={"status": "FAILED"}) as recovered, \
