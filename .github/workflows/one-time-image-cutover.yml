@@ -1,4 +1,5 @@
 name: ONE TIME image provider cutover - approved 2026-11-11
+# Retry after least-privilege read-only AWS job-state permissions were added.
 on:
   push:
     branches: [main]
