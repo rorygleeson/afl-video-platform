@@ -13,7 +13,6 @@ import os
 import random
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from email.utils import parsedate_to_datetime
 
@@ -57,16 +56,12 @@ def retry_after_seconds(value):
         return None
 
 
-def post_json(url, body, bearer=None, limit=1024 * 1024, timeout=20, form=False):
-    allowed = {
-        ENDPOINT, "https://sts.googleapis.com/v1/token",
-        f"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/{ACCOUNT}:generateAccessToken",
-    }
+def post_json(url, body, bearer=None, limit=1024 * 1024, timeout=20):
+    allowed = {ENDPOINT}
     if url not in allowed:
         raise ValueError("Unexpected Google endpoint")
-    payload = (urllib.parse.urlencode(body).encode() if form else
-               json.dumps(body, separators=(",", ":")).encode())
-    headers = {"Content-Type": "application/x-www-form-urlencoded" if form else "application/json"}
+    payload = json.dumps(body, separators=(",", ":")).encode()
+    headers = {"Content-Type": "application/json"}
     if bearer:
         headers["Authorization"] = "Bearer " + bearer
     req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
@@ -154,20 +149,6 @@ def access_token():
     except Exception as exc:
         raise RuntimeError("GOOGLE_WIF_" + auth_diagnostic(exc)) from None
 
-
-def probe_auth():
-    """No paid image API call: only STS and IAMCredentials authentication."""
-    from google.auth import load_credentials_from_dict
-    from google.auth.transport.requests import Request
-    try:
-        credentials, _ = load_credentials_from_dict(
-            credential_info(), scopes=["https://www.googleapis.com/auth/cloud-platform"])
-        credentials.refresh(Request())
-        if not credentials.valid or not credentials.token:
-            return "GOOGLE_AUTH_NO_ACCESS_TOKEN"
-        return "GOOGLE_AUTH_OK"
-    except Exception as exc:
-        return "GOOGLE_AUTH_" + auth_diagnostic(exc)
 
 
 def image_type(payload):

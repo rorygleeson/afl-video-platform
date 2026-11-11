@@ -56,7 +56,7 @@ def load_scenario():
     if ids != list(VALID_SCENES):
         raise RuntimeError("Three enabled scenes are required")
     for scene in scenes:
-        if (scene.get("model") not in ("gemini-3-pro-image", "google/nano-banana-pro") or
+        if (scene.get("model") != "gemini-3-pro-image" or
                 scene.get("operation") != "image_edit" or
                 scene.get("masterKey") != SCENARIO_PREFIX + scene["id"] + "-start.png"):
             raise RuntimeError("Invalid scene model or master image")
@@ -241,50 +241,12 @@ def recover(job_id):
     raise RuntimeError("Job changed concurrently during recovery")
 
 
-def probe_google_auth_once():
-    """One free STS/IAM probe from the existing scheduled watchdog.
-
-    Persist only a sanitized result in a short-lived internal DDB record so the
-    existing read-only deployment role can inspect it without CloudWatch access.
-    Does not invoke Vertex AI or access customer job data.
-    """
-    key = "__google_image_auth_probe_after_iam_20261112"
-    now = int(time.time())
-    try:
-        TABLE.update_item(
-            Key={"jobId": key},
-            UpdateExpression="SET #s=:probing, expiresAt=:expiry",
-            ConditionExpression="attribute_not_exists(jobId)",
-            ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={":probing": "PROBING",
-                                       ":expiry": now + 86400},
-        )
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-            return
-        raise
-    try:
-        import google_direct
-        code = google_direct.probe_auth()
-    except Exception as exc:
-        code = "GOOGLE_AUTH_PROBE_EXCEPTION"
-    TABLE.update_item(
-        Key={"jobId": key},
-        UpdateExpression="SET #s=:complete, authDiagnosticCode=:code",
-        ExpressionAttributeNames={"#s": "status"},
-        ExpressionAttributeValues={":complete": "DIAGNOSTIC_COMPLETE", ":code": code, ":probing": "PROBING"},
-        ConditionExpression="#s = :probing",
-        # Keep the probe independent of customer scene statuses.
-    )
-
-
 def reconcile_stalled():
     """Bounded dev-only watchdog for abandoned active jobs.
 
     Safety threshold exceeds both Google image generation and the state-machine
     timeout. It only marks jobs failed; never launches paid predictions.
     """
-    probe_google_auth_once()
     cutoff = int(time.time()) - 45 * 60
     checked = recovered = 0
     last_key = None

@@ -66,14 +66,6 @@ class ImageContractTests(unittest.TestCase):
         for i, scene in enumerate(CONFIG["scenes"], 1):
             self.assertEqual(scene["masterKey"], f"scenarios/afl-grand-final-winning-kick/v1/scene{i}-start.png")
 
-    def test_old_s3_config_accepted_during_atomic_cutover(self):
-        old = json.loads(json.dumps(CONFIG))
-        for scene in old["scenes"]:
-            scene["model"] = "google/nano-banana-pro"
-        with patch.object(worker.S3, "get_object",
-                          return_value={"Body": Mock(read=Mock(return_value=json.dumps(old).encode()))}):
-            self.assertEqual(len(worker.load_scenario()["scenes"]), 3)
-
     def test_parallel_sfn_and_recovery_unchanged(self):
         template = (ROOT / "infrastructure/app/backend.yaml").read_text()
         self.assertIn("MaxConcurrency: 3", template)
@@ -248,17 +240,6 @@ class ImageContractTests(unittest.TestCase):
              patch.object(worker, "update_job"):
             self.assertEqual(worker.finalize("a" * 32)["status"], "PARTIAL_SUCCESS")
 
-    def test_nonbillable_auth_probe_records_only_sanitised_code(self):
-        with patch.object(worker.TABLE, "update_item") as update, \
-             patch.object(google, "probe_auth", return_value="GOOGLE_AUTH_STS_INVALID_TARGET") as check, \
-             patch.object(google, "post_json") as paid:
-            worker.probe_google_auth_once()
-        self.assertEqual(update.call_count, 2)
-        check.assert_called_once()
-        paid.assert_not_called()
-        self.assertEqual(update.call_args.kwargs["ExpressionAttributeValues"][":code"],
-                         "GOOGLE_AUTH_STS_INVALID_TARGET")
-
     def test_google_auth_error_allowlist(self):
         self.assertEqual(google.auth_diagnostic(RuntimeError("invalid_subject_token")),
                          "STS_INVALID_SUBJECT_TOKEN")
@@ -269,12 +250,10 @@ class ImageContractTests(unittest.TestCase):
 
     def test_watchdog_never_starts_paid_generation(self):
         with patch.object(worker.TABLE, "scan", return_value={"Items": [{"jobId": "a" * 32}]}), \
-             patch.object(worker, "probe_google_auth_once") as probe, \
              patch.object(worker, "recover", return_value={"status": "FAILED"}) as recovered, \
              patch.object(google, "post_json") as paid:
             worker.reconcile_stalled()
         recovered.assert_called_once()
-        probe.assert_called_once()
         paid.assert_not_called()
 
 
