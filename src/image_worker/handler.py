@@ -56,7 +56,7 @@ def load_scenario():
     if ids != list(VALID_SCENES):
         raise RuntimeError("Three enabled scenes are required")
     for scene in scenes:
-        if (scene.get("model") != "gemini-3-pro-image" or
+        if (scene.get("model") not in ("gemini-3-pro-image", "google/nano-banana-pro") or
                 scene.get("operation") != "image_edit" or
                 scene.get("masterKey") != SCENARIO_PREFIX + scene["id"] + "-start.png"):
             raise RuntimeError("Invalid scene model or master image")

@@ -66,6 +66,14 @@ class ImageContractTests(unittest.TestCase):
         for i, scene in enumerate(CONFIG["scenes"], 1):
             self.assertEqual(scene["masterKey"], f"scenarios/afl-grand-final-winning-kick/v1/scene{i}-start.png")
 
+    def test_old_s3_config_accepted_during_atomic_cutover(self):
+        old = json.loads(json.dumps(CONFIG))
+        for scene in old["scenes"]:
+            scene["model"] = "google/nano-banana-pro"
+        with patch.object(worker.S3, "get_object",
+                          return_value={"Body": Mock(read=Mock(return_value=json.dumps(old).encode()))}):
+            self.assertEqual(len(worker.load_scenario()["scenes"]), 3)
+
     def test_parallel_sfn_and_recovery_unchanged(self):
         template = (ROOT / "infrastructure/app/backend.yaml").read_text()
         self.assertIn("MaxConcurrency: 3", template)
