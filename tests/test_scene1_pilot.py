@@ -105,7 +105,8 @@ class ImageContractTests(unittest.TestCase):
                 self.assertEqual(parts[1]["inlineData"]["data"], "master")
                 self.assertEqual(parts[2]["inlineData"]["data"], "selfie")
                 self.assertEqual(body["generationConfig"]["imageConfig"],
-                                 {"aspectRatio": "9:16", "imageSize": "2K"})
+                                 {"aspectRatio": "9:16", "imageSize": "2K",
+                                  "imageOutputOptions": {"mimeType": "image/png"}})
                 self.assertEqual(m.S3.put_object.call_args.kwargs["Key"],
                                  f"results/{'a' * 32}/{scene}.png")
                 self.assertEqual(m.scene_update.call_args.args[2], "COMPLETED")
@@ -191,6 +192,52 @@ class ImageContractTests(unittest.TestCase):
             worker.reconcile_stalled()
         recovered.assert_called_once()
         paid.assert_not_called()
+
+
+    def test_auth_and_policy_failures_are_not_retried(self):
+        for status, code in [(401, "GOOGLE_AUTH_ERROR"), (403, "GOOGLE_AUTH_ERROR"),
+                             (400, "GOOGLE_INPUT_OR_SAFETY")]:
+            with self.subTest(status=status):
+                m = setup_scene()
+                with patch.object(google, "s3_image", return_value={"inlineData": {"mimeType": "image/png", "data": "x"}}), \
+                     patch.object(google, "access_token", return_value="test-token"), \
+                     patch.object(google, "post_json", side_effect=google.GoogleHTTPError(status)) as paid:
+                    with self.assertRaises(google.GoogleHTTPError):
+                        google.generate(m, "a" * 32, "scene1")
+                self.assertEqual(paid.call_count, 1)
+                self.assertEqual(m.scene_update.call_args.args[3]["errorCode"], code)
+
+    def test_wif_uses_signed_aws_identity_without_static_key(self):
+        signed_headers = {"Host": "sts.ap-southeast-2.amazonaws.com",
+                          "x-goog-cloud-target-resource": "//iam.googleapis.com/projects/345956846110/locations/global/workloadIdentityPools/afl-video-aws/providers/afl-aws-dev",
+                          "Authorization": "AWS4-HMAC-SHA256 mock"}
+        with patch.object(google, "AWSRequest") as request, \
+             patch.object(google, "SigV4Auth") as signer, \
+             patch.object(google.boto3, "Session") as session, \
+             patch.object(google, "post_json",
+                          side_effect=[{"access_token": "federated"},
+                                       {"accessToken": "impersonated"}]) as post:
+            request.return_value.url = "https://sts.ap-southeast-2.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
+            request.return_value.method = "POST"
+            request.return_value.headers = signed_headers
+            session.return_value.get_credentials.return_value.get_frozen_credentials.return_value = "test-creds"
+            self.assertEqual(google.access_token(), "impersonated")
+        self.assertEqual(post.call_count, 2)
+        assertion = json.loads(post.call_args_list[0].args[1]["subjectToken"])
+        self.assertEqual(assertion["method"], "POST")
+        self.assertIn("x-goog-cloud-target-resource", {h["key"] for h in assertion["headers"]})
+        self.assertTrue(post.call_args_list[0].kwargs["form"])
+        self.assertEqual(post.call_args_list[1].kwargs["bearer"], "federated")
+        signer.assert_called_once()
+
+    def test_no_credentials_exposed_in_sanitised_error(self):
+        m = setup_scene()
+        with patch.object(google, "s3_image", return_value={"inlineData": {"mimeType": "image/png", "data": "x"}}), \
+             patch.object(google, "access_token", side_effect=RuntimeError("provider private error body")):
+            with self.assertRaises(RuntimeError):
+                google.generate(m, "a" * 32, "scene1")
+        self.assertEqual(m.scene_update.call_args.args[3], {"errorCode": "GOOGLE_PREPARATION_ERROR"})
+
 
 
 if __name__ == "__main__":

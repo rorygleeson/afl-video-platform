@@ -146,7 +146,8 @@ def request_body(prompt, master, selfie):
         {"text": prompt}, master, selfie
     ]}], "generationConfig": {
         "responseModalities": ["TEXT", "IMAGE"],
-        "imageConfig": {"aspectRatio": "9:16", "imageSize": "2K"},
+        "imageConfig": {"aspectRatio": "9:16", "imageSize": "2K",
+                        "imageOutputOptions": {"mimeType": "image/png"}},
     }}
 
 
