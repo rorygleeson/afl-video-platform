@@ -26,7 +26,7 @@ class VideoPromptTests(unittest.TestCase):
             with self.subTest(scene=scene):
                 result = mod.render_scene(LocalS3(), "test-scenario-bucket", job, scene)
                 self.assertIn("Alex Tonelli", result["prompt"])
-                self.assertIn("Geelong Cats", result["prompt"])
+                self.assertNotIn("Geelong Cats", result["prompt"])
                 self.assertIn("navy blue and white horizontal hoops", result["prompt"])
                 self.assertIn(result["commentary"], result["prompt"])
                 self.assertNotIn("$fullName", result["prompt"])
@@ -36,11 +36,11 @@ class VideoPromptTests(unittest.TestCase):
                 self.assertNotIn("videoConcurrency", result)
                 self.assertEqual(result["sceneId"], scene)
         scene3 = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")
-        self.assertEqual(scene3["commentary"], "Alex Tonelli has won the premiership for Geelong Cats!")
+        self.assertEqual(scene3["commentary"], "Alex Tonelli has won the premiership!")
         expected = {
             "scene1": ("Tonelli breaks free! SIX SECONDS LEFT!", 4),
             "scene2": ("He kicks… IT'S A GOAL!", 8),
-            "scene3": ("Alex Tonelli has won the premiership for Geelong Cats!", 5),
+            "scene3": ("Alex Tonelli has won the premiership!", 5),
         }
         for scene_id, (commentary, duration) in expected.items():
             with self.subTest(scene_id=scene_id):
@@ -49,6 +49,19 @@ class VideoPromptTests(unittest.TestCase):
                 self.assertEqual(result["durationSeconds"], duration)
                 self.assertIn(commentary, result["prompt"])
                 self.assertTrue(result["prompt"].strip())
+
+    def test_old_video_templates_preserved_and_active_templates_unbranded(self):
+        image = json.loads((SCENARIO / "config.json").read_text())
+        for scene in ("scene1", "scene2", "scene3"):
+            source = (SCENARIO / "video" / f"{scene}-video.txt").read_text()
+            original = (SCENARIO / "video" / f"{scene}-video_old.txt").read_text()
+            self.assertIn("AFL Grand Final", original)
+            self.assertIn("BRANDING:", source)
+            self.assertNotIn("$teamName", source)
+            self.assertNotIn("Essendon", source)
+        self.assertEqual(image["version"], "v1")
+        self.assertEqual(
+            json.loads((SCENARIO / "video" / "config_old.json").read_text())["scenes"][2]["durationSeconds"], 5)
 
     def test_mandatory_name_and_input_validation(self):
         for value in ("", "Bob123", "Bob;", "$fullName", "x" * 41):
