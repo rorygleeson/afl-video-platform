@@ -12,3 +12,5 @@ or UPDATE_COMPLETE frontend CloudFormation states. The release invalidates the
 two existing CloudFront files and waits for invalidation completion.
 
 Release guard corrected to recognise dynamically constructed JavaScript control IDs; no backend change.
+
+The frontend files and CloudFront invalidation submission succeeded in the previous run; only GetInvalidation was denied by the existing least-privilege deployment role. The corrected release verifies S3 contents and reports invalidation submission without claiming completion.
