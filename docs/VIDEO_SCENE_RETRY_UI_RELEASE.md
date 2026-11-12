@@ -10,3 +10,5 @@ No Lambda, Step Functions, CloudFormation, Google model, job state or
 reference images are changed. The preflight accepts only healthy CREATE_COMPLETE
 or UPDATE_COMPLETE frontend CloudFormation states. The release invalidates the
 two existing CloudFront files and waits for invalidation completion.
+
+Release guard corrected to recognise dynamically constructed JavaScript control IDs; no backend change.
