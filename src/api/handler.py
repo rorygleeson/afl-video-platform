@@ -387,6 +387,15 @@ def video_scene_public(job, scene_id):
     status = item.get("status", "NOT_REQUESTED")
     result = {"sceneId": scene_id, "status": status,
               "mode": "REAL" if (real or approval) else ("MOCK_ONLY" if VIDEO_MODE == "MOCK_ONLY" else "DISABLED")}
+    # Only confirmed terminal provider failures are eligible for a new paid
+    # attempt. Never offer retry for uncertain, processing or completed videos.
+    attempt_number = int(approval.get("attemptNumber", 1))
+    result["attemptNumber"] = attempt_number
+    result["retryAvailable"] = bool(
+        REAL_VIDEO_MODE == "ENABLED" and status == "FAILED"
+        and real.get("providerFinalStatus") == "failed"
+        and attempt_number < 3 and not job.get("assembly")
+    )
     if status in ("MOCK_CLAIMED", "MOCK_GENERATING", "MOCK_COMPLETED", "MOCK_FAILED"):
         result["mock"] = True
     if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED", "SUBMISSION_UNKNOWN"):
@@ -639,6 +648,116 @@ def start_real_scene(job_id, scene_id, event):
 
 
 
+def retry_failed_real_scene(job_id, scene_id, event):
+    """User-confirmed, scene-specific new paid attempt after terminal failure.
+
+    Preserve the other two scenes and all completed reference images.
+    A conditional DynamoDB replacement archives the previous attempt and
+    prevents duplicate/concurrent retries.
+    """
+    if REAL_VIDEO_MODE != "ENABLED" or not GOOGLE_STATE_MACHINE_ARN:
+        return response(503, {"status": "PAID_GENERATION_DISABLED"})
+    if scene_id not in VIDEO_SCENES:
+        return response(404, {"error": "Unknown scene"})
+    if body_json(event) != {"confirmRetryScene": scene_id}:
+        return response(400, {"error": "Explicit paid retry confirmation required"})
+    headers = {str(k).lower(): str(v) for k, v in (event.get("headers") or {}).items()}
+    token = headers.get("idempotency-key", "")
+    if not IDEMPOTENCY_RE.fullmatch(token):
+        return response(400, {"error": "Idempotency-Key required (12-128 characters)"})
+    fingerprint = hashlib.sha256(token.encode()).hexdigest()
+    job = get_job(job_id)
+    if not job:
+        return response(404, {"error": "Job not found"})
+    approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
+    current = job.get("realVideos", {}).get(scene_id, {})
+    # Replaying the same API request cannot create a third attempt, including
+    # when the first response was lost after Step Functions start_execution.
+    if (approval.get("attemptNumber", 1) > 1
+            and approval.get("requestFingerprint") == fingerprint):
+        return response(202, {"status": "ALREADY_REQUESTED", "sceneId": scene_id})
+    attempt = int(approval.get("attemptNumber", 1))
+    if (current.get("status") != "FAILED"
+            or current.get("providerFinalStatus") != "failed"
+            or attempt >= 3 or job.get("assembly")):
+        return response(409, {"error": "Only confirmed failed scenes may be retried (maximum 3 paid attempts)"})
+    old_name = approval.get("executionName")
+    if not isinstance(old_name, str) or not re.fullmatch(
+            r"real-" + re.escape(job_id) + "-" + scene_id + r"(?:-r[23])?", old_name):
+        return response(409, {"error": "Original video workflow ownership invalid"})
+    old_request = current.get("requestId")
+    if old_request != old_name:
+        return response(409, {"error": "Original video attempt requires reconciliation"})
+    # The original workflow must have fully stopped before we replace its
+    # attempt record: it may otherwise still be running Finalize.
+    old_arn = GOOGLE_STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:", 1) + ":" + old_name
+    try:
+        execution = STATES.describe_execution(executionArn=old_arn)
+    except ClientError:
+        return response(409, {"error": "Original workflow status unavailable; do not retry"})
+    if execution.get("status") != "SUCCEEDED":
+        return response(409, {"error": "Original video workflow not safely completed"})
+    if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
+           for scene in VIDEO_SCENES):
+        return response(409, {"error": "Reference images must remain completed"})
+    original_key = current.get("sourceImageKey")
+    if original_key != job.get("scenes", {}).get(scene_id, {}).get("resultKey"):
+        return response(409, {"error": "Reference image changed since original generation"})
+    try:
+        S3.head_object(Bucket=UPLOAD_BUCKET, Key=original_key)
+    except ClientError:
+        return response(409, {"error": "Reference image missing or expired"})
+    new_attempt = attempt + 1
+    name = f"real-{job_id}-{scene_id}-r{new_attempt}"
+    previous = list(approval.get("history", []))
+    if len(previous) >= 2:
+        return response(409, {"error": "Video retry history limit reached"})
+    # Keep the previous provider interaction ID, failure reason and timestamps
+    # for operator audit; never erase successful videos in other scene keys.
+    previous.append({"approval": {k: approval.get(k) for k in (
+        "executionName", "createdAt", "requestFingerprint", "attemptNumber")},
+        "video": current})
+    next_approval = {
+        "status": "REQUESTED", "executionName": name,
+        "attemptNumber": new_attempt, "createdAt": datetime.now(timezone.utc).isoformat(),
+        "requestFingerprint": fingerprint, "history": previous,
+    }
+    try:
+        DDB.update_item(
+            Key={"jobId": job_id},
+            UpdateExpression="SET paidVideoApprovals.#scene = :approval REMOVE realVideos.#scene",
+            ConditionExpression=(
+                "attribute_exists(jobId) AND realVideos.#scene.#status = :failed "
+                "AND realVideos.#scene.requestId = :request "
+                "AND paidVideoApprovals.#scene.executionName = :oldname"
+            ),
+            ExpressionAttributeNames={"#scene": scene_id, "#status": "status"},
+            ExpressionAttributeValues={
+                ":approval": next_approval, ":failed": "FAILED",
+                ":request": old_request, ":oldname": old_name,
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return response(409, {"error": "Scene already retried or changed; refresh status"})
+        raise
+    # The reservation is permanent if handoff is uncertain. Do not make a
+    # second paid workflow invocation merely because this API call timed out.
+    try:
+        STATES.start_execution(
+            stateMachineArn=GOOGLE_STATE_MACHINE_ARN, name=name,
+            input=json.dumps({"jobId": job_id, "sceneId": scene_id}, separators=(",", ":")),
+        )
+    except STATES.exceptions.ExecutionAlreadyExists:
+        return response(202, {"status": "ALREADY_REQUESTED", "sceneId": scene_id})
+    except Exception:
+        LOG.exception("Paid retry handoff uncertain for %s", scene_id)
+        return response(503, {"status": "SUBMISSION_STATUS_UNKNOWN",
+                              "error": "Check existing scene; do not resubmit"})
+    return response(202, {"status": "REAL_VIDEO_RETRY_REQUESTED",
+                          "sceneId": scene_id, "attemptNumber": new_attempt})
+
+
 def scene1_preflight(job_id):
     """Read-only validation of Scene 1 S3 image and Google payload."""
     if not GOOGLE_WORKER_ARN:
@@ -755,6 +874,9 @@ def lambda_handler(event, context):
         if method == "GET" and diagnostic_match:
             return failed_video_diagnostic(diagnostic_match.group(1),
                                            diagnostic_match.group(2))
+        retry_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/(scene[123])/retry", path)
+        if method == "POST" and retry_match:
+            return retry_failed_real_scene(retry_match.group(1), retry_match.group(2), event)
         real_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/(scene[123])", path)
         if method == "POST" and real_match:
             return start_real_scene(real_match.group(1), real_match.group(2), event)
