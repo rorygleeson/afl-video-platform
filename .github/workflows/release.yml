@@ -9,6 +9,7 @@ on:
       - 'scripts/plan_release.py'
       - 'scripts/execute_release_change_set.py'
       - 'scripts/deploy_google_timeouts_cfn.py'
+      - 'scripts/capture_release_baseline.py'
   workflow_dispatch:
     inputs:
       change_set_preview:
