@@ -21,6 +21,7 @@ import urllib.parse
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import boto3
 from botocore.exceptions import ClientError
@@ -115,13 +116,21 @@ def require_paid_unlock(job=None, scene=None, request=None):
     approval = get_job(job).get("paidVideoApprovals", {}).get(scene, {})
     expected = "real-" + job + "-" + scene
     execution = approval.get("executionName")
-    if approval.get("status") != "REQUESTED" or not (
-            execution == expected or (
-                isinstance(approval.get("attemptNumber"), int)
-                and 2 <= approval["attemptNumber"] <= 10
-                and execution == expected + "-r" + str(approval["attemptNumber"]))):
+    # DynamoDB resource deserializes *all* numbers as Decimal, not int.
+    # Validate a bounded integral attempt number before comparing the exact
+    # execution name; never weaken the scene/attempt ownership check.
+    raw_attempt = approval.get("attemptNumber", 1)
+    valid_attempt = (type(raw_attempt) is int or
+                     (type(raw_attempt) is Decimal and raw_attempt.is_finite()))
+    attempt = int(raw_attempt) if valid_attempt and raw_attempt == int(raw_attempt) else None
+    approved_execution = (
+        execution == expected and attempt == 1
+        or attempt is not None and 2 <= attempt <= 10
+        and execution == expected + "-r" + str(attempt)
+    )
+    if approval.get("status") != "REQUESTED" or not approved_execution:
         raise PermissionError("PAID_SCENE_NOT_USER_APPROVED")
-    if request is not None and approval.get("attemptNumber", 1) > 1 and request != execution:
+    if request is not None and attempt is not None and attempt > 1 and request != execution:
         raise PermissionError("PAID_SCENE_ATTEMPT_MISMATCH")
 
 
