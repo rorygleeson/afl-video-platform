@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "scenarioId": "afl-grand-final-winning-kick",
+  "version": "v1",
+  "videoGenerationEnabled": true,
+  "model": "gemini-omni-1.2-flash",
+  "requireExplicitPaidAction": true,
+  "scenes": [
+    {
+      "id": "scene1",
+      "template": "scene1-video.txt",
+      "durationSeconds": 4,
+      "commentaryTemplate": "$lastName breaks free! SIX SECONDS LEFT!"
+    },
+    {
+      "id": "scene2",
+      "template": "scene2-video.txt",
+      "durationSeconds": 8,
+      "commentaryTemplate": "He kicks… IT'S A GOAL!"
+    },
+    {
+      "id": "scene3",
+      "template": "scene3-video.txt",
+      "durationSeconds": 5,
+      "commentaryTemplate": "$fullName has won the premiership for $teamName!"
+    }
+  ],
+  "maxPaidScenesPerRequest": 1,
+  "notes": "Paid video requires explicit per-scene consent and conditional per-job DynamoDB approval; no global concurrency slot or implicit generation.",
+  "requiredVariables": [
+    "firstName",
+    "lastName",
+    "fullName",
+    "teamName",
+    "guernsey",
+    "commentary"
+  ]
+}
