@@ -13,7 +13,7 @@ class TemplatePreservationPromptTests(unittest.TestCase):
         self.assertIn("MASTER FRAME LOCK", shared)
         self.assertIn("Preserve Image 1 exactly", shared)
         self.assertIn("Image 1", shared)
-        self.assertIn("Image 2 is an identity reference only", shared)
+        self.assertIn("Image 2 = the CUSTOMER SELFIE, the ONLY source", shared)
         self.assertIn("skin-tone harmonisation", shared)
         self.assertLessEqual(len(shared), 8000)
         for scene in cfg["scenes"]:
