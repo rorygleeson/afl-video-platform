@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -153,13 +154,32 @@ def google_json(method, url, payload=None, max_bytes=MAX_RESPONSE_BYTES):
                  "Content-Type": "application/json; charset=utf-8",
                  "Accept": "application/json"},
     )
-    # HTTP response is bounded to protect Lambda memory; never log Google
-    # payload (contains private images, signed credentials, or video bytes).
+    # A socket timeout alone does not bound a slow streaming MP4 response.
+    # For safe, repeatable GETs use short socket waits AND a whole-read deadline.
+    # Paid POST retains its original behaviour: ambiguous submissions MUST NOT retry.
+    started = time.monotonic()
+    deadline = started + 85 if method == "GET" else None
     try:
-        with urllib.request.urlopen(req, timeout=75) as response:
-            raw = response.read(max_bytes + 1)
-            if len(raw) > max_bytes:
-                raise ContractError("Google response exceeds safety limit")
+        with urllib.request.urlopen(req, timeout=25 if method == "GET" else 75) as response:
+            if method == "GET":
+                chunks, total = [], 0
+                while True:
+                    if time.monotonic() > deadline:
+                        raise TimeoutError("Google GET overall deadline exceeded")
+                    chunk = response.read(min(256 * 1024, max_bytes + 1 - total))
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise ContractError("Google response exceeds safety limit")
+                    chunks.append(chunk)
+                raw = b"".join(chunks)
+                LOG.info("Google GET completed elapsed_ms=%d response_bytes=%d",
+                         round((time.monotonic() - started) * 1000), total)
+            else:
+                raw = response.read(max_bytes + 1)
+                if len(raw) > max_bytes:
+                    raise ContractError("Google response exceeds safety limit")
             return json.loads(raw)
     except urllib.error.HTTPError as exc:
         LOG.warning("Google HTTP %d operation=%s", exc.code, method)
@@ -430,13 +450,42 @@ def get_video_content(response):
 def poll(job, scene, request):
     require_paid_unlock(job, scene)
     record = owner_record(job, scene, request)
+    if record.get("status") == "COMPLETED":
+        return {"status": "COMPLETED", "resultKey": record["resultKey"]}
     if record.get("status") != "PROCESSING":
         raise ContractError("Video not in processing state")
+    # Recover from Lambda timeout AFTER a successful S3 upload but BEFORE
+    # DynamoDB confirmation. PutObject is atomic; only accept valid completed MP4.
+    key = f"videos/{job}/{scene}.mp4"
+    try:
+        existing = S3.head_object(Bucket=BUCKET, Key=key)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") not in ("404", "NoSuchKey", "NotFound"):
+            raise
+    else:
+        size = existing.get("ContentLength")
+        if existing.get("ContentType") == "video/mp4" and isinstance(size, int) and 128 <= size <= MAX_MP4_BYTES:
+            transition(job, scene, request, "PROCESSING", "COMPLETED",
+                       {"resultKey": key, "sizeBytes": size})
+            LOG.info("Google video recovered from prior S3 upload scene=%s", scene)
+            return {"status": "COMPLETED", "resultKey": key}
+        raise ContractError("Existing S3 video is not a valid completed MP4")
     interaction = record.get("interactionId")
     if not isinstance(interaction, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", interaction):
         raise ContractError("Missing Google interaction ID")
-    reply = google_json("GET", BASE + "/" + interaction)
+    started = time.monotonic()
+    try:
+        reply = google_json("GET", BASE + "/" + interaction)
+    except Exception:
+        LOG.exception("Google video polling GET failed scene=%s elapsed_ms=%d",
+                      scene, round((time.monotonic() - started) * 1000))
+        raise
     state = reply.get("status")
+    LOG.info("Google video status scene=%s status=%s elapsed_ms=%d",
+             scene, state if state in ("queued", "in_progress", "requires_action",
+                                      "completed", "failed", "cancelled", "incomplete",
+                                      "budget_exceeded") else "unknown",
+             round((time.monotonic() - started) * 1000))
     # Google's Interactions API can queue asynchronous jobs before execution.
     # A queued job is still alive, not a failure or a second billable request.
     if state in ("queued", "in_progress", "requires_action"):
