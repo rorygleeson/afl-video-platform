@@ -54,7 +54,9 @@ function setup(options = {}) {
                       'videoDebugDetails1','videoDebugDetails2','videoDebugDetails3',
                       'videoDebugText1','videoDebugText2','videoDebugText3',
                        'diagnoseScene1','diagnoseScene2','diagnoseScene3',
-                       'diagnoseResult1','diagnoseResult2','diagnoseResult3']) {
+                       'diagnoseResult1','diagnoseResult2','diagnoseResult3',
+                       'retryVideoScene1','retryVideoScene2','retryVideoScene3',
+                       'retryVideoResult1','retryVideoResult2','retryVideoResult3']) {
     els[name] = el();
     // Keep the basic DOM simulation intact for the new reference image cards.
   }
@@ -159,6 +161,12 @@ function setup(options = {}) {
         },
       }; },
     };
+    if (/\/real-videos\/scene[123]\/retry$/.test(url) && opts.method === 'POST') {
+      const scene = url.match(/scene[123]/)[0];
+      options.realVideos = {...(options.realVideos || {}),
+        [scene]: {mode: 'REAL', status: 'REQUESTED', retryAvailable: false}};
+      return {ok: true, async json() { return {status: 'REAL_VIDEO_RETRY_REQUESTED', attemptNumber: 2}; }};
+    }
     if (/\/real-videos\/scene[123]$/.test(url) && opts.method === 'POST') {
       const scene = url.match(/scene[123]$/)[0];
       if (options.deferPaidVideoResponses) {
@@ -711,4 +719,32 @@ test('reference image cards show clean status, green completion and animated gen
   assert.match(css, /reference-progress\.generating::before\{content:"⚙"/);
   assert.match(css, /@keyframes reference-gear-spin/);
   assert.match(css, /prefers-reduced-motion:reduce/);
+});
+
+test('individual failed video retry preserves other completed MP4 state', async () => {
+  const h = setup({
+    realVideos: {
+      scene1: {mode:'REAL', status:'FAILED', retryAvailable:true, attemptNumber:1},
+      scene2: {mode:'REAL', status:'COMPLETED', url:'https://s3.example.com/scene2.mp4'},
+      scene3: {mode:'REAL', status:'COMPLETED', url:'https://s3.example.com/scene3.mp4'},
+    },
+  });
+  await h.els.generate.listeners.click();
+  await h.flush();
+  // Job must reach completed reference image state before video section becomes visible.
+  for (let i=0;i<3 && h.els.videoTestSection.hidden;i++) {
+    if (h.timers.size) await h.nextTimer();
+  }
+  await h.flush();
+  assert.equal(h.els.retryVideoScene1.hidden, false);
+  assert.equal(h.els.retryVideoScene2.hidden, true);
+  assert.equal(h.els.retryVideoScene3.hidden, true);
+  await h.els.retryVideoScene1.listeners.click();
+  await h.flush();
+  const retry = h.calls.filter(c => /\/real-videos\/scene1\/retry$/.test(c.url) && c.opts.method === 'POST');
+  assert.equal(retry.length, 1);
+  assert.equal(JSON.parse(retry[0].opts.body).confirmRetryScene, 'scene1');
+  assert.equal(h.calls.filter(c => /\/generate$/.test(c.url)).length, 1,
+     'retry must not regenerate the already completed reference images');
+  assert.equal(h.calls.filter(c => /\/real-videos\/scene[23]\/retry$/.test(c.url)).length, 0);
 });
