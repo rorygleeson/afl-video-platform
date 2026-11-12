@@ -1,0 +1,40 @@
+name: Deploy isolated video scene retry (guarded)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/deploy_video_scene_retry.py'
+      - '.github/workflows/deploy-video-scene-retry.yml'
+      - 'docs/VIDEO_SCENE_RETRY_RELEASE.md'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[deploy-video-scene-retry]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Test retry safely without any paid Google generation
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 -m py_compile src/api/handler.py src/google_video_worker/handler.py scripts/deploy_video_scene_retry.py
+          python3 -m unittest discover -s tests -p 'test_real_video_scene_retry.py' -v
+          python3 -m unittest discover -s tests -p 'test_video_api_stage4.py' -v
+          python3 -m unittest discover -s tests -p 'test_google_video_stage5a.py' -v
+          node --test tests/test_frontend_poll.cjs
+      - name: Authenticate existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Guarded two-stack CloudFormation code update and frontend publication
+        run: python3 -u scripts/deploy_video_scene_retry.py
