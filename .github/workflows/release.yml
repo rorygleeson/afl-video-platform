@@ -11,6 +11,7 @@ on:
       - 'scripts/deploy_google_timeouts_cfn.py'
       - 'scripts/capture_release_baseline.py'
       - 'scripts/deploy_google_failure_audit.py'
+      - 'scripts/publish_google_audit_ui.py'
       - 'scripts/deploy_google_stagger.py'
       - 'infrastructure/app/google-video.yaml'
   workflow_dispatch:
@@ -630,6 +631,36 @@ jobs:
       - name: Deploy immutable worker/API artifacts using CloudFormation, then frontend
         run: python3 -u scripts/deploy_google_failure_audit.py
       - name: Recapture and verify CloudFormation-managed release baseline
+        run: |
+          python3 scripts/capture_release_baseline.py
+          python3 scripts/verify_release_health.py --baseline release-baseline.json
+
+
+  publish_google_audit_ui:
+    name: Publish Google failure diagnostics UI after verifying CFN Lambda code
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[publish-google-audit-ui]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate frontend and release script offline
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/publish_google_audit_ui.py
+          node --check frontend/app.js
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Assume existing AWS OIDC deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-audit-ui
+      - name: Verify live worker and API; publish frontend script
+        run: python3 -u scripts/publish_google_audit_ui.py
+      - name: Read-only postpublish AWS release health
         run: |
           python3 scripts/capture_release_baseline.py
           python3 scripts/verify_release_health.py --baseline release-baseline.json
