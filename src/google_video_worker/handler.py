@@ -120,11 +120,8 @@ def require_paid_unlock(job=None, scene=None, request=None):
     # Validate a bounded integral attempt number before comparing the exact
     # execution name; never weaken the scene/attempt ownership check.
     raw_attempt = approval.get("attemptNumber", 1)
-    valid_attempt = (
-        type(raw_attempt) in (int, Decimal)
-        and raw_attempt.is_finite() if type(raw_attempt) is Decimal
-        else type(raw_attempt) is int
-    )
+    valid_attempt = (type(raw_attempt) is int or
+                     (type(raw_attempt) is Decimal and raw_attempt.is_finite()))
     attempt = int(raw_attempt) if valid_attempt and raw_attempt == int(raw_attempt) else None
     approved_execution = (
         execution == expected and attempt == 1
