@@ -43,6 +43,17 @@ def main():
         StackName=STACK, LogicalResourceId="GoogleWorkerLambda"
     )["StackResourceDetail"]
     assert detail["PhysicalResourceId"] == FUNCTION
+    protected_ids={
+        name:cf.describe_stack_resource(StackName=STACK,LogicalResourceId=name)
+             ["StackResourceDetail"].get("PhysicalResourceId")
+        for name in ("DeveloperPreflightInvokePermission",
+                     "GoogleStateMachineRole","GoogleStateMachine")
+    }
+    states=sess.client("stepfunctions")
+    existing_machine=states.describe_state_machine(
+        stateMachineArn=protected_ids["GoogleStateMachine"])
+    before_definition=existing_machine["definition"]
+    before_role=existing_machine["roleArn"]
     before = lam.get_function_configuration(FunctionName=FUNCTION)
     assert before["Timeout"] == 180, "Unexpected live Lambda timeout"
     assert before["State"] == "Active"
@@ -180,6 +191,18 @@ def main():
         assert actual["StackStatus"] == "UPDATE_COMPLETE"
         final_params = {p["ParameterKey"]: p["ParameterValue"] for p in actual["Parameters"]}
         assert final_params["GoogleWorkerArtifactKey"] == new_key
+        for name,physical_id in protected_ids.items():
+            current=cf.describe_stack_resource(
+                StackName=STACK,LogicalResourceId=name)["StackResourceDetail"]
+            assert current.get("PhysicalResourceId")==physical_id, (
+                f"Protected resource identity changed: {name}"
+            )
+        after_machine=states.describe_state_machine(
+            stateMachineArn=protected_ids["GoogleStateMachine"])
+        assert after_machine["definition"]==before_definition, (
+            "Unexpected paid-workflow/state-machine definition change"
+        )
+        assert after_machine["roleArn"]==before_role, "Unexpected state-machine IAM role change"
         print("DEPLOYED_AND_VERIFIED: Google Lambda 300s, Google HTTP 150s, zero paid requests.")
         print("CFN_RECONCILED: Lambda code is owned by CloudFormation; checked preexisting Google HTTP 150 artifact.")
     except Exception:
