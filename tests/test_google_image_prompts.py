@@ -47,7 +47,7 @@ class GooglePromptTests(unittest.TestCase):
                     self.assertIn("opposition", text)
                 else:
                     self.assertIn("no opposition players", text)
-        self.assertIn("mouth is open in a triumphant cheer",
+        self.assertIn("mouth open in a triumphant natural shout",
                       self.config["scenes"][2]["promptInstructions"])
 
     def test_customer_hair_and_selected_team_override_master(self):
@@ -63,8 +63,8 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertIn("hairstyle", prompt)
                 self.assertIn("selected team", prompt)
         celebration = self.config["scenes"][2]["promptInstructions"].lower()
-        self.assertIn("both teammates", celebration)
-        self.assertIn("coordinated unbranded playing kits", celebration)
+        self.assertIn("two distant teammates", celebration)
+        self.assertIn("matching unbranded playing kits", celebration)
 
     def test_concise_scene_prompts_do_not_repeat_shared_identity_rules(self):
         shared = self.config["sharedPrompt"].lower()
@@ -80,7 +80,7 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertNotIn("only facial identity source", scene_text)
         self.assertIn("red australian rules football", self.config["scenes"][0]["promptInstructions"].lower())
         self.assertIn("not been dropped or kicked yet", self.config["scenes"][1]["promptInstructions"].lower())
-        self.assertIn("both teammates",
+        self.assertIn("two distant teammates",
                       self.config["scenes"][2]["promptInstructions"].lower())
 
     def test_scene2_rear_camera_master_and_video_match(self):
@@ -115,7 +115,20 @@ class GooglePromptTests(unittest.TestCase):
             self.assertIn("identity", prompt.lower())
             self.assertNotIn("Essendon", prompt)
         self.assertIn("four", self.config["scenes"][1]["promptInstructions"].lower())
-        self.assertIn("BOTH teammates", self.config["scenes"][2]["promptInstructions"])
+        self.assertIn("TWO distant teammates", self.config["scenes"][2]["promptInstructions"])
+
+    def test_scene3_new_solo_master_no_foreground_embrace(self):
+        scene = self.config["scenes"][2]["promptInstructions"].lower()
+        video = (ROOT / "scenarios/afl-grand-final-winning-kick/v1/video/scene3-video.txt").read_text().lower()
+        self.assertIn("central foreground player alone", scene)
+        self.assertIn("several metres behind", scene)
+        self.assertIn("no physical contact", self.config["sharedPrompt"].lower())
+        self.assertIn("only foreground footballer", video)
+        self.assertIn("do not introduce a new player or an embrace", video)
+        self.assertIn("background teammates must never move into the foreground", video)
+        self.assertIn("no afl or club crests", video)
+        self.assertIn("5 seconds", video)
+        self.assertIn("selfie", scene)
 
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):
