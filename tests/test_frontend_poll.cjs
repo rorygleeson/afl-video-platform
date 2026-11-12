@@ -748,3 +748,48 @@ test('individual failed video retry preserves other completed MP4 state', async 
      'retry must not regenerate the already completed reference images');
   assert.equal(h.calls.filter(c => /\/real-videos\/scene[23]\/retry$/.test(c.url)).length, 0);
 });
+
+test('Google failure details live only in bottom developer diagnostics', () => {
+  const diagnostics = html.indexOf('id="developerDiagnosticsSection"');
+  const main = html.indexOf('id="videoTestSection"');
+  assert.ok(diagnostics > main);
+  for (const n of [1, 2, 3]) {
+    const mainCard = html.indexOf('id="videoPanel' + n + '"');
+    const retryButton = html.indexOf('id="retryVideoScene' + n + '"');
+    const diagnosticButton = html.indexOf('id="diagnoseScene' + n + '"');
+    const diagnosticOutput = html.indexOf('id="diagnoseResult' + n + '"');
+    const retryOutput = html.indexOf('id="retryVideoResult' + n + '"');
+    assert.ok(mainCard > main && mainCard < diagnostics);
+    assert.ok(retryButton > mainCard && retryButton < diagnostics);
+    assert.ok(diagnosticButton > diagnostics);
+    assert.ok(diagnosticOutput > diagnostics);
+    assert.ok(retryOutput > diagnostics);
+  }
+});
+
+test('completed retried scene clears stale transient retry message', async () => {
+  const h = setup({
+    realVideos: {
+      scene1: {mode:'REAL', status:'COMPLETED', attemptNumber:2,
+               url:'https://s3.example.com/video1.mp4'},
+      scene2: {mode:'REAL', status:'COMPLETED', url:'https://s3.example.com/video2.mp4'},
+      scene3: {mode:'REAL', status:'COMPLETED', url:'https://s3.example.com/video3.mp4'},
+    }
+  });
+  await h.els.generate.listeners.click();
+  await h.flush();
+  for (let i=0; i<3 && h.els.videoTestSection.hidden; i++) {
+    if (h.timers.size) await h.nextTimer();
+  }
+  await h.flush();
+  // Seed stale text on an existing job, not before the new-job reset.
+  h.els.retryVideoResult1.textContent = 'Scene 1 retry requested — checking progress';
+  h.els.diagnoseResult1.textContent = 'Historical Google failure details';
+  h.doc.listeners.visibilitychange();
+  await h.flush();
+  assert.equal(h.els.scene1PaidStatus.textContent, 'MP4 status: completed');
+  assert.equal(h.els.retryVideoResult1.textContent, '');
+  assert.equal(h.els.diagnoseResult1.textContent, 'Historical Google failure details',
+               'historical details remain in developer diagnostics');
+  assert.equal(h.els.retryVideoScene1.hidden, true);
+});

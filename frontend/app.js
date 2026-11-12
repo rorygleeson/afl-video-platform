@@ -141,6 +141,12 @@ const input = document.getElementById('selfie');
         const mayRetry = real.retryAvailable === true && !videoRetryInFlight.has(id);
         retryButton.hidden = !mayRetry;
         retryButton.disabled = videoRetryInFlight.has(id);
+        // The user-facing scene card displays only the current MP4 state.
+        // Completed retries clear transient text; historical diagnostic detail
+        // remains confined to the developer section below.
+        if (real.status === 'COMPLETED') {
+          document.getElementById('retryVideoResult' + n).textContent = '';
+        }
         document.getElementById('diagnoseScene' + n).hidden =
           real.status !== 'FAILED' && real.status !== 'REVIEW_REQUIRED';
         document.getElementById('scene' + n + 'PaidStatus').textContent =
