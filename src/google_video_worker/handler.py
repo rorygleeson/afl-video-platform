@@ -190,7 +190,7 @@ def extract_provider_failure(reply):
         searchable = (str(raw_code or "") + " " + (msg if isinstance(msg, str) else "")[:2000]).lower()
         for pattern, label in (
             (r"safe|policy|blocked|prohibit|moderation", "SAFETY_OR_POLICY"),
-            (r"quota|rate.limit|resource.exhaust", "QUOTA_OR_RATE_LIMIT"),
+            (r"quota|rate.limit|resource.exhaust|too[_-]?many[_-]?requests|429", "QUOTA_OR_RATE_LIMIT"),
             (r"budget|billing|payment", "BILLING_OR_BUDGET"),
             (r"capacity|overload|busy|unavailable", "CAPACITY_OR_UNAVAILABLE"),
             (r"internal|server.error|temporar", "PROVIDER_INTERNAL_ERROR"),
@@ -214,6 +214,12 @@ def read_stored_failure(record):
               "providerMessagePresent": record.get("providerMessagePresent", False)}
     if record.get("providerErrorCode"):
         result["errorCode"] = record["providerErrorCode"]
+    # Only allowlisted, bounded fields: no model messages, prompts or video bytes.
+    for key in ("interactionId", "requestId", "submissionStartedAt", "submittedAt",
+                "providerFailureObservedAt", "providerFinalStatus", "completedAt"):
+        value = record.get(key)
+        if isinstance(value, str) and len(value) <= 256:
+            result[key] = value
     return result
 
 
@@ -372,7 +378,8 @@ def submit(job, scene, request):
         raise
     # Set ambiguous state BEFORE issuing the billable POST. A Lambda timeout
     # must NEVER cause Step Functions to resubmit this operation.
-    transition(job, scene, request, "PREPARED", "SUBMISSION_UNKNOWN")
+    transition(job, scene, request, "PREPARED", "SUBMISSION_UNKNOWN",
+               {"submissionStartedAt": datetime.now(timezone.utc).isoformat()})
     try:
         result = google_json("POST", BASE, body, max_bytes=1024 * 1024)
     except Exception as exc:
@@ -400,7 +407,8 @@ def submit(job, scene, request):
     if not isinstance(interaction, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", interaction):
         raise UnknownSubmission("No safe Google interaction ID; do not retry paid call")
     transition(job, scene, request, "SUBMISSION_UNKNOWN", "PROCESSING",
-               {"interactionId": interaction})
+               {"interactionId": interaction,
+                "submittedAt": datetime.now(timezone.utc).isoformat()})
     return {"status": "PROCESSING", "interactionId": interaction}
 
 
@@ -442,10 +450,17 @@ def poll(job, scene, request):
     if state in ("queued", "in_progress", "requires_action"):
         return {"status": "WAITING", "providerStatus": state}
     if state in ("failed", "cancelled", "incomplete", "budget_exceeded"):
+        # Preserve the original provider classification *at the first failed
+        # poll*, before the interaction expires or later lookups grow too large.
+        failure = extract_provider_failure(reply)
+        observed = datetime.now(timezone.utc).isoformat()
         transition(job, scene, request, "PROCESSING", "FAILED",
                    {"errorCode": "GOOGLE_" + state.upper(),
                     "providerFinalStatus": state,
-                    **extract_provider_failure(reply)})
+                    "providerFailureObservedAt": observed, **failure})
+        LOG.warning("Google provider terminal failure scene=%s status=%s category=%s code=%s",
+                    scene, state, failure["providerErrorCategory"],
+                    failure.get("providerErrorCode", "UNSPECIFIED"))
         return {"status": "FAILED"}
     if state != "completed":
         raise ContractError("Unknown provider status, manual review")
@@ -457,7 +472,8 @@ def poll(job, scene, request):
         ContentType="video/mp4", ServerSideEncryption="AES256")
     S3.head_object(Bucket=BUCKET, Key=key)
     transition(job, scene, request, "PROCESSING", "COMPLETED",
-               {"resultKey": key, "sizeBytes": len(blob)})
+               {"resultKey": key, "sizeBytes": len(blob),
+                "completedAt": datetime.now(timezone.utc).isoformat()})
     return {"status": "COMPLETED", "resultKey": key}
 
 
@@ -483,6 +499,15 @@ def diagnose_failed_interaction(job, scene):
     if not approval or record.get("status") not in ("FAILED", "REVIEW_REQUIRED"):
         raise ContractError("Only existing failed paid video attempts can be inspected")
     stored = read_stored_failure(record)
+    # The terminal poll already persisted Google's actual error. Prefer this
+    # first-hand evidence to a subsequent GET that may return an inline MP4 or
+    # expire. A diagnostic must never replace a known provider reason with
+    # a network/size error from a later lookup.
+    if (stored["recordedStatus"] == "FAILED" and
+            (stored["errorCategory"] != "UNSPECIFIED" or stored.get("errorCode"))):
+        return {"status": "RECORDED_PROVIDER_FAILURE", "source": "DYNAMODB",
+                "reason": "ORIGINAL_PROVIDER_ERROR_CAPTURED",
+                **stored, "paidGenerationStarted": False}
     interaction = record.get("interactionId")
     if not isinstance(interaction, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", interaction):
         return {"status": "UNAVAILABLE", "reason": "NO_RECORDED_INTERACTION",

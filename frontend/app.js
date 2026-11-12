@@ -153,6 +153,12 @@ const input = document.getElementById('selfie');
           'Google interaction: ' + (real.interactionId || '—'),
           'Request: ' + (real.requestId || '—'),
           'Error: ' + (real.failureCode || real.errorCode || '—'),
+          'Submitted to Google (UTC): ' + (real.submittedAt || '—'),
+          'Google terminal status: ' + (real.providerFinalStatus || '—'),
+          'Original Google error: ' + (real.providerErrorCode || '—'),
+          'Original error category: ' + (real.providerErrorCategory || '—'),
+          'Original failure observed (UTC): ' + (real.providerFailureObservedAt || '—'),
+          'Completed (UTC): ' + (real.completedAt || '—'),
           'Last checked: ' + new Date().toLocaleTimeString(),
           'Status checks are read-only. No paid retries.',
         ];
@@ -625,22 +631,34 @@ const input = document.getElementById('selfie');
         const detail = data.diagnostic || {};
         const fmt = value => String(value || 'unknown').replaceAll('_', ' ').toLowerCase();
         const recorded = 'Recorded: ' + fmt(detail.recordedErrorCode);
-        if (detail.status === 'READ_ONLY_DIAGNOSTIC') {
+        const evidence = [
+          detail.interactionId ? 'Google interaction: ' + detail.interactionId : '',
+          detail.submittedAt ? 'Submitted (UTC): ' + detail.submittedAt : '',
+          detail.providerFinalStatus ? 'Google terminal status: ' + detail.providerFinalStatus : '',
+          detail.providerFailureObservedAt ? 'Failure observed (UTC): ' + detail.providerFailureObservedAt : '',
+        ].filter(Boolean).join('. ');
+        if (detail.status === 'RECORDED_PROVIDER_FAILURE') {
+          output.textContent = 'Original Google failure recorded when it occurred. ' +
+            'Provider reason: ' + fmt(detail.errorCategory) +
+            (detail.errorCode ? ' (' + detail.errorCode + ')' : '') +
+            '. ' + recorded + '. ' + evidence +
+            '. No additional Google lookup or paid request was made.';
+        } else if (detail.status === 'READ_ONLY_DIAGNOSTIC') {
           output.textContent = 'Google status: ' + fmt(detail.providerStatus) +
             '. Provider reason: ' + fmt(detail.errorCategory) +
             (detail.errorCode ? ' (' + detail.errorCode + ')' : '') +
             '. ' + recorded + '.' +
             (detail.reason === 'GOOGLE_DID_NOT_SUPPLY_A_CLASSIFIABLE_REASON'
               ? ' Google supplied no classifiable reason.' : '') +
-            ' Read-only check; no new paid generation.';
+            '. ' + evidence + ' Read-only check; no new paid generation.';
         } else {
           const category = detail.errorCategory && detail.errorCategory !== 'UNSPECIFIED'
             ? ' Stored provider reason: ' + fmt(detail.errorCategory) + '.' : '';
           output.textContent = recorded + '.' + category +
             ' Google lookup unavailable: ' + fmt(detail.reason) +
             (detail.errorCode ? ' (' + detail.errorCode + ')' : '') +
-            '. This does not mean the original request failed for the same reason.' +
-            ' No new paid generation.';
+            '. This does not mean the original request failed for the same reason. ' +
+            evidence + ' No new paid generation.';
         }
       } catch (error) {
         if (currentJobId === requestedJob)

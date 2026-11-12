@@ -10,6 +10,7 @@ on:
       - 'scripts/execute_release_change_set.py'
       - 'scripts/deploy_google_timeouts_cfn.py'
       - 'scripts/capture_release_baseline.py'
+      - 'scripts/deploy_google_failure_audit.py'
       - 'scripts/deploy_google_stagger.py'
       - 'infrastructure/app/google-video.yaml'
   workflow_dispatch:
@@ -41,7 +42,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   baseline:
-    if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[deploy-google-stagger-10s]') }}
+    if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[deploy-google-stagger-10s]') && !contains(github.event.head_commit.message, '[deploy-google-failure-audit]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -587,6 +588,48 @@ jobs:
       - name: Preview and execute guarded Google state-machine-only change set
         run: python3 -u scripts/deploy_google_stagger.py
       - name: Recapture and verify post-deployment AWS baseline
+        run: |
+          python3 scripts/capture_release_baseline.py
+          python3 scripts/verify_release_health.py --baseline release-baseline.json
+
+
+  deploy_google_failure_audit:
+    name: Release original Google failure audit (CFN worker/API + frontend S3)
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-google-failure-audit]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate original Google error capture without paid calls
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/deploy_google_failure_audit.py src/google_video_worker/handler.py src/api/handler.py
+          node --check frontend/app.js
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 -m unittest discover -s tests -p 'test_google_failure_audit.py' -v
+          python3 - <<'PY'
+          from pathlib import Path
+          src=Path('src/google_video_worker/handler.py').read_text()
+          worker_diag=src.split('def diagnose_failed_interaction(job, scene):')[1].split('def lambda_handler(event, context):')[0]
+          assert 'RECORDED_PROVIDER_FAILURE' in worker_diag
+          assert 'google_json("POST"' not in worker_diag
+          assert 'providerFailureObservedAt' in src
+          assert 'timeout=150' in src
+          assert 'RECORDED_PROVIDER_FAILURE' in Path('frontend/app.js').read_text()
+          assert '"Retry"' not in Path('infrastructure/app/google-video.yaml').read_text()
+          PY
+      - name: Assume existing AWS OIDC role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-failure-audit
+      - name: Deploy immutable worker/API artifacts using CloudFormation, then frontend
+        run: python3 -u scripts/deploy_google_failure_audit.py
+      - name: Recapture and verify CloudFormation-managed release baseline
         run: |
           python3 scripts/capture_release_baseline.py
           python3 scripts/verify_release_health.py --baseline release-baseline.json

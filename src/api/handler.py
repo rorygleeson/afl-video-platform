@@ -391,6 +391,14 @@ def video_scene_public(job, scene_id):
         result["mock"] = True
     if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED", "SUBMISSION_UNKNOWN"):
         result["errorCode"] = item["errorCode"]
+    # Operator diagnostics: stored metadata only, never raw Google payloads.
+    if real:
+        for key in ("interactionId", "requestId", "submissionStartedAt",
+                    "submittedAt", "providerFailureObservedAt", "providerFinalStatus",
+                    "providerErrorCode", "providerErrorCategory", "completedAt"):
+            value = real.get(key)
+            if isinstance(value, str) and len(value) <= 256:
+                result[key] = value
     if (real or approval) and status not in ("COMPLETED", "FAILED") and GOOGLE_STATE_MACHINE_ARN:
         # Read-only reconciliation of Step Functions failures. Never issue a new
         # paid request or infer that a failed workflow was not charged.
@@ -533,6 +541,11 @@ def failed_video_diagnostic(job_id, scene_id):
     }
     if record.get("providerErrorCode"):
         stored["errorCode"] = record["providerErrorCode"]
+    for key in ("interactionId", "requestId", "submissionStartedAt", "submittedAt",
+                "providerFailureObservedAt", "providerFinalStatus", "completedAt"):
+        value = record.get(key)
+        if isinstance(value, str) and len(value) <= 256:
+            stored[key] = value
     try:
         invocation = LAMBDA.invoke(
             FunctionName=GOOGLE_WORKER_ARN,
@@ -545,7 +558,7 @@ def failed_video_diagnostic(job_id, scene_id):
                                   "diagnostic": {**stored, "reason": "DIAGNOSTIC_WORKER_FAILED"}})
         details = json.loads(invocation["Payload"].read())
         if not isinstance(details, dict) or details.get("status") not in (
-                "READ_ONLY_DIAGNOSTIC", "UNAVAILABLE"):
+                "READ_ONLY_DIAGNOSTIC", "UNAVAILABLE", "RECORDED_PROVIDER_FAILURE"):
             return response(200, {"jobId": job_id, "sceneId": scene_id,
                                   "diagnostic": {**stored, "reason": "INVALID_DIAGNOSTIC_RESPONSE"}})
         return response(200, {"jobId": job_id, "sceneId": scene_id,
