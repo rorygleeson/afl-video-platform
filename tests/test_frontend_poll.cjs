@@ -655,7 +655,7 @@ test('four requested cosmetic changes keep progress and scene headings consisten
   assert.doesNotMatch(html, /Preparing your reference images…|Scene 1 is available below\./);
   assert.match(script, /'Reference images: ' \+ completed \+ '\/3 completed'/);
   assert.doesNotMatch(html, /Preparing your videos…/);
-  for (const [n, seconds] of [[1, 5], [2, 8], [3, 10]]) {
+  for (const [n, seconds] of [[1, 4], [2, 8], [3, 5]]) {
     assert.match(html, new RegExp('<strong>Scene ' + n + '[^<]*' + seconds + ' seconds</strong>'));
   }
   assert.doesNotMatch(html, /Download Scene [123] MP4/);
