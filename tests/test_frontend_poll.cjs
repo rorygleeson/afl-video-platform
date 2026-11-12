@@ -776,13 +776,16 @@ test('completed retried scene clears stale transient retry message', async () =>
       scene3: {mode:'REAL', status:'COMPLETED', url:'https://s3.example.com/video3.mp4'},
     }
   });
-  h.els.retryVideoResult1.textContent = 'Scene 1 retry requested — checking progress';
-  h.els.diagnoseResult1.textContent = 'Historical Google failure details';
   await h.els.generate.listeners.click();
   await h.flush();
   for (let i=0; i<3 && h.els.videoTestSection.hidden; i++) {
     if (h.timers.size) await h.nextTimer();
   }
+  await h.flush();
+  // Seed stale text on an existing job, not before the new-job reset.
+  h.els.retryVideoResult1.textContent = 'Scene 1 retry requested — checking progress';
+  h.els.diagnoseResult1.textContent = 'Historical Google failure details';
+  h.doc.listeners.visibilitychange();
   await h.flush();
   assert.equal(h.els.scene1PaidStatus.textContent, 'MP4 status: completed');
   assert.equal(h.els.retryVideoResult1.textContent, '');
