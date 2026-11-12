@@ -159,13 +159,24 @@ const input = document.getElementById('selfie');
                   '. Google may have charged; do not retry.'
                 : real.status === 'SUBMISSION_UNKNOWN'
                   ? 'Checking original Google submission. Please do not retry or start another scene.'
-                  : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
+                  : real.status === 'FAILED' && !mayRetry
+                    ? 'Generation failed — Retry unavailable (' +
+                      ({
+                        MAX_ATTEMPTS_REACHED: '10 attempts reached',
+                        ASSEMBLY_STARTED: 'assembly already started',
+                        GOOGLE_FAILURE_NOT_CONFIRMED: 'Google failure unconfirmed',
+                        WORKFLOW_REVIEW_REQUIRED: 'workflow needs review',
+                      }[real.retryBlockedReason] || 'needs review') +
+                      '). See Developer Diagnostics.'
+                    : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
             : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
         const lines = [
           'Job: ' + jobId,
           'Scene: ' + id,
           'Mode: ' + (real.mode || 'NOT_REQUESTED'),
           'Status: ' + (real.status || 'NOT_REQUESTED'),
+          'Retry available: ' + (real.retryAvailable === true ? 'yes' : 'no'),
+          'Retry blocked: ' + (real.retryBlockedReason || '—'),
           'Paid attempt: ' + (real.attemptNumber || 1) + ' of ' + (real.maxAttempts || 10),
           'Workflow: ' + (real.workflowStatus || '—'),
           'Google interaction: ' + (real.interactionId || '—'),
