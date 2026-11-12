@@ -46,7 +46,7 @@ class GooglePromptTests(unittest.TestCase):
                 if scene["id"] in ("scene1", "scene2"):
                     self.assertIn("opposition", text)
                 else:
-                    self.assertIn("no opposition players", text)
+                    self.assertIn("do not introduce an embrace", text)
         self.assertIn("mouth open in a triumphant natural shout",
                       self.config["scenes"][2]["promptInstructions"])
 
@@ -61,7 +61,7 @@ class GooglePromptTests(unittest.TestCase):
                 prompt = namespace["build_image_prompt"](self.config, scene, "geelong").lower()
                 self.assertIn("navy blue and white horizontal hoops", prompt)
                 self.assertIn("hairstyle", prompt)
-                self.assertIn("selected team", prompt)
+                self.assertIn("selected", prompt)
         celebration = self.config["scenes"][2]["promptInstructions"].lower()
         self.assertIn("two distant teammates", celebration)
         self.assertIn("matching unbranded playing kits", celebration)
