@@ -185,7 +185,7 @@ def safe_provider_message(message):
         return None
     # Restrict to one-line, bounded ordinary explanatory text; discard quoted content
     # which providers could use to reproduce a customer prompt.
-    if re.search(r"(?i)\\b(?:customer|private|selfie|prompt|image|input|email|password|personal|address)\\b", text):
+    if re.search(r"(?i)\b(?:customer|private|selfie|prompt|image|input|email|password|personal|address)\b", text):
         return None
     if any(ord(char) < 32 or ord(char) > 126 for char in text):
         return None
