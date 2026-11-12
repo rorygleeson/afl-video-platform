@@ -64,7 +64,7 @@ def changes(cf,stack,name,parameters):
     cf.create_change_set(
         StackName=stack,ChangeSetName=name,ChangeSetType="UPDATE",
         UsePreviousTemplate=True,
-        Parameters=[{"ParameterKey":k,**({"ParameterValue":v} if k in parameters["new"]
+        Parameters=[{"ParameterKey":k,**({"ParameterValue":parameters["new"][k]} if k in parameters["new"]
                     else {"UsePreviousValue":True})}
                     for k,v in parameters["old"].items()],
         RoleARN=ROLE,Capabilities=["CAPABILITY_NAMED_IAM"],
