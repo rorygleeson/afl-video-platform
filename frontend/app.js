@@ -30,6 +30,7 @@ const input = document.getElementById('selfie');
   let videoRefreshRequested = false;
   let realVideoTracking = false;
   const videoSubmittedScenes = new Set();
+  const videoRetryInFlight = new Set();
   let videoBatchSubmitting = false;
   let availablePaidScenes = [];
   const videoSubmissionLog = new Map();
@@ -61,6 +62,12 @@ const input = document.getElementById('selfie');
     videoRefreshRequested = false;
     realVideoTracking = false;
     videoSubmittedScenes.clear();
+    videoRetryInFlight.clear();
+    for (const n of [1, 2, 3]) {
+      document.getElementById('retryVideoScene' + n).hidden = true;
+      document.getElementById('retryVideoScene' + n).disabled = false;
+      document.getElementById('retryVideoResult' + n).textContent = '';
+    }
     videoBatchSubmitting = false;
     availablePaidScenes = [];
     generateAllVideos.hidden = true;
@@ -130,6 +137,10 @@ const input = document.getElementById('selfie');
         const real = data.videos?.[id] || {};
         const authorised = approvals[id] === true;
         const pendingAttempt = videoSubmissionLog.get(id);
+        const retryButton = document.getElementById('retryVideoScene' + n);
+        const mayRetry = real.retryAvailable === true && !videoRetryInFlight.has(id);
+        retryButton.hidden = !mayRetry;
+        retryButton.disabled = videoRetryInFlight.has(id);
         document.getElementById('diagnoseScene' + n).hidden =
           real.status !== 'FAILED' && real.status !== 'REVIEW_REQUIRED';
         document.getElementById('scene' + n + 'PaidStatus').textContent =
@@ -149,6 +160,7 @@ const input = document.getElementById('selfie');
           'Scene: ' + id,
           'Mode: ' + (real.mode || 'NOT_REQUESTED'),
           'Status: ' + (real.status || 'NOT_REQUESTED'),
+          'Paid attempt: ' + (real.attemptNumber || 1) + ' of 3',
           'Workflow: ' + (real.workflowStatus || '—'),
           'Google interaction: ' + (real.interactionId || '—'),
           'Request: ' + (real.requestId || '—'),
@@ -615,6 +627,44 @@ const input = document.getElementById('selfie');
       void refreshVideos();
     }
   });
+
+  // A retry is explicitly confirmed, charged separately and applies to only
+  // one terminal failed video. Existing reference images and successful MP4s stay.
+  for (const n of [1, 2, 3]) {
+    const sceneId = 'scene' + n;
+    const button = document.getElementById('retryVideoScene' + n);
+    button.addEventListener('click', async () => {
+      if (!currentJobId || button.hidden || button.disabled ||
+          videoRetryInFlight.has(sceneId)) return;
+      if (!window.confirm('Retry Scene ' + n + ' video only? This starts one NEW paid ' +
+          'Google generation. Existing reference images and other video scenes will remain unchanged.')) return;
+      const jobId = currentJobId;
+      const output = document.getElementById('retryVideoResult' + n);
+      videoRetryInFlight.add(sceneId);
+      button.disabled = true;
+      button.hidden = true;
+      output.textContent = 'Submitting one paid retry for Scene ' + n + '…';
+      try {
+        const result = await api('/jobs/' + jobId + '/real-videos/' + sceneId + '/retry', {
+          method: 'POST',
+          headers: {'Idempotency-Key': crypto.randomUUID()},
+          body: JSON.stringify({confirmRetryScene: sceneId}),
+        });
+        if (jobId === currentJobId) {
+          output.textContent = 'Scene ' + n + ' retry requested (' +
+            (result.status || 'ACCEPTED') + '). Checking progress…';
+        }
+      } catch (error) {
+        if (jobId === currentJobId) {
+          output.textContent = 'Retry status uncertain: ' + error.message +
+            '. Check the existing scene before attempting again.';
+        }
+      } finally {
+        videoRetryInFlight.delete(sceneId);
+        if (jobId === currentJobId) void refreshVideos();
+      }
+    });
+  }
 
   for (const n of [1, 2, 3]) {
     const button = document.getElementById('diagnoseScene' + n);
