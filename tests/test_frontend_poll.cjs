@@ -401,9 +401,9 @@ test('reference images gate video controls, existing mock records do not unlock 
   assert.equal(h.calls.filter(c => /\/videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0);
 });
 
-test('reference image progress stays above scene prompt controls', () => {
-  const order = ['id="generate"', 'id="jobProgressSection"', 'id="status"',
-                 'id="results"', 'id="videoTestSection"'];
+test('reference image progress appears beneath scene cards and before video controls', () => {
+  const order = ['id="generate"', 'id="jobProgressSection"', 'id="results"',
+                 'id="status"', 'id="pollStatus"', 'id="videoTestSection"'];
   let previous = -1;
   for (const item of order) {
     const position = html.indexOf(item);
