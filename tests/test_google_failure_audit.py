@@ -48,6 +48,30 @@ class OriginalProviderFailureAuditTests(unittest.TestCase):
         self.assertNotIn("private", str(evidence))
         self.assertEqual(w.S3.put_object.call_count, 0)
 
+    def test_safe_provider_error_message_retention(self):
+        w = self.worker
+        failure = w.extract_provider_failure({
+            "errors": [{"code": "prohibited_content",
+                        "message": "Video generation was blocked by safety filters"}]
+        })
+        self.assertEqual(failure["providerSafeMessages"],
+                         ["Video generation was blocked by safety filters"])
+        unsafe = w.extract_provider_failure({
+            "errors": [{"code": "prohibited_content",
+                        "message": "private customer-related prompt bytes not for retention"}]
+        })
+        self.assertNotIn("providerSafeMessages", unsafe)
+        self.assertTrue(unsafe["providerMessagePresent"])
+
+    def test_completed_poll_retry_does_not_access_google_or_resubmit(self):
+        w = self.worker
+        with patch.object(w, "require_paid_unlock"), patch.object(
+                w, "owner_record", return_value={"status": "COMPLETED"}), patch.object(
+                w, "google_json") as google:
+            result = w.poll(self.job, self.scene, self.request)
+        self.assertEqual(result, {"status": "COMPLETED"})
+        google.assert_not_called()
+
     def test_original_provider_error_does_not_repeat_large_google_get(self):
         w = self.worker
         record = {
