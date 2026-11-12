@@ -51,8 +51,14 @@ class GoogleStaggerContracts(unittest.TestCase):
     def test_exact_original_definition_transforms_to_committed_template(self):
         old_template = self.template.replace(STAGGER_CLAIM_END, CLAIM_END, 1).replace(EXTRA_STATES, "", 1)
         self.assertEqual(stagger_template(old_template), self.template)
-        old_definition = json.dumps(definition_from_template(old_template))
-        self.assertEqual(stagger_definition(old_definition), self.current)
+        # The original one-time stagger transformer intentionally rejected every
+        # retry policy. Test that historical transform independently of the new
+        # read-only PollVideo recovery policy.
+        old_states = definition_from_template(old_template)
+        old_states["States"]["PollVideo"].pop("Retry", None)
+        expected = json.loads(json.dumps(self.current))
+        expected["States"]["PollVideo"].pop("Retry", None)
+        self.assertEqual(stagger_definition(json.dumps(old_states)), expected)
 
     def test_original_tasks_are_unchanged(self):
         states = self.current["States"]
