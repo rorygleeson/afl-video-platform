@@ -166,7 +166,7 @@ const input = document.getElementById('selfie');
           'Scene: ' + id,
           'Mode: ' + (real.mode || 'NOT_REQUESTED'),
           'Status: ' + (real.status || 'NOT_REQUESTED'),
-          'Paid attempt: ' + (real.attemptNumber || 1) + ' of 3',
+          'Paid attempt: ' + (real.attemptNumber || 1) + ' of ' + (real.maxAttempts || 10),
           'Workflow: ' + (real.workflowStatus || '—'),
           'Google interaction: ' + (real.interactionId || '—'),
           'Request: ' + (real.requestId || '—'),

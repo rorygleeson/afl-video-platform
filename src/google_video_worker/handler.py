@@ -117,7 +117,8 @@ def require_paid_unlock(job=None, scene=None, request=None):
     execution = approval.get("executionName")
     if approval.get("status") != "REQUESTED" or not (
             execution == expected or (
-                approval.get("attemptNumber") in (2, 3)
+                isinstance(approval.get("attemptNumber"), int)
+                and 2 <= approval["attemptNumber"] <= 10
                 and execution == expected + "-r" + str(approval["attemptNumber"]))):
         raise PermissionError("PAID_SCENE_NOT_USER_APPROVED")
     if request is not None and approval.get("attemptNumber", 1) > 1 and request != execution:

@@ -82,11 +82,40 @@ class SceneRetryTests(unittest.TestCase):
         self.states.start_execution.assert_not_called()
         self.ddb.update_item.assert_not_called()
 
-    def test_retry_requires_explicit_consent_and_max_three_attempts(self):
+    def test_retry_requires_explicit_consent_and_max_ten_attempts(self):
         self.assertEqual(self.retry(body={})[0], 400)
-        self.job["paidVideoApprovals"]["scene1"]["attemptNumber"] = 3
+        self.job["paidVideoApprovals"]["scene1"]["attemptNumber"] = 10
         self.assertEqual(self.retry()[0], 409)
         self.states.start_execution.assert_not_called()
+
+    def test_ninth_retry_generates_tenth_attempt_only(self):
+        scene = "scene3"
+        self.job["paidVideoApprovals"][scene]["attemptNumber"] = 9
+        self.job["paidVideoApprovals"][scene]["executionName"] = (
+            f"real-{self.jobid}-{scene}-r9")
+        self.job["paidVideoApprovals"][scene]["history"] = [
+            {"approval":{"attemptNumber": i}, "video":{"status":"FAILED"}}
+            for i in range(1, 9)
+        ]
+        self.job["realVideos"][scene]["requestId"] = (
+            f"real-{self.jobid}-{scene}-r9")
+        code, response = self.retry(3)
+        self.assertEqual(code, 202)
+        self.assertEqual(response["attemptNumber"], 10)
+        self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
+                         f"real-{self.jobid}-{scene}-r10")
+        self.assertEqual(self.ddb.update_item.call_args.kwargs
+                         ["ExpressionAttributeValues"][":approval"]["history"].__len__(), 9)
+
+    def test_retry_status_exposes_ten_attempt_limit(self):
+        self.job["paidVideoApprovals"]["scene3"]["attemptNumber"] = 9
+        status = self.api.video_scene_public(self.job, "scene3")
+        self.assertEqual(status["maxAttempts"], 10)
+        self.assertEqual(status["attemptNumber"], 9)
+        self.assertIs(status["retryAvailable"], True)
+        self.job["paidVideoApprovals"]["scene3"]["attemptNumber"] = 10
+        status = self.api.video_scene_public(self.job, "scene3")
+        self.assertIs(status["retryAvailable"], False)
 
     def test_duplicate_reservation_returns_conflict_without_second_paid_workflow(self):
         from botocore.exceptions import ClientError
