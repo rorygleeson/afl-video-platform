@@ -8,6 +8,7 @@ on:
       - '.github/workflows/release.yml'
       - 'scripts/plan_release.py'
       - 'scripts/execute_release_change_set.py'
+      - 'scripts/deploy_google_timeouts_cfn.py'
   workflow_dispatch:
     inputs:
       change_set_preview:
