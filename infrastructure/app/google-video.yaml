@@ -78,7 +78,7 @@ Resources:
       MemorySize: 1024
       EphemeralStorage:
         Size: 512
-      Timeout: 180
+      Timeout: 300
       Code:
         S3Bucket: !Ref ArtifactBucketName
         S3Key: !Ref GoogleWorkerArtifactKey
@@ -134,7 +134,7 @@ Resources:
       RoleArn: !GetAtt GoogleStateMachineRole.Arn
       DefinitionString: !Sub |
         {
-          "Comment":"Stage 5A installed but hard-disabled. No Retry on paid submit. Safe read-only polling retries with original interaction ID.",
+          "Comment":"Stage 5A installed but hard-disabled. No Retry on paid submit or polling.",
           "StartAt":"PaidGate",
           "TimeoutSeconds":3600,
           "States":{
@@ -142,7 +142,7 @@ Resources:
             "Claim":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"claim","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.claim","Next":"Submit"},
             "Submit":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"submit","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.submit","Next":"WaitForVideo"},
             "WaitForVideo":{"Type":"Wait","Seconds":20,"Next":"PollVideo"},
-            "PollVideo":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"poll","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$.Execution.Name"}},"ResultPath":"$.polled","Retry":[{"ErrorEquals":["States.ALL"],"IntervalSeconds":5,"MaxAttempts":3,"BackoffRate":2}],"Next":"InspectVideo"},
+            "PollVideo":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"poll","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.polled","Next":"InspectVideo"},
             "InspectVideo":{"Type":"Choice","Choices":[{"Variable":"$.polled.Payload.status","StringEquals":"WAITING","Next":"WaitForVideo"},{"Variable":"$.polled.Payload.status","StringEquals":"COMPLETED","Next":"Finalize"},{"Variable":"$.polled.Payload.status","StringEquals":"FAILED","Next":"Finalize"}],"Default":"UnexpectedStatus"},
             "Finalize":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"finalize","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"End":true},
             "UnexpectedStatus":{"Type":"Fail","Error":"UnexpectedGoogleStatus","Cause":"Manual reconciliation is required. Do not resubmit."}
