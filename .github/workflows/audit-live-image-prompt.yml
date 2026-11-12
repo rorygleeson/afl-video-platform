@@ -1,0 +1,56 @@
+name: Audit live S3 Nano Banana image prompt (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-live-image-prompt.yml'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Assume existing AWS role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Verify published prompt versus GitHub, never write
+        run: |
+          python3 - <<'PY'
+          import boto3,hashlib,json
+          from pathlib import Path
+          assert boto3.client("sts").get_caller_identity()["Account"]=="134387458447"
+          cf=boto3.client("cloudformation",region_name="ap-southeast-2")
+          stack=cf.describe_stacks(StackName="afl-app-dev-backend")["Stacks"][0]
+          params={p["ParameterKey"]:p.get("ParameterValue") for p in stack["Parameters"]}
+          bucket=params["ScenarioAssetsBucket"]
+          key="scenarios/afl-grand-final-winning-kick/v1/config.json"
+          s3=boto3.client("s3",region_name="ap-southeast-2")
+          obj=s3.get_object(Bucket=bucket,Key=key)
+          raw=obj["Body"].read(32000)
+          assert len(raw)<=20000 and obj["ContentLength"]<=20000
+          local=Path(key).read_bytes()
+          data=json.loads(raw)
+          orig=json.loads(local)
+          print("LIVE_IMAGE_PROMPT_BUCKET",bucket)
+          print("LIVE_IMAGE_PROMPT_KEY",key)
+          print("LIVE_IMAGE_PROMPT_VERSION_ID",obj.get("VersionId","none"))
+          print("LIVE_IMAGE_PROMPT_S3_ETAG",obj["ETag"])
+          print("LIVE_IMAGE_PROMPT_S3_LASTMODIFIED",obj["LastModified"].isoformat())
+          print("LIVE_IMAGE_PROMPT_S3_SHA256",hashlib.sha256(raw).hexdigest())
+          print("GITHUB_IMAGE_PROMPT_SHA256",hashlib.sha256(local).hexdigest())
+          print("LIVE_IMAGE_PROMPT_COMPARISON","MATCH" if raw==local else "DIFFERENT")
+          print("LIVE_SCENE1_COMPARISON","MATCH" if data["scenes"][0]["promptInstructions"]==orig["scenes"][0]["promptInstructions"] else "DIFFERENT")
+          print("LIVE_SHARED_COMPARISON","MATCH" if data["sharedPrompt"]==orig["sharedPrompt"] else "DIFFERENT")
+          print("LIVE_SCENE1_LENGTH",len(data["scenes"][0]["promptInstructions"]))
+          print("LIVE_SHARED_LENGTH",len(data["sharedPrompt"]))
+          PY
