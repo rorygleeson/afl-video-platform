@@ -46,6 +46,15 @@ def assert_current_frontend(s3, bucket):
     current = s3.get_object(Bucket=bucket, Key="app.js")["Body"].read()
     previous = subprocess.check_output(["git", "show", BASE + ":frontend/app.js"])
     if current != previous:
+        import difflib
+        live = current.decode("utf-8", errors="replace").splitlines()
+        base = previous.decode("utf-8", errors="replace").splitlines()
+        print("LIVE_FRONTEND_SHA", hashlib.sha256(current).hexdigest(), flush=True)
+        print("REPO_BASELINE_SHA", hashlib.sha256(previous).hexdigest(), flush=True)
+        diff = list(difflib.unified_diff(base, live, fromfile="repo-baseline", tofile="live-frontend", lineterm=""))
+        print("FRONTEND_DRIFT_LINES", len(diff), flush=True)
+        for line in diff[:180]:
+            print("FRONTEND_DIFF:", line[:360], flush=True)
         raise RuntimeError("STOP: frontend app.js has unreviewed live drift")
     print("LIVE_FRONTEND_BASELINE_MATCH", flush=True)
 
