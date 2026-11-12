@@ -28,3 +28,42 @@ jobs:
               print('EXECUTION_STATUS:',x.get('status'), 'SCENE:',x.get('name','').rsplit('-',1)[-1], 'START:',str(x.get('startDate',''))[:22])
           print('Read-only. No Google POST and no Step Functions StartExecution.')
           PY
+      - name: Inspect affected retry execution, without printing private payloads
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import boto3
+          from botocore.exceptions import ClientError
+          job="b0db89ad6c010c050c18c860a668497c"
+          scene="scene3"
+          arn="arn:aws:states:ap-southeast-2:134387458447:execution:afl-app-dev-google-omni:real-"+job+"-"+scene+"-r2"
+          sf=boto3.client("stepfunctions",region_name="ap-southeast-2")
+          try:
+              result=sf.describe_execution(executionArn=arn)
+              print("TARGET_EXECUTION_STATUS",result.get("status"))
+              print("TARGET_EXECUTION_ERROR",result.get("error","—"))
+              history=sf.get_execution_history(executionArn=arn,reverseOrder=True,includeExecutionData=False,maxResults=100)
+              for event in history.get("events",[]):
+                  kind=event.get("type","")
+                  if ("Failed" in kind or "TimedOut" in kind or "Aborted" in kind):
+                      details=(event.get("taskFailedEventDetails") or event.get("lambdaFunctionFailedEventDetails") or event.get("executionFailedEventDetails") or {})
+                      print("FAILURE_EVENT",kind,"ERROR",str(details.get("error","—"))[:120])
+                      # Do not reveal a provider payload or arbitrary Lambda exception cause.
+                      break
+                  if kind=="TaskStateEntered":
+                      print("LATEST_TASK_STATE",event.get("stateEnteredEventDetails",{}).get("name","—"))
+                      break
+          except ClientError as exc:
+              print("TARGET_INSPECTION_UNAVAILABLE",exc.response.get("Error",{}).get("Code","UNKNOWN"))
+          ddb=boto3.resource("dynamodb",region_name="ap-southeast-2")
+          try:
+              record=ddb.Table("afl-app-dev-jobs").get_item(Key={"jobId":job},ConsistentRead=True).get("Item",{})
+              video=record.get("realVideos",{}).get(scene,{})
+              approval=record.get("paidVideoApprovals",{}).get(scene,{})
+              print("STORED_SCENE_STATUS",video.get("status","MISSING"))
+              print("STORED_SCENE_ERROR",video.get("errorCode","—"))
+              print("STORED_INTERACTION_PRESENT",bool(video.get("interactionId")))
+              print("STORED_APPROVAL_ATTEMPT",approval.get("attemptNumber","—"))
+          except ClientError as exc:
+              print("JOB_INSPECTION_UNAVAILABLE",exc.response.get("Error",{}).get("Code","UNKNOWN"))
+          PY
