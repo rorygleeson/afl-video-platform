@@ -54,9 +54,9 @@ def main():
     js = Path("frontend/app.js").read_bytes()
     html = Path("frontend/index.html").read_bytes()
     assert b"confirmRetryScene" in js and b"retryAvailable" in js
+    assert b"'retryVideoScene' + n" in js
     for n in (1, 2, 3):
         assert f'id="retryVideoScene{n}"'.encode() in html
-        assert f"retryVideoScene{n}".encode() in js
     for key, data, content_type in (
         ("app.js", js, "application/javascript; charset=utf-8"),
         ("index.html", html, "text/html; charset=utf-8"),
