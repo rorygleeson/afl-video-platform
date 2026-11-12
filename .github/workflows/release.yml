@@ -384,3 +384,36 @@ jobs:
                       print("ROLLBACK_UNVERIFIED:",type(rollback_error).__name__)
               raise
           PY
+
+
+  deploy_google_timeouts_cfn:
+    name: Deploy Google video timeouts via CloudFormation (guarded)
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-google-timeouts-cfn]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify no paid retries and exact timeout-only source
+        run: |
+          python3 -m py_compile scripts/deploy_google_timeouts_cfn.py
+          python3 - <<'PY'
+          from pathlib import Path
+          worker=Path("src/google_video_worker/handler.py").read_text()
+          template=Path("infrastructure/app/google-video.yaml").read_text()
+          assert "timeout=150" in worker and "Timeout: 300" in template
+          assert '"Retry"' not in template
+          print("PASS: timeout-only contract, paid submission unchanged.")
+          PY
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Assume existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-timeouts-cfn-once
+      - name: Preview, constrain, deploy, verify Google Lambda timeout changes
+        run: python3 scripts/deploy_google_timeouts_cfn.py
