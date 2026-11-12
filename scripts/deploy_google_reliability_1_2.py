@@ -150,11 +150,22 @@ def main():
             assert '"WaitScene2"' in machine_def and '"WaitScene3"' in machine_def
             live_template=cf.get_template(StackName=stack,TemplateStage="Original")["TemplateBody"]
             assert isinstance(live_template,str)
-            original_poll='"PollVideo":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"poll","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$.Execution.Name"}},"ResultPath":"$.polled","Next":"InspectVideo"}'
-            updated_poll=original_poll.replace('"Next":"InspectVideo"', '"Retry":[{"ErrorEquals":["States.TaskFailed"],"IntervalSeconds":10,"MaxAttempts":3,"BackoffRate":2}],"Next":"InspectVideo"')
-            assert live_template.count(original_poll)==1
-            deploy_template=live_template.replace(original_poll,updated_poll,1)
-            assert deploy_template.replace(updated_poll,original_poll,1)==live_template
+            import re
+            matches=list(re.finditer(r'(?m)^(?P<indent>[ \\t]*)"PollVideo":(?P<state>\\{[^\\n]+\\}),?$',live_template))
+            assert len(matches)==1,"Could not safely identify exact live PollVideo state"
+            match=matches[0]
+            poll_state=json.loads(match.group("state"))
+            assert poll_state["Type"]=="Task"
+            assert poll_state["Parameters"]["Payload"]["op"]=="poll"
+            assert poll_state["ResultPath"]=="$.polled" and poll_state["Next"]=="InspectVideo"
+            assert "Retry" not in poll_state
+            poll_state["Retry"]=[{"ErrorEquals":["States.TaskFailed"],"IntervalSeconds":10,"MaxAttempts":3,"BackoffRate":2}]
+            original_line=match.group(0)
+            updated_line=match.group("indent")+'"PollVideo":'+json.dumps(poll_state,separators=(",",":"))+(","
+                if original_line.endswith(",") else "")
+            deploy_template=live_template[:match.start()]+updated_line+live_template[match.end():]
+            assert deploy_template.count(updated_line)==1
+            assert deploy_template[:match.start()]+original_line+deploy_template[match.start()+len(updated_line):]==live_template
         else:
             machine_arn=machine_def=machine_role=None
             deploy_template=None
