@@ -11,6 +11,12 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 - [ ] **5. Record generation provenance (medium).** Model, scene duration, prompt/version digest, reference-image SHA-256, configuration and bounded polling/timing metrics; allow successful vs failed scene comparisons.
 - [ ] **6. Apply provider-wide concurrency/rate controls (medium, pre-launch).** The existing 0/10/20-second per-batch stagger is *not* a global limiter across customers. Design admission controls that do not compromise idempotency or allow a second paid POST.
 
+## Current work (2026-11-12)
+
+- **Items 1–2: code and offline tests in review.** PR #54: https://github.com/rorygleeson/afl-video-platform/pull/54. Not checked off until CI passes, changes are merged/deployed, and AWS is verified.
+- **Item 3: design identified, implementation pending.** Google recommends `delivery: "uri"` with `gcs_uri` for large generated videos; the present `delivery: "inline"` makes every completed GET carry base64 MP4 data. Requires verified Google Cloud Storage permissions, secure download to existing private S3, and end-to-end tests. Do not switch the output contract without that work.
+- **Nothing in this checklist authorizes a paid model run or an automatic paid generation retry.**
+
 ## Release discipline
 
 - Implement in small, separately testable stages. Do not change prompts, UI layout, billing or reference-image generation as part of these reliability fixes.
