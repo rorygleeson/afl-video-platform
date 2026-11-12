@@ -19,7 +19,7 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 
 ## Deployment run
 
-- 2026-11-12: First guarded release aborted before AWS updates due to a live-template text mismatch. Parser fixed; AWS change-set review identified expected indirect RoleArn dependency. Revised allowlist and rerunning controlled release for items 1–2.
+- 2026-11-12: First guarded release aborted before AWS updates due to a live-template text mismatch. Parser fixed; AWS change-set review identified expected indirect RoleArn dependency. Revised CloudFormation change-source allowlist for the expected dynamic DefinitionString modification; rerunning controlled release for items 1–2.
 
 ## Release discipline
 
