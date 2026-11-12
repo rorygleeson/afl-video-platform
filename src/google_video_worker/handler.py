@@ -107,14 +107,21 @@ def safe_google_http_failure(exc):
     return details
 
 
-def require_paid_unlock(job=None, scene=None):
+def require_paid_unlock(job=None, scene=None, request=None):
     if PAID_ENABLED != "true" or MODEL != "gemini-omni-1.2-flash":
         raise PermissionError("PAID_GENERATION_DISABLED")
     if not isinstance(job, str) or not JOB_RE.fullmatch(job) or scene not in SCENES:
         raise PermissionError("PAID_SCENE_INVALID")
     approval = get_job(job).get("paidVideoApprovals", {}).get(scene, {})
-    if approval.get("status") != "REQUESTED" or approval.get("executionName") != "real-" + job + "-" + scene:
+    expected = "real-" + job + "-" + scene
+    execution = approval.get("executionName")
+    if approval.get("status") != "REQUESTED" or not (
+            execution == expected or (
+                approval.get("attemptNumber") in (2, 3)
+                and execution == expected + "-r" + str(approval["attemptNumber"]))):
         raise PermissionError("PAID_SCENE_NOT_USER_APPROVED")
+    if request is not None and request != execution:
+        raise PermissionError("PAID_SCENE_ATTEMPT_MISMATCH")
 
 
 def validate(event):
@@ -427,7 +434,7 @@ def transition(job, scene, request, old, new, extra=None):
 
 
 def claim(job, scene, request):
-    require_paid_unlock(job, scene)
+    require_paid_unlock(job, scene, request)
     item = get_job(job)
     ref = item.get("scenes", {}).get(scene, {})
     key = ref.get("resultKey", "")
@@ -468,7 +475,7 @@ def release(job, scene, request):
 
 
 def submit(job, scene, request):
-    require_paid_unlock(job, scene)
+    require_paid_unlock(job, scene, request)
     record = owner_record(job, scene, request)
     if record.get("status") != "PREPARED":
         raise ContractError("Submission cannot be retried or started from this state")
@@ -621,7 +628,7 @@ def copy_gcs_video_to_private_s3(gcs_uri, gcs_prefix, output_key):
 
 
 def poll(job, scene, request):
-    require_paid_unlock(job, scene)
+    require_paid_unlock(job, scene, request)
     record = owner_record(job, scene, request)
     # A read-only poll may be retried after DynamoDB was already updated but
     # the Lambda acknowledgement was lost. Never re-download or resubmit then.
@@ -768,7 +775,8 @@ def lambda_handler(event, context):
     # Gate is first in state machine; also independently enforce this for all
     # operations that could reach the Google paid API.
     if op == "gate":
-        require_paid_unlock(event.get("jobId"), event.get("sceneId"))
+        require_paid_unlock(event.get("jobId"), event.get("sceneId"),
+                            event.get("requestId"))
         return {"status": "ENABLED"}
     if op == "contract_health":
         return {"status": "LOCKED" if PAID_ENABLED != "true" else "CONFIGURED",
