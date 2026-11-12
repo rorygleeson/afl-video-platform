@@ -41,7 +41,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   baseline:
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[deploy-google-stagger-10s]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -586,3 +586,7 @@ jobs:
           role-session-name: afl-google-stagger-10s
       - name: Preview and execute guarded Google state-machine-only change set
         run: python3 -u scripts/deploy_google_stagger.py
+      - name: Recapture and verify post-deployment AWS baseline
+        run: |
+          python3 scripts/capture_release_baseline.py
+          python3 scripts/verify_release_health.py --baseline release-baseline.json
