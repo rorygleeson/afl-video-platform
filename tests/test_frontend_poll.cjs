@@ -793,3 +793,24 @@ test('completed retried scene clears stale transient retry message', async () =>
                'historical details remain in developer diagnostics');
   assert.equal(h.els.retryVideoScene1.hidden, true);
 });
+
+test('two independent failures show separate retry controls and explain a blocked third', async () => {
+  const h = setup({
+    realVideos: {
+      scene1: {mode:'REAL',status:'FAILED',retryAvailable:true,attemptNumber:1},
+      scene2: {mode:'REAL',status:'FAILED',retryAvailable:true,attemptNumber:1},
+      scene3: {mode:'REAL',status:'REVIEW_REQUIRED',retryAvailable:false,
+               retryBlockedReason:'WORKFLOW_REVIEW_REQUIRED',failureCode:'WORKER_TIMEOUT'},
+    },
+  });
+  await h.els.generate.listeners.click();
+  await h.flush();
+  for (let i=0;i<3 && h.els.videoTestSection.hidden;i++) {
+    if (h.timers.size) await h.nextTimer();
+  }
+  await h.flush();
+  assert.equal(h.els.retryVideoScene1.hidden, false);
+  assert.equal(h.els.retryVideoScene2.hidden, false);
+  assert.equal(h.els.retryVideoScene3.hidden, true);
+  assert.match(h.els.scene3PaidStatus.textContent, /needs review/i);
+});
