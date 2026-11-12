@@ -14,7 +14,7 @@ class TemplatePreservationPromptTests(unittest.TestCase):
         self.assertIn("Preserve Image 1 exactly", shared)
         self.assertIn("Image 1", shared)
         self.assertIn("Image 2 = the CUSTOMER SELFIE, the ONLY source", shared)
-        self.assertIn("skin-tone harmonisation", shared)
+        self.assertIn("central-player skin blending", shared)
         self.assertLessEqual(len(shared), 8000)
         for scene in cfg["scenes"]:
             self.assertEqual(scene["operation"], "image_edit")
