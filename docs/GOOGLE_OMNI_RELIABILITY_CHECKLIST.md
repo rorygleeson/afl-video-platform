@@ -19,7 +19,7 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 
 ## Deployment run
 
-- 2026-11-12: Controlled CloudFormation deployment requested for items 1–2; awaiting live verification.
+- 2026-11-12: First guarded release aborted before AWS updates due to a live-template text mismatch. Corrected the parser; rerunning controlled release for items 1–2.
 
 ## Release discipline
 
