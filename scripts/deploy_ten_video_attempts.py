@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deploy ten-attempt paid scene retry limit via guarded CloudFormation.
+"""Deploy paid gate DynamoDB Decimal fix via guarded CloudFormation.
 
 No Google calls, paid generation, retries, model setting changes or direct
 Lambda UpdateFunctionCode/Configuration calls. Fail closed on CFN surprises.
@@ -22,8 +22,6 @@ BUCKET="afl-video-bootstrap-artifactbucket-xiuriidgyft4"
 PLANS=(
     ("google","afl-app-dev-google-video","GoogleWorkerArtifactKey",
      "GoogleWorkerLambda","afl-app-dev-google-omni-worker"),
-    ("api","afl-app-dev-backend","LambdaArtifactKey",
-     "ApiLambda","afl-app-dev-api"),
 )
 
 def digest(data):
@@ -40,7 +38,8 @@ def new_package(kind, previous):
             assert b"def diagnose_failed_interaction(" in source
             assert b"PAID_SCENE_ATTEMPT_MISMATCH" in source
             assert b"attemptNumber" in source
-            assert b"approval[\"attemptNumber\"] <= 10" in source
+            assert b"raw_attempt.is_finite()" in source
+            assert b"from decimal import Decimal" in source
             assert b"timeout=150" in source
             overrides={"handler.py":source}
         else:
@@ -72,7 +71,7 @@ def changes(cf,stack,name,parameters):
                     else {"UsePreviousValue":True})}
                     for k,v in parameters["old"].items()],
         RoleARN=ROLE,Capabilities=["CAPABILITY_NAMED_IAM"],
-        Description="Ten-attempt video retry limit code only; no model requests",
+        Description="Fix DynamoDB Decimal retry gate only; no model requests",
     )
     cf.get_waiter("change_set_create_complete").wait(
         StackName=stack,ChangeSetName=name,WaiterConfig={"Delay":5,"MaxAttempts":36})
@@ -159,7 +158,7 @@ def main():
         oldzip=s3.get_object(Bucket=BUCKET,Key=old[parameter])["Body"].read()
         assert digest(oldzip)==current["CodeSha256"],"Live Lambda/CFN artifact drift"
         packed=new_package(kind,oldzip)
-        new_key=f"releases/ten-video-attempts/{hashlib.sha256(packed).hexdigest()}/{kind}.zip"
+        new_key=f"releases/paidgate-decimal-fix/{hashlib.sha256(packed).hexdigest()}/{kind}.zip"
         try:
             previous=s3.get_object(Bucket=BUCKET,Key=new_key)["Body"].read()
             assert previous==packed
@@ -174,7 +173,7 @@ def main():
                          "machine_def":machine_def,"machine_role":machine_role})
     # Preflight BOTH CloudFormation change sets before making any runtime changes.
     for p in prepared:
-        p["changeset"]=f"ten-attempts-{p['kind']}-{run}"
+        p["changeset"]=f"paidgate-decimal-{p['kind']}-{run}"
         try:
             c=changes(cf,p["stack"],p["changeset"],p)
             review(p["kind"],c)
@@ -207,35 +206,7 @@ def main():
             assert now["roleArn"]==p["machine_role"]
         print("CFN_DEPLOYED_VERIFIED",p["kind"],flush=True)
 
-    # Release frontend only after both API and worker verified. Existing
-    # versioned S3 bucket and CloudFront distribution remain under IaC.
-    frontend=cf.describe_stacks(StackName="afl-app-dev-frontend")["Stacks"][0]
-    assert frontend["StackStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
-    out={v["OutputKey"]:v["OutputValue"] for v in frontend["Outputs"]}
-    bucket=out["FrontendBucketName"]
-    distribution=out["DistributionId"]
-    assert bucket==f"afl-app-dev-frontend-{ACCOUNT}-{REGION}"
-    js=Path("frontend/app.js").read_bytes()
-    html=Path("frontend/index.html").read_bytes()
-    assert b"confirmRetryScene" in js and b"retryVideoScene1" in html
-    assert b"real.maxAttempts || 10" in js
-    assert all((f"retryVideoScene{n}".encode() in html) for n in (1,2,3))
-    for key,data,ctype in (
-            ("app.js",js,"application/javascript; charset=utf-8"),
-            ("index.html",html,"text/html; charset=utf-8")):
-        s3.put_object(Bucket=bucket,Key=key,Body=data,ContentType=ctype,
-                      CacheControl="max-age=60, must-revalidate")
-        assert s3.get_object(Bucket=bucket,Key=key)["Body"].read()==data
-        print("FRONTEND_ASSET_VERIFIED",key,flush=True)
-    cloudfront=sess.client("cloudfront")
-    cloudfront.create_invalidation(
-        DistributionId=distribution,
-        InvalidationBatch={
-            "Paths":{"Quantity":2,"Items":["/app.js","/index.html"]},
-            "CallerReference":"ten-video-attempts-"+run
-        })
-    print("FRONTEND_PUBLISHED_VERIFIED",flush=True)
-    print("TEN_VIDEO_ATTEMPTS_DEPLOYED_VERIFIED_NO_PAID_CALLS",flush=True)
+    print("PAIDGATE_DECIMAL_WORKER_DEPLOYED_VERIFIED_NO_PAID_CALLS",flush=True)
 
 if __name__=="__main__":
     main()
