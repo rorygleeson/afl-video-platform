@@ -38,7 +38,11 @@ class GoogleStaggerContracts(unittest.TestCase):
 
     def test_no_automatic_retries_or_extra_paid_calls(self):
         states = self.current["States"]
-        self.assertFalse(any("Retry" in state for state in states.values()))
+        # Only read-only polling may retry. Never resubmit a chargeable POST.
+        self.assertEqual(set(name for name, state in states.items() if "Retry" in state),
+                         {"PollVideo"})
+        self.assertEqual(states["PollVideo"]["Retry"][0]["ErrorEquals"], ["States.TaskFailed"])
+        self.assertNotIn("Retry", states["Submit"])
         self.assertEqual([name for name, state in states.items()
                           if state.get("Type") == "Task" and
                           state.get("Parameters", {}).get("Payload", {}).get("op") == "submit"],
