@@ -252,10 +252,19 @@ def extract_png(result):
     raise GoogleOutputError("GOOGLE_NO_IMAGE_CONTENT")
 
 
+# An explicit HTTP 429 rejection is the ONLY provider response that permits a
+# new paid attempt. Step Functions owns the wait, not a sleeping Lambda.
+MAX_ATTEMPTS = 8
+MAX_RETRY_WINDOW_SECONDS = 600
+
+
 def retry_delay(error, attempt):
+    # Wait intervals in seconds, including a modest jitter to avoid bursts.
+    # Respect provider Retry-After even when it exceeds our default backoff.
+    import math
     if error.retry_after is not None:
-        return None if error.retry_after > 120 else max(1, error.retry_after + random.uniform(0, 1))
-    return min(60, 2 ** attempt + random.uniform(0, 2))
+        return max(1, math.ceil(error.retry_after + random.uniform(0, 1)))
+    return min(180, 15 * (2 ** (attempt - 1))) + math.ceil(random.uniform(0, 3))
 
 
 def generate(worker, job_id, scene_id):
@@ -263,12 +272,23 @@ def generate(worker, job_id, scene_id):
     if scene_id not in worker.VALID_SCENES:
         raise ValueError("Unknown scene")
     job = worker.job_by_id(job_id)
-    if job.get("status") != "GENERATING_IMAGES" or job["scenes"][scene_id]["status"] != "PENDING":
-        raise RuntimeError("Job or scene not ready")
+    existing = job.get("scenes", {}).get(scene_id, {})
+    previous_status = existing.get("status")
+    if job.get("status") != "GENERATING_IMAGES" or previous_status not in ("PENDING", "RETRY_WAIT"):
+        raise RuntimeError("Job or scene not ready: no duplicate or completed submissions")
+    attempt = int(existing.get("attemptCount", 0)) + 1
+    if attempt > MAX_ATTEMPTS:
+        raise RuntimeError("Image retry budget already exhausted")
+    first_attempt_at = int(existing.get("firstAttemptAt", 0)) or int(time.time())
+    # The conditional DynamoDB claim is the per-scene admission gate.
+    # Only a Step Functions retry of an explicitly rejected attempt can re-enter.
+    worker.scene_update(job_id, scene_id, "SUBMITTING",
+                        {"submissionStartedAt": int(time.time()),
+                         "firstAttemptAt": first_attempt_at,
+                         "attemptCount": attempt},
+                        expected=previous_status)
     config = worker.load_scenario()
     scene = next(s for s in config["scenes"] if s["id"] == scene_id)
-    worker.scene_update(job_id, scene_id, "SUBMITTING",
-                        {"submissionStartedAt": int(time.time())}, expected="PENDING")
     stage = "MASTER_READ"
     try:
         master = s3_image(worker.S3, worker.ASSET_BUCKET, scene["masterKey"])
@@ -299,32 +319,38 @@ def generate(worker, job_id, scene_id):
         raise
     worker.scene_update(job_id, scene_id, "GENERATING",
                         {"generationStartedAt": int(time.time())}, expected="SUBMITTING")
-    for attempt in range(6):
-        try:
-            result = post_json(ENDPOINT, payload, bearer=token,
-                               limit=MAX_RESPONSE, timeout=240)
-            break
-        except GoogleHTTPError as exc:
-            if exc.status == 429 and attempt < 5:
-                delay = retry_delay(exc, attempt)
-                if delay is None:
-                    worker.scene_update(job_id, scene_id, "GENERATING",
-                                        {"errorCode": "GOOGLE_RETRY_AFTER_TOO_LONG"}, expected="GENERATING")
-                    raise
-                time.sleep(delay)
-                continue
-            error = ("GOOGLE_RATE_LIMIT" if exc.status == 429 else
-                     "GOOGLE_AUTH_ERROR" if exc.status in (401, 403) else
-                     "GOOGLE_INPUT_OR_SAFETY" if exc.status in (400, 422) else
-                     f"GOOGLE_HTTP_{exc.status}")
-            worker.scene_update(job_id, scene_id, "GENERATING",
-                                {"errorCode": error}, expected="GENERATING")
-            raise
-        except Exception:
-            # Timeout, broken connection or unreadable response: may have incurred cost.
-            worker.scene_update(job_id, scene_id, "GENERATING",
-                                {"errorCode": "GOOGLE_SUBMISSION_UNKNOWN"}, expected="GENERATING")
-            raise
+    try:
+        # Exactly one Google submission per invocation. 429s are explicitly
+        # rejected, so Step Functions can resubmit after a durable Wait state.
+        result = post_json(ENDPOINT, payload, bearer=token,
+                           limit=MAX_RESPONSE, timeout=240)
+    except GoogleHTTPError as exc:
+        if exc.status == 429:
+            delay = retry_delay(exc, attempt)
+            remaining = MAX_RETRY_WINDOW_SECONDS - (int(time.time()) - first_attempt_at)
+            if attempt < MAX_ATTEMPTS and delay <= remaining:
+                worker.scene_update(job_id, scene_id, "RETRY_WAIT",
+                                    {"errorCode": "GOOGLE_RATE_LIMIT",
+                                     "retryCount": attempt,
+                                     "maxRetries": MAX_ATTEMPTS - 1,
+                                     "retryAfterSeconds": delay,
+                                     "nextRetryAt": int(time.time()) + delay},
+                                    expected="GENERATING")
+                return {"sceneId": scene_id, "status": "RETRY_WAIT",
+                        "retryAfterSeconds": delay}
+        error = ("GOOGLE_RATE_LIMIT" if exc.status == 429 else
+                 "GOOGLE_AUTH_ERROR" if exc.status in (401, 403) else
+                 "GOOGLE_INPUT_OR_SAFETY" if exc.status in (400, 422) else
+                 f"GOOGLE_HTTP_{exc.status}")
+        worker.scene_update(job_id, scene_id, "GENERATING",
+                            {"errorCode": error}, expected="GENERATING")
+        raise
+    except Exception:
+        # A timeout or unreadable response is ambiguous: Google might have
+        # accepted and charged for it. Never automatically resubmit it.
+        worker.scene_update(job_id, scene_id, "GENERATING",
+                            {"errorCode": "GOOGLE_SUBMISSION_UNKNOWN"}, expected="GENERATING")
+        raise
     try:
         image = extract_png(result)
     except GoogleOutputError as exc:

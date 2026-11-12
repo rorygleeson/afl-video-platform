@@ -144,6 +144,13 @@ def public_job(item):
                    if item.get("scenes", {}).get(scene_id, {}).get("status") == "FAILED"
                    and item.get("scenes", {}).get(scene_id, {}).get("errorCode")
                    else {}),
+                **({"retryCount": int(item["scenes"][scene_id].get("retryCount", 0)),
+                    "maxRetries": int(item["scenes"][scene_id].get("maxRetries", 7)),
+                    "nextRetryAt": int(item["scenes"][scene_id].get("nextRetryAt", 0))}
+                   if item.get("scenes", {}).get(scene_id, {}).get("status")
+                   in ("RETRY_WAIT", "SUBMITTING", "GENERATING")
+                   and item.get("scenes", {}).get(scene_id, {}).get("retryCount")
+                   else {}),
             }
             for scene_id in ("scene1", "scene2", "scene3")
         },

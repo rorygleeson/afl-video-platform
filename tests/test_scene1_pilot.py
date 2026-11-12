@@ -70,6 +70,9 @@ class ImageContractTests(unittest.TestCase):
         template = (ROOT / "infrastructure/app/backend.yaml").read_text()
         self.assertIn("MaxConcurrency: 3", template)
         self.assertIn("StartAt: Generate", template)
+        self.assertIn("Next: AssessImageResult", template)
+        self.assertIn("Next: WaitForGoogleCapacity", template)
+        self.assertIn("SecondsPath: $.attemptResult.Payload.retryAfterSeconds", template)
         self.assertIn("op: generate", template)
         self.assertIn("Next: MarkSceneFailed", template)
         self.assertIn("Next: RecoverJob", template)
@@ -174,17 +177,42 @@ class ImageContractTests(unittest.TestCase):
                 google.generate(m, "a" * 32, "scene1")
             paid.assert_not_called()
 
-    def test_429_retries_only_after_explicit_rejection(self):
+    def test_429_hands_wait_to_stepfunctions_without_resubmitting(self):
         m = setup_scene()
         with patch.object(google, "s3_image", return_value={"inlineData": {"mimeType": "image/png", "data": "x"}}), \
              patch.object(google, "access_token", return_value="test-token"), \
-             patch.object(google, "post_json", side_effect=[
-                 google.GoogleHTTPError(429, 15), result_image()]) as paid, \
-             patch.object(google.time, "sleep") as sleep, \
+             patch.object(google, "post_json", side_effect=google.GoogleHTTPError(429, 15)) as paid, \
              patch.object(google.random, "uniform", return_value=0):
-            google.generate(m, "a" * 32, "scene1")
-        self.assertEqual(paid.call_count, 2)
-        sleep.assert_called_once_with(15)
+            result = google.generate(m, "a" * 32, "scene1")
+        self.assertEqual(paid.call_count, 1)
+        self.assertEqual(result["status"], "RETRY_WAIT")
+        self.assertEqual(result["retryAfterSeconds"], 15)
+        self.assertEqual(m.scene_update.call_args.args[2], "RETRY_WAIT")
+        self.assertEqual(m.scene_update.call_args.args[3]["retryCount"], 1)
+        m.S3.put_object.assert_not_called()
+
+    def test_only_rejected_scene_reenters_after_wait(self):
+        m = setup_scene("scene3")
+        m.job_by_id.return_value["scenes"] = {
+            "scene1": {"status": "COMPLETED", "resultKey": "results/job/scene1.png"},
+            "scene2": {"status": "COMPLETED", "resultKey": "results/job/scene2.png"},
+            "scene3": {"status": "RETRY_WAIT", "attemptCount": 1,
+                       "firstAttemptAt": int(google.time.time()),
+                       "retryCount": 1},
+        }
+        with patch.object(google, "s3_image", return_value={"inlineData": {"mimeType": "image/png", "data": "x"}}), \
+             patch.object(google, "access_token", return_value="test-token"), \
+             patch.object(google, "post_json", return_value=result_image()) as paid:
+            result = google.generate(m, "a" * 32, "scene3")
+        self.assertEqual(result["status"], "COMPLETED")
+        self.assertEqual(paid.call_count, 1)
+        claim = m.scene_update.call_args_list[0]
+        self.assertEqual(claim.kwargs["expected"], "RETRY_WAIT")
+        self.assertEqual(claim.args[3]["attemptCount"], 2)
+        self.assertEqual(m.S3.put_object.call_args.kwargs["Key"],
+                         "results/" + "a" * 32 + "/scene3.png")
+        self.assertEqual(m.job_by_id.return_value["scenes"]["scene1"]["status"], "COMPLETED")
+        self.assertEqual(m.job_by_id.return_value["scenes"]["scene2"]["status"], "COMPLETED")
 
     def test_5xx_and_timeout_do_not_resubmit(self):
         for problem, code in [(google.GoogleHTTPError(503), "GOOGLE_HTTP_503"),
@@ -199,15 +227,28 @@ class ImageContractTests(unittest.TestCase):
                 self.assertEqual(paid.call_count, 1)
                 self.assertEqual(m.scene_update.call_args.args[3]["errorCode"], code)
 
-    def test_retry_after_beyond_limit_fails_without_resend(self):
+    def test_retry_after_outside_window_fails_without_resend(self):
         m = setup_scene()
         with patch.object(google, "s3_image", return_value={"inlineData": {"mimeType": "image/png", "data": "x"}}), \
              patch.object(google, "access_token", return_value="test-token"), \
-             patch.object(google, "post_json", side_effect=google.GoogleHTTPError(429, 180)) as paid:
+             patch.object(google, "post_json", side_effect=google.GoogleHTTPError(429, 900)) as paid:
             with self.assertRaises(google.GoogleHTTPError):
                 google.generate(m, "a" * 32, "scene1")
         self.assertEqual(paid.call_count, 1)
-        self.assertEqual(m.scene_update.call_args.args[3]["errorCode"], "GOOGLE_RETRY_AFTER_TOO_LONG")
+        self.assertEqual(m.scene_update.call_args.args[3]["errorCode"], "GOOGLE_RATE_LIMIT")
+
+    def test_exhausted_attempt_budget_never_resubmits(self):
+        m = setup_scene()
+        m.job_by_id.return_value["scenes"]["scene1"] = {
+            "status": "RETRY_WAIT", "attemptCount": 7,
+            "firstAttemptAt": int(google.time.time())}
+        with patch.object(google, "s3_image", return_value={"inlineData": {"mimeType": "image/png", "data": "x"}}), \
+             patch.object(google, "access_token", return_value="test-token"), \
+             patch.object(google, "post_json", side_effect=google.GoogleHTTPError(429)) as paid:
+            with self.assertRaises(google.GoogleHTTPError):
+                google.generate(m, "a" * 32, "scene1")
+        self.assertEqual(paid.call_count, 1)
+        self.assertEqual(m.scene_update.call_args.args[3]["errorCode"], "GOOGLE_RATE_LIMIT")
 
     def test_invalid_or_absent_image_is_never_saved(self):
         for bad in [{}, {"candidates": [{"content": {"parts": [{"text": "no image"}]}}]},

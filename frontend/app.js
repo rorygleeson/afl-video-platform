@@ -495,13 +495,17 @@ const input = document.getElementById('selfie');
         }
         const progress = card.querySelector('p');
         const imageStatus = scenes[id]?.status;
+        const retrying = imageStatus === 'RETRY_WAIT' ||
+          (['SUBMITTING', 'GENERATING'].includes(imageStatus) && Number(scenes[id]?.retryCount) > 0);
         progress.className = 'reference-progress' +
           (imageStatus === 'COMPLETED' ? ' completed' :
-           imageStatus === 'GENERATING' ? ' generating' : '');
+           (imageStatus === 'GENERATING' || retrying) ? ' generating' : '');
         progress.textContent =
           imageStatus === 'COMPLETED' ? 'Completed' :
           imageStatus === 'FAILED' ? 'Failed — ' + (scenes[id].errorCode || 'retry required') :
-          imageStatus === 'GENERATING' ? 'Generating…' : 'Waiting';
+          retrying ? 'Google busy — retrying automatically (' +
+            Number(scenes[id]?.retryCount || 1) + '/' + Number(scenes[id]?.maxRetries || 7) + ')' :
+          imageStatus === 'GENERATING' || imageStatus === 'SUBMITTING' ? 'Generating…' : 'Waiting';
         const image = (sceneResults.images || []).find(item => item.sceneId === id && item.url);
         if (image && !card.querySelector('img')) {
           const img = document.createElement('img');

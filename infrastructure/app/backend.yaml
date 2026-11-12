@@ -501,7 +501,24 @@ Resources:
                     - ErrorEquals: [States.ALL]
                       ResultPath: $.error
                       Next: MarkSceneFailed
-                  End: true
+                  ResultPath: $.attemptResult
+                  Next: AssessImageResult
+                AssessImageResult:
+                  Type: Choice
+                  Choices:
+                    - Variable: $.attemptResult.Payload.status
+                      StringEquals: RETRY_WAIT
+                      Next: WaitForGoogleCapacity
+                    - Variable: $.attemptResult.Payload.status
+                      StringEquals: COMPLETED
+                      Next: SceneCompleted
+                  Default: MarkSceneFailed
+                WaitForGoogleCapacity:
+                  Type: Wait
+                  SecondsPath: $.attemptResult.Payload.retryAfterSeconds
+                  Next: Generate
+                SceneCompleted:
+                  Type: Succeed
                 MarkSceneFailed:
                   Type: Task
                   Resource: arn:aws:states:::lambda:invoke
