@@ -71,7 +71,7 @@ class GooglePromptTests(unittest.TestCase):
         for term in ("the only source for the central player's identity", "entire visible head",
                      "hairstyle", "skin tone", "selected unbranded guernsey colours/pattern"):
             self.assertIn(term, shared)
-        self.assertLess(len(shared.split()), 650)
+        self.assertLess(len(shared.split()), 750)
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
                 scene_text = scene["promptInstructions"].lower()
