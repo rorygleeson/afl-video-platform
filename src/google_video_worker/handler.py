@@ -168,11 +168,36 @@ def google_json(method, url, payload=None, max_bytes=MAX_RESPONSE_BYTES):
 
 
 
+def safe_provider_message(message):
+    """Keep a short troubleshooting hint, not a provider response or user prompt.
+
+    Provider messages are untrusted and can echo image data, prompts or tokens.
+    Only persist conservative diagnostic text that does not resemble payload data.
+    """
+    if not isinstance(message, str):
+        return None
+    text = message.strip()
+    # Never retain a long provider response that may include customer prompt/media.
+    if not text or len(text) > 512:
+        return None
+    # Reject messages with likely personally identifiable or encoded payloads.
+    if re.search(r"(?i)(?:https?://|data:|base64|bearer |api[_ -]?key|token|@|\\\\|[A-Za-z0-9+/]{80,})", text):
+        return None
+    # Restrict to one-line, bounded ordinary explanatory text; discard quoted content
+    # which providers could use to reproduce a customer prompt.
+    if any(ord(char) < 32 or ord(char) > 126 for char in text):
+        return None
+    if any(char in text for char in ('"', "'", "`", "{", "}", "<", ">")):
+        return None
+    return text[:320]
+
+
 def extract_provider_failure(reply):
     """Allowlisted, bounded failure metadata: never copy provider message or media."""
     category = "UNSPECIFIED"
     code = None
     message_present = False
+    safe_messages = []
     candidates = [reply.get("error")]
     errors = reply.get("errors")
     if isinstance(errors, list):
@@ -187,6 +212,9 @@ def extract_provider_failure(reply):
                 code = candidate
         msg = entry.get("message")
         message_present |= isinstance(msg, str) and bool(msg.strip())
+        safe_message = safe_provider_message(msg)
+        if safe_message and safe_message not in safe_messages:
+            safe_messages.append(safe_message)
         searchable = (str(raw_code or "") + " " + (msg if isinstance(msg, str) else "")[:2000]).lower()
         for pattern, label in (
             (r"safe|policy|blocked|prohibit|moderation", "SAFETY_OR_POLICY"),
@@ -203,7 +231,8 @@ def extract_provider_failure(reply):
         if code or category != "UNSPECIFIED":
             break
     return {"providerErrorCategory": category, "providerMessagePresent": message_present,
-            **({"providerErrorCode": code} if code else {})}
+            **({"providerErrorCode": code} if code else {}),
+            **({"providerSafeMessages": safe_messages[:3]} if safe_messages else {})}
 
 
 def read_stored_failure(record):
@@ -214,6 +243,10 @@ def read_stored_failure(record):
               "providerMessagePresent": record.get("providerMessagePresent", False)}
     if record.get("providerErrorCode"):
         result["errorCode"] = record["providerErrorCode"]
+    safe_messages = record.get("providerSafeMessages")
+    if isinstance(safe_messages, list):
+        result["providerSafeMessages"] = [s for s in safe_messages[:3]
+                                          if isinstance(s, str) and len(s) <= 320]
     # Only allowlisted, bounded fields: no model messages, prompts or video bytes.
     for key in ("interactionId", "requestId", "submissionStartedAt", "submittedAt",
                 "providerFailureObservedAt", "providerFinalStatus", "completedAt"):
@@ -438,6 +471,10 @@ def get_video_content(response):
 def poll(job, scene, request):
     require_paid_unlock(job, scene)
     record = owner_record(job, scene, request)
+    # A read-only poll may be retried after DynamoDB was already updated but
+    # the Lambda acknowledgement was lost. Never re-download or resubmit then.
+    if record.get("status") in ("FAILED", "COMPLETED"):
+        return {"status": record["status"]}
     if record.get("status") != "PROCESSING":
         raise ContractError("Video not in processing state")
     interaction = record.get("interactionId")
