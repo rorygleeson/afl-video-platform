@@ -1,5 +1,6 @@
 """Offline paid video retry contract: no Google API requests in these tests."""
 import json
+from decimal import Decimal
 import unittest
 from unittest.mock import patch
 
@@ -162,6 +163,30 @@ class SceneRetryTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 w.require_paid_unlock(self.jobid, "scene1",
                                       f"real-{self.jobid}-scene2-r2")
+
+    def test_dynamodb_decimal_attempt_approved_at_paid_gate(self):
+        # Real boto3 Table.get_item returns Decimal('2') rather than int(2).
+        w = load_worker()
+        w.PAID_ENABLED = "true"
+        w.MODEL = "gemini-omni-1.2-flash"
+        scene = "scene3"
+        name = f"real-{self.jobid}-{scene}-r2"
+        approval = {"status": "REQUESTED", "attemptNumber": Decimal("2"),
+                    "executionName": name}
+        with patch.object(w, "get_job", return_value={
+                "paidVideoApprovals": {scene: approval}}):
+            w.require_paid_unlock(self.jobid, scene)
+            w.require_paid_unlock(self.jobid, scene, name)
+            with self.assertRaises(PermissionError):
+                w.require_paid_unlock(self.jobid, scene, name + "-wrong")
+            with self.assertRaises(PermissionError):
+                w.require_paid_unlock(self.jobid, "scene1")
+        for invalid in (Decimal("1.5"), Decimal("11"), Decimal("NaN"), True, "2"):
+            approval["attemptNumber"] = invalid
+            with patch.object(w, "get_job", return_value={
+                    "paidVideoApprovals": {scene: approval}}):
+                with self.assertRaises(PermissionError):
+                    w.require_paid_unlock(self.jobid, scene)
 
     def test_ui_has_all_three_retry_controls_and_no_reference_regeneration(self):
         from pathlib import Path
