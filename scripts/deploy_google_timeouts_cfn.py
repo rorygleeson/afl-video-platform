@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-time constrained CloudFormation deployment: Google video Lambda 300s, HTTP 150s.
+"""One-time split CloudFormation timeout + verified Lambda code deployment: 300s/150s.
 
 Do not modify paid generation submission, Lambda dependencies, other resources or
 Step Functions definitions. Preflight and inspect actual change set before execute.
@@ -72,9 +72,6 @@ def main():
 
     params = {p["ParameterKey"]: p["ParameterValue"] for p in stack["Parameters"]}
     assert params["ArtifactBucketName"] == BUCKET
-    previous_key = params["GoogleWorkerArtifactKey"]
-    new_key = f"google-timeouts/{hashlib.sha256(newzip).hexdigest()}/google-worker.zip"
-    assert new_key != previous_key
     template = cf.get_template(StackName=STACK, TemplateStage="Original")["TemplateBody"]
     assert isinstance(template, str), "Unexpected deployed template representation"
     # Change the *deployed* template, not the potentially drifted repository copy.
@@ -89,26 +86,18 @@ def main():
     assert updated_template.replace("Timeout: 300", "Timeout: 180", 1) == template
     print("PRECHECK_OK: exact working ZIP, live SHA, single template timeout alteration")
 
-    # Upload one immutable code ZIP. This does not invoke Google or deploy anything.
-    try:
-        existing = s3.get_object(Bucket=BUCKET, Key=new_key)["Body"].read()
-        assert digest(existing) == new_sha
-    except ClientError as exc:
-        if exc.response["Error"]["Code"] not in ("NoSuchKey", "404", "NotFound"):
-            raise
-        s3.put_object(Bucket=BUCKET, Key=new_key, Body=newzip)
-        assert digest(s3.get_object(Bucket=BUCKET, Key=new_key)["Body"].read()) == new_sha
-
+    # Update ONLY the existing Lambda Timeout through CloudFormation.
+    # Keep the existing artifact parameter, avoiding transitive IAM/SFN changes.
     cfn_params = [
-        {"ParameterKey": key, "ParameterValue": new_key if key == "GoogleWorkerArtifactKey" else value}
+        {"ParameterKey": key, "ParameterValue": value}
         for key, value in params.items()
     ]
-    cs_name = "afl-google-timeouts-" + hashlib.sha256(newzip).hexdigest()[:12]
+    cs_name = "afl-google-limit-only-" + hashlib.sha256(newzip).hexdigest()[:12]
     try:
         cf.create_change_set(
             StackName=STACK, ChangeSetName=cs_name, ChangeSetType="UPDATE",
             TemplateBody=updated_template, Parameters=cfn_params, RoleARN=CFN_ROLE,
-            Capabilities=["CAPABILITY_NAMED_IAM"], Description="Only Google worker HTTP and Lambda timeout settings"
+            Capabilities=["CAPABILITY_NAMED_IAM"], Description="Only Google worker Lambda Timeout 180 to 300"
         )
         cf.get_waiter("change_set_create_complete").wait(
             StackName=STACK, ChangeSetName=cs_name, WaiterConfig={"Delay":5,"MaxAttempts":36}
@@ -129,7 +118,7 @@ def main():
         assert c.get("Replacement") in ("False", False)
         targets = {(x.get("Target",{}).get("Attribute"), x.get("Target",{}).get("Name"))
                    for x in c.get("Details",[])}
-        assert targets <= {("Properties","Code"),("Properties","Timeout")}, (
+        assert targets <= {("Properties","Timeout")}, (
             "Unexpected Lambda property changes"
         )
         cf.execute_change_set(StackName=STACK, ChangeSetName=cs_name)
@@ -139,13 +128,25 @@ def main():
         )
         after = lam.get_function_configuration(FunctionName=FUNCTION)
         assert after["Timeout"] == 300
-        assert after["CodeSha256"] == new_sha
+        assert after["CodeSha256"] == OLD_SHA, "CFN unexpectedly changed Lambda code"
+        # GitHub deploy role is authorized for CODE only. The verified ZIP
+        # patches precisely the HTTP timeout and retains all dependencies.
+        resp = lam.update_function_code(
+            FunctionName=FUNCTION, ZipFile=newzip, RevisionId=after["RevisionId"]
+        )
+        lam.get_waiter("function_updated").wait(
+            FunctionName=FUNCTION, WaiterConfig={"Delay":5,"MaxAttempts":36}
+        )
+        deployed=lam.get_function_configuration(FunctionName=FUNCTION)
+        assert deployed["Timeout"] == 300 and deployed["CodeSha256"] == new_sha
+        assert deployed["State"] == "Active" and deployed["LastUpdateStatus"] == "Successful"
         assert after["State"] == "Active" and after["LastUpdateStatus"] == "Successful"
         actual = cf.describe_stacks(StackName=STACK)["Stacks"][0]
         assert actual["StackStatus"] == "UPDATE_COMPLETE"
         final_params = {p["ParameterKey"]: p["ParameterValue"] for p in actual["Parameters"]}
-        assert final_params["GoogleWorkerArtifactKey"] == new_key
+        assert final_params["GoogleWorkerArtifactKey"] == params["GoogleWorkerArtifactKey"]
         print("DEPLOYED_AND_VERIFIED: Google Lambda 300s, Google HTTP 150s, zero paid requests.")
+        print("NOTE: Lambda code drift remains after code-only update; later CloudFormation changes must reconcile artifact safely.")
     except Exception:
         try:
             cs = cf.describe_change_set(StackName=STACK, ChangeSetName=cs_name)
