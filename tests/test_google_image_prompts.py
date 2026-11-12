@@ -71,7 +71,7 @@ class GooglePromptTests(unittest.TestCase):
         for term in ("the only source for the central player's identity", "entire visible head",
                      "hairstyle", "skin tone", "selected unbranded guernsey colours/pattern"):
             self.assertIn(term, shared)
-        self.assertLess(len(shared.split()), 750)
+        self.assertLess(len(shared.split()), 850)
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
                 scene_text = scene["promptInstructions"].lower()
@@ -129,6 +129,22 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("no afl or club crests", video)
         self.assertIn("5 seconds", video)
         self.assertIn("selfie", scene)
+
+    def test_authorised_fictional_context_is_in_all_image_and_video_prompts(self):
+        shared = self.config["sharedPrompt"]
+        self.assertIn("CONSENT AND FICTIONAL CONTEXT", shared)
+        self.assertIn("provided with their permission", shared)
+        self.assertIn("not footage of a real match", shared)
+        self.assertIn("does not override content safety requirements", shared)
+        folder = ROOT / "scenarios/afl-grand-final-winning-kick/v1/video"
+        for scene in self.config["scenes"]:
+            with self.subTest(scene=scene["id"]):
+                image_prompt = build_image_prompt(self.config, scene, "collingwood")
+                self.assertEqual(image_prompt.count("CONSENT AND FICTIONAL CONTEXT"), 1)
+                video_text = (folder / f"{scene['id']}-video.txt").read_text()
+                self.assertEqual(video_text.count("CONSENT AND FICTIONAL CONTEXT"), 1)
+                self.assertIn("has authorised use of their likeness", video_text)
+                self.assertIn("not actual match footage", video_text)
 
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):

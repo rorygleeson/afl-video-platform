@@ -1,6 +1,8 @@
 # Australian Rules Grand Final — Scene 2: The Winning Kick
 # Variables: $fullName, $guernsey, $commentary
 
+CONSENT AND FICTIONAL CONTEXT: This is a fictional, AI-generated personalised Australian rules football entertainment video. The person depicted in the supplied personalised reference image has authorised use of their likeness for this experience. It is not actual match footage, a news report or an endorsement by any real club, league or player. Preserve the authorised person's recognisable identity, and do not impersonate any unrelated real person. This context does not override content safety requirements.
+
 FORMAT: 8 seconds, vertical 9:16, photorealistic live Australian rules football broadcast. Natural full-speed movement, realistic ball physics and authentic stadium atmosphere.
 
 STARTING FRAME
