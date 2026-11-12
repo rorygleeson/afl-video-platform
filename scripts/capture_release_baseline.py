@@ -22,7 +22,6 @@ FUNCTIONS = [
     "afl-app-dev-video-worker", "afl-app-dev-google-omni-worker",
     "afl-app-dev-assembly",
 ]
-GOOGLE_KNOWN_SHA = "RKx1wcvmxcE3Sx7kzlxbTI3NhBlNlt/Ydpy6J4ZOpmI="
 def main():
     cf = boto3.client("cloudformation", region_name=REGION)
     lam = boto3.client("lambda", region_name=REGION)
@@ -85,12 +84,14 @@ def main():
                                   "definition_sha256": hashlib.sha256(detail["definition"].encode()).hexdigest(),
                                   "role_arn": detail["roleArn"]})
                 manifest["state_machines"].append(entry)
+    # Derive the trusted Google artifact from the CURRENT CloudFormation
+    # parameter, never from an obsolete release's hard-coded hash/key.
     google = manifest["lambdas"]["afl-app-dev-google-omni-worker"]
-    if google["sha256"] != GOOGLE_KNOWN_SHA:
-        raise RuntimeError("Google live SHA changed; baseline invalid. STOP.")
     google_params = manifest["stacks"]["google"]["parameters"]
     bucket = google_params["ArtifactBucketName"]
-    key = "google-diagnostics/956c2a9faa7efb1f39ed1a8ecc376510ffb1ec34.zip"
+    key = google_params["GoogleWorkerArtifactKey"]
+    if not bucket or not key:
+        raise RuntimeError("Google CloudFormation artifact location missing. STOP.")
     body = s3.get_object(Bucket=bucket, Key=key)["Body"]
     h = hashlib.sha256()
     try:
@@ -98,10 +99,21 @@ def main():
             h.update(chunk)
     finally:
         body.close()
-    if base64.b64encode(h.digest()).decode() != GOOGLE_KNOWN_SHA:
-        raise RuntimeError("Known Google ZIP digest mismatch. STOP.")
-    manifest["google_known_live_artifact"] = {"bucket": bucket, "key": key, "sha256": GOOGLE_KNOWN_SHA}
-    manifest["known_drift"] = {"google_worker": google_params.get("GoogleWorkerArtifactKey") != key}
+    recorded_sha = base64.b64encode(h.digest()).decode("ascii")
+    if google["sha256"] != recorded_sha:
+        raise RuntimeError(
+            "Google Lambda code differs from CloudFormation-managed artifact. STOP."
+        )
+    # Verify expected *deployed* timeout, not merely the source template.
+    configuration = lam.get_function_configuration(
+        FunctionName="afl-app-dev-google-omni-worker"
+    )
+    if configuration["Timeout"] != 300:
+        raise RuntimeError("Google worker Lambda timeout is not 300 seconds. STOP.")
+    manifest["google_known_live_artifact"] = {
+        "bucket": bucket, "key": key, "sha256": recorded_sha
+    }
+    manifest["known_drift"] = {"google_worker": False}
     path = Path(os.environ.get("BASELINE_OUTPUT", "release-baseline.json"))
     path.write_text(json.dumps(manifest, indent=2, default=str) + "\n")
     if manifest.get("verification_gaps"):
