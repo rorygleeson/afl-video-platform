@@ -1,4 +1,5 @@
 name: One-time deploy image retry with strict resource guards
+# Rerun to diagnose unexpected frontend deployment drift; fail closed.
 on:
   push:
     branches: [main]
