@@ -32,6 +32,7 @@ VIDEO_ADMISSION_TABLE = os.environ.get("VIDEO_ADMISSION_TABLE")
 ADMISSION = (boto3.resource("dynamodb").Table(VIDEO_ADMISSION_TABLE)
              if VIDEO_ADMISSION_TABLE else None)
 VIDEO_SCENES = ("scene1", "scene2", "scene3")
+MAX_VIDEO_ATTEMPTS = 10
 
 # Presigned browser POSTs must target the bucket's regional endpoint and use
 # Signature Version 4. The default client can generate a global endpoint with
@@ -391,10 +392,11 @@ def video_scene_public(job, scene_id):
     # attempt. Never offer retry for uncertain, processing or completed videos.
     attempt_number = int(approval.get("attemptNumber", 1))
     result["attemptNumber"] = attempt_number
+    result["maxAttempts"] = MAX_VIDEO_ATTEMPTS
     result["retryAvailable"] = bool(
         REAL_VIDEO_MODE == "ENABLED" and status == "FAILED"
         and real.get("providerFinalStatus") == "failed"
-        and attempt_number < 3 and not job.get("assembly")
+        and attempt_number < MAX_VIDEO_ATTEMPTS and not job.get("assembly")
     )
     if status in ("MOCK_CLAIMED", "MOCK_GENERATING", "MOCK_COMPLETED", "MOCK_FAILED"):
         result["mock"] = True
@@ -679,11 +681,11 @@ def retry_failed_real_scene(job_id, scene_id, event):
     attempt = int(approval.get("attemptNumber", 1))
     if (current.get("status") != "FAILED"
             or current.get("providerFinalStatus") != "failed"
-            or attempt >= 3 or job.get("assembly")):
-        return response(409, {"error": "Only confirmed failed scenes may be retried (maximum 3 paid attempts)"})
+            or attempt >= MAX_VIDEO_ATTEMPTS or job.get("assembly")):
+        return response(409, {"error": "Only confirmed failed scenes may be retried (maximum 10 paid attempts)"})
     old_name = approval.get("executionName")
     if not isinstance(old_name, str) or not re.fullmatch(
-            r"real-" + re.escape(job_id) + "-" + scene_id + r"(?:-r[23])?", old_name):
+            r"real-" + re.escape(job_id) + "-" + scene_id + r"(?:-r(?:[2-9]|10))?", old_name):
         return response(409, {"error": "Original video workflow ownership invalid"})
     old_request = current.get("requestId")
     if old_request != old_name:
@@ -710,7 +712,7 @@ def retry_failed_real_scene(job_id, scene_id, event):
     new_attempt = attempt + 1
     name = f"real-{job_id}-{scene_id}-r{new_attempt}"
     previous = list(approval.get("history", []))
-    if len(previous) >= 2:
+    if len(previous) >= MAX_VIDEO_ATTEMPTS - 1:
         return response(409, {"error": "Video retry history limit reached"})
     # Keep the previous provider interaction ID, failure reason and timestamps
     # for operator audit; never erase successful videos in other scene keys.
