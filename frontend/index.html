@@ -53,9 +53,6 @@
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite" hidden></p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
       <button id="retryVideoScene1" type="button" class="quiet-button" hidden>Retry Scene 1 Video (paid)</button>
-      <p id="retryVideoResult1" class="video-state" role="status" aria-live="polite"></p>
-      <button id="diagnoseScene1" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
-      <p id="diagnoseResult1" class="video-state" role="status" aria-live="polite"></p>
       <p id="videoStatus1" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer1"></div>
 
@@ -64,9 +61,6 @@
       <strong>Scene 2 — Winning kick · 8 seconds</strong>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <button id="retryVideoScene2" type="button" class="quiet-button" hidden>Retry Scene 2 Video (paid)</button>
-      <p id="retryVideoResult2" class="video-state" role="status" aria-live="polite"></p>
-      <button id="diagnoseScene2" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
-      <p id="diagnoseResult2" class="video-state" role="status" aria-live="polite"></p>
       <p id="videoStatus2" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer2"></div>
 
@@ -75,9 +69,6 @@
       <strong>Scene 3 — Celebration · 5 seconds</strong>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <button id="retryVideoScene3" type="button" class="quiet-button" hidden>Retry Scene 3 Video (paid)</button>
-      <p id="retryVideoResult3" class="video-state" role="status" aria-live="polite"></p>
-      <button id="diagnoseScene3" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
-      <p id="diagnoseResult3" class="video-state" role="status" aria-live="polite"></p>
       <p id="videoStatus3" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer3"></div>
 
@@ -105,14 +96,23 @@
       <details id="videoDebugDetails1" class="video-debug">
         <summary>Scene 1 status &amp; debug information</summary>
         <pre id="videoDebugText1" class="debug-text">Not started</pre>
+        <p id="retryVideoResult1" class="video-state" role="status" aria-live="polite"></p>
+        <button id="diagnoseScene1" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
+        <p id="diagnoseResult1" class="video-state" role="status" aria-live="polite"></p>
       </details>
       <details id="videoDebugDetails2" class="video-debug">
         <summary>Scene 2 status &amp; debug information</summary>
         <pre id="videoDebugText2" class="debug-text">Not started</pre>
+        <p id="retryVideoResult2" class="video-state" role="status" aria-live="polite"></p>
+        <button id="diagnoseScene2" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
+        <p id="diagnoseResult2" class="video-state" role="status" aria-live="polite"></p>
       </details>
       <details id="videoDebugDetails3" class="video-debug">
         <summary>Scene 3 status &amp; debug information</summary>
         <pre id="videoDebugText3" class="debug-text">Not started</pre>
+        <p id="retryVideoResult3" class="video-state" role="status" aria-live="polite"></p>
+        <button id="diagnoseScene3" type="button" class="quiet-button" hidden>Check Google failure reason (free)</button>
+        <p id="diagnoseResult3" class="video-state" role="status" aria-live="polite"></p>
       </details>
     </details>
   </section>
