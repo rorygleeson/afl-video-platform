@@ -16,6 +16,8 @@ import json
 import logging
 import os
 import re
+import tempfile
+import urllib.parse
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -258,7 +260,19 @@ def read_stored_failure(record):
     return result
 
 
-def image_payload(blob, content_type, prompt, duration):
+def checked_gcs_prefix(job, scene):
+    """Opt-in only: no GCS output is requested unless a fixed private prefix is set."""
+    prefix = os.environ.get("GOOGLE_VIDEO_OUTPUT_GCS_PREFIX", "").strip()
+    if not prefix:
+        return None
+    if not re.fullmatch(r"gs://[a-z0-9][a-z0-9._-]{2,61}[a-z0-9]/(?:[A-Za-z0-9_-]+/)*", prefix):
+        raise ContractError("Invalid configured Google video output bucket/prefix")
+    if not JOB_RE.fullmatch(job) or scene not in SCENES:
+        raise ContractError("Invalid output destination")
+    return prefix + job + "/" + scene + "/"
+
+
+def image_payload(blob, content_type, prompt, duration, gcs_prefix=None):
     if content_type not in {"image/png", "image/jpeg", "image/webp"}:
         raise ContractError("Unsupported reference image MIME type")
     if not 0 < len(blob) <= MAX_IMAGE_BYTES:
@@ -276,7 +290,9 @@ def image_payload(blob, content_type, prompt, duration):
              "mime_type": content_type},
         ],
         "response_format": [{
-            "type": "video", "delivery": "inline", "aspect_ratio": "9:16",
+            "type": "video", "delivery": "uri" if gcs_prefix else "inline",
+            **({"gcs_uri": gcs_prefix} if gcs_prefix else {}),
+            "aspect_ratio": "9:16",
             "resolution": "720p", "duration": str(duration) + "s",
         }],
         "generation_config": {"video_config": {"task": "image_to_video"}},
@@ -403,7 +419,8 @@ def submit(job, scene, request):
         image = S3.get_object(Bucket=BUCKET, Key=key)
         content_type = image.get("ContentType", "")
         blob = image["Body"].read(MAX_IMAGE_BYTES + 1)
-        body = image_payload(blob, content_type, rendered["prompt"], rendered["durationSeconds"])
+        destination = checked_gcs_prefix(job, scene)
+        body = image_payload(blob, content_type, rendered["prompt"], rendered["durationSeconds"], destination)
     except Exception:
         try:
             transition(job, scene, request, "PREPARED", "FAILED",
@@ -414,7 +431,9 @@ def submit(job, scene, request):
     # Set ambiguous state BEFORE issuing the billable POST. A Lambda timeout
     # must NEVER cause Step Functions to resubmit this operation.
     transition(job, scene, request, "PREPARED", "SUBMISSION_UNKNOWN",
-               {"submissionStartedAt": datetime.now(timezone.utc).isoformat()})
+               {"submissionStartedAt": datetime.now(timezone.utc).isoformat(),
+                "outputDelivery": "uri" if destination else "inline",
+                **({"outputGcsPrefix": destination} if destination else {})})
     try:
         result = google_json("POST", BASE, body, max_bytes=1024 * 1024)
     except Exception as exc:
@@ -470,6 +489,70 @@ def get_video_content(response):
     raise ContractError("Completed response contains no inline MP4")
 
 
+def video_gcs_uri(response, expected_prefix):
+    """Accept only the provider's output object under the precise scene prefix."""
+    if not isinstance(expected_prefix, str) or not expected_prefix.startswith("gs://"):
+        raise ContractError("Missing approved GCS scene output prefix")
+    for step in response.get("steps", []):
+        if not isinstance(step, dict) or step.get("type") != "model_output":
+            continue
+        for item in step.get("content", []):
+            if not isinstance(item, dict) or item.get("type") != "video":
+                continue
+            if item.get("mime_type") != "video/mp4":
+                raise ContractError("Expected GCS video/mp4 output")
+            uri = item.get("uri")
+            if (isinstance(uri, str) and len(uri) <= 1024 and
+                    uri.startswith(expected_prefix) and len(uri) > len(expected_prefix) and
+                    re.fullmatch(r"gs://[A-Za-z0-9._/-]+", uri) and ".." not in uri):
+                return uri
+            raise ContractError("Google returned video URI outside approved output prefix")
+    raise ContractError("Completed response contains no GCS video URI")
+
+
+def copy_gcs_video_to_private_s3(gcs_uri, gcs_prefix, output_key):
+    """Bounded, authenticated GET of one known GCS object; stream to private S3.
+
+    Never follow URLs from provider responses, never log media or bearer tokens.
+    """
+    if not isinstance(gcs_uri, str) or not gcs_uri.startswith(gcs_prefix):
+        raise ContractError("Untrusted GCS video URI")
+    rest = gcs_uri[5:]
+    bucket, separator, object_key = rest.partition("/")
+    if not separator or not object_key or ".." in object_key:
+        raise ContractError("Invalid GCS object path")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{2,61}[a-z0-9]", bucket):
+        raise ContractError("Invalid GCS bucket name")
+    url = ("https://storage.googleapis.com/storage/v1/b/" + bucket + "/o/" +
+           urllib.parse.quote(object_key, safe="") + "?alt=media")
+    request = urllib.request.Request(url, method="GET",
+                                     headers={"Authorization": "Bearer " + credentials()})
+    size = 0
+    with urllib.request.urlopen(request, timeout=150) as response:
+        with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_MP4_BYTES:
+                    raise ContractError("GCS video exceeds bounded output size")
+                output.write(chunk)
+            if size < 128:
+                raise ContractError("GCS video is unexpectedly small")
+            output.seek(0)
+            if b"ftyp" not in output.read(64):
+                raise ContractError("GCS output is not a valid MP4")
+            output.seek(0)
+            S3.upload_fileobj(output, BUCKET, output_key,
+                              ExtraArgs={"ContentType": "video/mp4",
+                                         "ServerSideEncryption": "AES256"})
+    result = S3.head_object(Bucket=BUCKET, Key=output_key)
+    if result.get("ContentLength") != size:
+        raise ContractError("S3 video output size verification failed")
+    return size
+
+
 def poll(job, scene, request):
     require_paid_unlock(job, scene)
     record = owner_record(job, scene, request)
@@ -503,15 +586,25 @@ def poll(job, scene, request):
         return {"status": "FAILED"}
     if state != "completed":
         raise ContractError("Unknown provider status, manual review")
-    # Save output directly from Lambda to private S3, never via SFN result.
-    blob = get_video_content(reply)
+    # Save video privately to existing S3 output. The opt-in URI mode avoids
+    # returning a base64 MP4 in the Google interaction status response.
     key = f"videos/{job}/{scene}.mp4"
-    S3.put_object(
-        Bucket=BUCKET, Key=key, Body=blob,
-        ContentType="video/mp4", ServerSideEncryption="AES256")
-    S3.head_object(Bucket=BUCKET, Key=key)
+    if record.get("outputDelivery") == "uri":
+        prefix = record.get("outputGcsPrefix")
+        # Never trust a provider URI without matching the stored scene prefix.
+        expected = checked_gcs_prefix(job, scene)
+        if not expected or prefix != expected:
+            raise ContractError("Google GCS delivery configuration changed; manual review")
+        uri = video_gcs_uri(reply, expected)
+        size = copy_gcs_video_to_private_s3(uri, expected, key)
+    else:
+        blob = get_video_content(reply)
+        S3.put_object(Bucket=BUCKET, Key=key, Body=blob,
+                      ContentType="video/mp4", ServerSideEncryption="AES256")
+        S3.head_object(Bucket=BUCKET, Key=key)
+        size = len(blob)
     transition(job, scene, request, "PROCESSING", "COMPLETED",
-               {"resultKey": key, "sizeBytes": len(blob),
+               {"resultKey": key, "sizeBytes": size,
                 "completedAt": datetime.now(timezone.utc).isoformat()})
     return {"status": "COMPLETED", "resultKey": key}
 

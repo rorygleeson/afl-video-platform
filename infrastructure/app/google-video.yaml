@@ -19,6 +19,10 @@ Parameters:
   ScenarioAssetBucketName:
     Type: String
     Default: afl-video-bootstrap-artifactbucket-xiuriidgyft4
+  GoogleVideoGcsOutputPrefix:
+    Type: String
+    Default: ''
+    Description: Optional private GCS output prefix; empty preserves inline delivery.
   PaidVideoEnabled:
     Type: String
     Default: 'false'
@@ -86,6 +90,7 @@ Resources:
         Variables:
           PAID_GENERATION_ENABLED: !If [PaidVideoOn, 'true', 'false']
           GOOGLE_VIDEO_MODEL: !If [PaidVideoOn, gemini-omni-1.2-flash, UNCONFIGURED]
+          GOOGLE_VIDEO_OUTPUT_GCS_PREFIX: !Ref GoogleVideoGcsOutputPrefix
           GOOGLE_PROJECT_ID: afl-video-platform
           GOOGLE_PROJECT_NUMBER: '345956846110'
           GOOGLE_WIF_POOL_ID: afl-video-aws
