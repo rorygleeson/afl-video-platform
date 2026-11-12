@@ -450,3 +450,74 @@ jobs:
           role-session-name: afl-google-split-timeouts
       - name: Preview exact Lambda-only CFN config and deploy timeout-only code
         run: python3 scripts/deploy_google_timeouts_cfn.py
+
+
+  deploy_google_http_only:
+    name: Deploy Google HTTP 150-second limit (code-only)
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-google-http-150]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate no automatic paid retries
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          a=Path('src/google_video_worker/handler.py').read_text()
+          b=Path('infrastructure/app/google-video.yaml').read_text()
+          assert 'timeout=150' in a and '"Retry"' not in b
+          print('PASS: HTTP 150s, zero automatic retries')
+          PY
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Assume existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-http-150
+      - name: Patch verified Google worker ZIP code only, preserve all dependencies
+        run: |
+          python3 - <<'PY'
+          import base64,hashlib,io,zipfile,boto3
+          R="ap-southeast-2"
+          F="afl-app-dev-google-omni-worker"
+          B="afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+          K="google-diagnostics/956c2a9faa7efb1f39ed1a8ecc376510ffb1ec34.zip"
+          OLD="RKx1wcvmxcE3Sx7kzlxbTI3NhBlNlt/Ydpy6J4ZOpmI="
+          lam=boto3.client('lambda',region_name=R)
+          s3=boto3.client('s3',region_name=R)
+          before=lam.get_function_configuration(FunctionName=F)
+          assert before["CodeSha256"]==OLD,"Unexpected live code, stop"
+          assert before["Timeout"]==180,"Unexpected live timeout, stop"
+          assert before["State"]=="Active" and before["LastUpdateStatus"]=="Successful"
+          original=s3.get_object(Bucket=B,Key=K)["Body"].read()
+          enc=lambda b:base64.b64encode(hashlib.sha256(b).digest()).decode()
+          assert enc(original)==OLD
+          src=zipfile.ZipFile(io.BytesIO(original))
+          assert src.testzip() is None
+          assert src.namelist().count('handler.py')==1
+          old=src.read('handler.py')
+          target=b'with urllib.request.urlopen(req, timeout=75) as response:'
+          assert old.count(target)==1
+          replacement=old.replace(target,target.replace(b'timeout=75',b'timeout=150'))
+          o=io.BytesIO()
+          with zipfile.ZipFile(o,'w') as z:
+              for info in src.infolist():
+                  z.writestr(info,replacement if info.filename=='handler.py' else src.read(info.filename))
+          payload=o.getvalue()
+          with zipfile.ZipFile(io.BytesIO(payload)) as z:
+              assert z.testzip() is None
+              assert z.read('handler.py')==replacement
+          expected=enc(payload)
+          lam.update_function_code(FunctionName=F,ZipFile=payload,RevisionId=before['RevisionId'])
+          lam.get_waiter('function_updated').wait(FunctionName=F,WaiterConfig={'Delay':5,'MaxAttempts':36})
+          after=lam.get_function_configuration(FunctionName=F)
+          assert after['CodeSha256']==expected and after['Timeout']==180
+          assert after['LastUpdateStatus']=='Successful' and after['State']=='Active'
+          print('DEPLOYED_AND_VERIFIED: Google HTTP socket timeout=150s; Lambda timeout remains 180s until AWS Console config update.')
+          print('No paid video generation, no retries, no other Lambda changes.')
+          PY
