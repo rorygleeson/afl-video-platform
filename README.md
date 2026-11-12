@@ -4,7 +4,7 @@
 
 A mobile-friendly web app that puts you into personalised football scenes. Choose your AFL team, upload a selfie and enter your name to create AI-generated action, celebration and commentary featuring you.
 
-<img src="docs/screenshots/00-hero-video-sample.jpg" alt="Example personalised AFL video on a phone" width="420">
+<img src="docs/screenshots/03-generated-video-sample.jpg" alt="Example personalised AFL video on a phone" width="420">
 
 ## How it works
 
