@@ -393,9 +393,15 @@ def video_scene_public(job, scene_id):
     attempt_number = int(approval.get("attemptNumber", 1))
     result["attemptNumber"] = attempt_number
     result["maxAttempts"] = MAX_VIDEO_ATTEMPTS
+    # Google exposes multiple *terminal* interaction outcomes. A new paid
+    # attempt is safe to offer only after our poll persisted one of them.
+    # A failed AWS workflow or ambiguous POST is not proof of a failed Google
+    # interaction. Never enable retry for those states.
+    confirmed_terminal = real.get("providerFinalStatus") in (
+        "failed", "cancelled", "incomplete", "budget_exceeded")
     result["retryAvailable"] = bool(
         REAL_VIDEO_MODE == "ENABLED" and status == "FAILED"
-        and real.get("providerFinalStatus") == "failed"
+        and confirmed_terminal
         and attempt_number < MAX_VIDEO_ATTEMPTS and not job.get("assembly")
     )
     if status in ("MOCK_CLAIMED", "MOCK_GENERATING", "MOCK_COMPLETED", "MOCK_FAILED"):
@@ -432,6 +438,20 @@ def video_scene_public(job, scene_id):
             if code != "ExecutionDoesNotExist":
                 LOG.warning("Could not read real scene workflow status: %s", str(code)[:60])
                 result["workflowStatus"] = "UNKNOWN"
+
+    # Every failed scene returns a machine-readable reason when no retry
+    # button is available; the frontend must not silently hide it.
+    if result["status"] in ("FAILED", "REVIEW_REQUIRED") and not result["retryAvailable"]:
+        if job.get("assembly"):
+            result["retryBlockedReason"] = "ASSEMBLY_STARTED"
+        elif attempt_number >= MAX_VIDEO_ATTEMPTS:
+            result["retryBlockedReason"] = "MAX_ATTEMPTS_REACHED"
+        elif result["status"] == "REVIEW_REQUIRED":
+            result["retryBlockedReason"] = "WORKFLOW_REVIEW_REQUIRED"
+        elif not confirmed_terminal:
+            result["retryBlockedReason"] = "GOOGLE_FAILURE_NOT_CONFIRMED"
+        else:
+            result["retryBlockedReason"] = "RETRY_UNAVAILABLE"
 
     # Future real-provider stage may record MP4 metadata, but NEVER expose mock JSON as video.
     if status == "COMPLETED" and item.get("resultKey"):
@@ -680,7 +700,8 @@ def retry_failed_real_scene(job_id, scene_id, event):
         return response(202, {"status": "ALREADY_REQUESTED", "sceneId": scene_id})
     attempt = int(approval.get("attemptNumber", 1))
     if (current.get("status") != "FAILED"
-            or current.get("providerFinalStatus") != "failed"
+            or current.get("providerFinalStatus") not in (
+                "failed", "cancelled", "incomplete", "budget_exceeded")
             or attempt >= MAX_VIDEO_ATTEMPTS or job.get("assembly")):
         return response(409, {"error": "Only confirmed failed scenes may be retried (maximum 10 paid attempts)"})
     old_name = approval.get("executionName")
