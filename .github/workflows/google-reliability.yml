@@ -1,0 +1,49 @@
+name: Deploy Google Omni reliability 1-2 (guarded)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/deploy_google_reliability_1_2.py'
+      - '.github/workflows/google-reliability.yml'
+      - 'docs/GOOGLE_OMNI_RELIABILITY_CHECKLIST.md'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[deploy-google-reliability-1-2]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate safety and diagnostics locally without paid Google API
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 -m py_compile scripts/deploy_google_reliability_1_2.py src/google_video_worker/handler.py
+          python3 -m unittest discover -s tests -p 'test_google_failure_audit.py' -v
+          python3 -m unittest discover -s tests -p 'test_google_video_stagger.py' -v
+          python3 -m unittest discover -s tests -p 'test_google_video_stage5a.py' -v
+          python3 - <<'PY'
+          import json, re, textwrap
+          from pathlib import Path
+          template=Path('infrastructure/app/google-video.yaml').read_text()
+          block=template.split('DefinitionString: !Sub |\n',1)[1].split('\nOutputs:',1)[0]
+          states=json.loads(textwrap.dedent(block))['States']
+          assert 'Retry' not in states['Submit']
+          assert states['PollVideo']['Retry'][0]['ErrorEquals']==['States.TaskFailed']
+          assert 'providerSafeMessages' in Path('src/google_video_worker/handler.py').read_text()
+          PY
+      - name: Assume existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: CloudFormation safe-change review, deployment and live verification
+        run: python3 -u scripts/deploy_google_reliability_1_2.py
