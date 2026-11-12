@@ -17,7 +17,7 @@ A mobile-friendly web app that puts you into personalised football scenes. Choos
 
 | Selfie and team | AI-generated reference scenes | Video preview |
 | --- | --- | --- |
-| <img src="docs/screenshots/01-selfie-upload.jpg" alt="Select an AFL team and upload your selfie" width="240"> | <img src="docs/screenshots/02-reference-images.jpg" alt="Three personalised football reference images" width="300"> | <img src="docs/screenshots/03-generated-video-sample.jpg" alt="AI-generated AFL video playback" width="240"> |
+| <img src="docs/screenshots/01-selfie-upload.png" alt="Select an AFL team and upload your selfie" width="240"> | <img src="docs/screenshots/02-reference-images.png" alt="Three personalised football reference images" width="300"> | <img src="docs/screenshots/03-generated-video-sample.jpg" alt="AI-generated AFL video playback" width="240"> |
 
 ## Architecture
 
