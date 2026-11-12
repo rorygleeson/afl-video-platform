@@ -521,3 +521,38 @@ jobs:
           print('DEPLOYED_AND_VERIFIED: Google HTTP socket timeout=150s; Lambda timeout remains 180s until AWS Console config update.')
           print('No paid video generation, no retries, no other Lambda changes.')
           PY
+
+
+  reconcile_google_timeouts_iac:
+    name: Reconcile live Google worker + 300s Lambda through CloudFormation
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[reconcile-google-timeouts-iac]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify source timeout and no paid retries
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/deploy_google_timeouts_cfn.py src/google_video_worker/handler.py
+          python3 - <<'PY'
+          from pathlib import Path
+          worker=Path('src/google_video_worker/handler.py').read_text()
+          template=Path('infrastructure/app/google-video.yaml').read_text()
+          assert 'timeout=150' in worker
+          assert 'Timeout: 300' in template
+          assert '"Retry"' not in template
+          print('PASS: Lambda 300, Google GET 150, zero automatic retries')
+          PY
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Assume deployment role (existing CFN execution role for stack)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-iac-reconcile
+      - name: Audit CFN references and execute only approved timeout reconciliation
+        run: python3 -u scripts/deploy_google_timeouts_cfn.py
