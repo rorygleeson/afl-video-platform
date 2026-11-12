@@ -255,3 +255,133 @@ jobs:
           echo '## Unified release result' >> "$GITHUB_STEP_SUMMARY"
           echo 'Offline mode makes no AWS changes. Backend and Google preview modes create and delete unexecuted CloudFormation change sets. deploy_backend retains a validated change set and executes it only with explicit confirmation.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Backend deployment only runs on explicit deploy_backend selection with DEPLOY_BACKEND confirmation. Google and assembly deployments remain disabled; legacy Google reconciliation is complete and is not rerun on push.' >> "$GITHUB_STEP_SUMMARY"
+
+
+  deploy_google_timeouts:
+    name: Deploy Google video timeouts (one-time, existing worker only)
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-google-timeouts]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate timeout-only source and no automatic retries
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          source=Path("src/google_video_worker/handler.py").read_text()
+          template=Path("infrastructure/app/google-video.yaml").read_text()
+          assert 'with urllib.request.urlopen(req, timeout=150) as response:' in source
+          assert "Timeout: 300" in template
+          assert '"Retry"' not in template
+          assert "timeout=75" not in source
+          print("PASS: timeout-only release contract (300s Lambda, 150s Google socket, zero automatic retries).")
+          PY
+          python3 -m py_compile src/google_video_worker/handler.py
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Assume existing deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-timeouts-once
+      - name: Preserve working Lambda dependencies and deploy 300/150-second timeout-only change
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64
+          import hashlib
+          import io
+          import os
+          import time
+          import zipfile
+          import boto3
+          from botocore.exceptions import ClientError
+
+          FUNCTION="afl-app-dev-google-omni-worker"
+          STACK="afl-app-dev-google-video"
+          BUCKET="afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+          ORIGINAL_KEY="google-diagnostics/956c2a9faa7efb1f39ed1a8ecc376510ffb1ec34.zip"
+          ORIGINAL_SHA="RKx1wcvmxcE3Sx7kzlxbTI3NhBlNlt/Ydpy6J4ZOpmI="
+          lam=boto3.client("lambda",region_name="ap-southeast-2")
+          cf=boto3.client("cloudformation",region_name="ap-southeast-2")
+          s3=boto3.client("s3",region_name="ap-southeast-2")
+          sts=boto3.client("sts",region_name="ap-southeast-2")
+          identity=sts.get_caller_identity()
+          assert identity["Account"]=="134387458447"
+          assert ":assumed-role/afl-video-github-deploy-role/" in identity["Arn"]
+          stack=cf.describe_stacks(StackName=STACK)["Stacks"][0]
+          assert stack["StackStatus"]=="UPDATE_COMPLETE", "Google stack not stable"
+          resource=cf.describe_stack_resource(StackName=STACK,LogicalResourceId="GoogleWorkerLambda")["StackResourceDetail"]
+          assert resource["PhysicalResourceId"]==FUNCTION,"Unexpected Lambda identity"
+          before=lam.get_function_configuration(FunctionName=FUNCTION)
+          assert before["State"]=="Active" and before["LastUpdateStatus"]=="Successful"
+          assert before["Timeout"]==180,"Unexpected current timeout; manual review required"
+          assert before["CodeSha256"]==ORIGINAL_SHA,"Live code changed; refusing to overwrite"
+          body=s3.get_object(Bucket=BUCKET,Key=ORIGINAL_KEY)["Body"].read()
+          assert base64.b64encode(hashlib.sha256(body).digest()).decode()==ORIGINAL_SHA,"Backup ZIP mismatch"
+          with zipfile.ZipFile(io.BytesIO(body)) as archive:
+              assert archive.testzip() is None
+              filenames=archive.namelist()
+              assert filenames.count("handler.py")==1,"Unexpected archive layout"
+              old_handler=archive.read("handler.py")
+              assert old_handler.count(b"with urllib.request.urlopen(req, timeout=75) as response:")==1
+              updated=old_handler.replace(
+                  b"with urllib.request.urlopen(req, timeout=75) as response:",
+                  b"with urllib.request.urlopen(req, timeout=150) as response:")
+              assert updated!=old_handler
+              local_source=open("src/google_video_worker/handler.py","rb").read()
+              assert updated==local_source,"Repository worker contains additional divergence; stop"
+              output=io.BytesIO()
+              with zipfile.ZipFile(output,"w") as patched:
+                  for member in archive.infolist():
+                      content=updated if member.filename=="handler.py" else archive.read(member.filename)
+                      patched.writestr(member,content)
+          new_zip=output.getvalue()
+          with zipfile.ZipFile(io.BytesIO(new_zip)) as check:
+              assert check.testzip() is None
+              assert check.read("handler.py")==updated
+          new_sha=base64.b64encode(hashlib.sha256(new_zip).digest()).decode()
+          print("PRECHECK_OK: live source, dependencies, original ZIP, and release diff verified")
+          code_changed=False
+          try:
+              response=lam.update_function_code(FunctionName=FUNCTION,ZipFile=new_zip,
+                                                 RevisionId=before["RevisionId"])
+              code_changed=True
+              lam.get_waiter("function_updated").wait(
+                  FunctionName=FUNCTION,WaiterConfig={"Delay":5,"MaxAttempts":36})
+              updated_config=lam.get_function_configuration(FunctionName=FUNCTION)
+              assert updated_config["CodeSha256"]==new_sha
+              lam.update_function_configuration(
+                  FunctionName=FUNCTION,Timeout=300,RevisionId=updated_config["RevisionId"])
+              lam.get_waiter("function_updated").wait(
+                  FunctionName=FUNCTION,WaiterConfig={"Delay":5,"MaxAttempts":36})
+              after=lam.get_function_configuration(FunctionName=FUNCTION)
+              assert after["CodeSha256"]==new_sha and after["Timeout"]==300
+              assert after["State"]=="Active" and after["LastUpdateStatus"]=="Successful"
+              print("DEPLOYED_AND_VERIFIED: Lambda=300s Google_HTTP=150s; no Google POST or paid generation.")
+              print("Google CloudFormation drift warning: deployed Lambda code/config must be reconciled before a future Google stack update.")
+          except Exception:
+              if code_changed:
+                  print("Deployment or verification failed. Attempting rollback to original ZIP and 180s.")
+                  try:
+                      current=lam.get_function_configuration(FunctionName=FUNCTION)
+                      if current.get("LastUpdateStatus")=="InProgress":
+                          lam.get_waiter("function_updated").wait(FunctionName=FUNCTION)
+                      lam.update_function_code(FunctionName=FUNCTION,ZipFile=body)
+                      lam.get_waiter("function_updated").wait(FunctionName=FUNCTION)
+                      current=lam.get_function_configuration(FunctionName=FUNCTION)
+                      lam.update_function_configuration(FunctionName=FUNCTION,Timeout=180,
+                                                        RevisionId=current["RevisionId"])
+                      lam.get_waiter("function_updated").wait(FunctionName=FUNCTION)
+                      rolled=lam.get_function_configuration(FunctionName=FUNCTION)
+                      assert rolled["CodeSha256"]==ORIGINAL_SHA and rolled["Timeout"]==180
+                      print("ROLLBACK_VERIFIED: restored original Lambda code and timeout.")
+                  except Exception as rollback_error:
+                      print("ROLLBACK_UNVERIFIED:",type(rollback_error).__name__)
+              raise
+          PY
