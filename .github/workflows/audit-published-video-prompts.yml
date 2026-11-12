@@ -1,0 +1,57 @@
+name: Read-only comparison of published AFL video prompts
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-published-video-prompts.yml'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Assume existing AWS read access
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Compare actual private S3 prompt objects with committed templates (no writes)
+        run: |
+          python3 - <<'PY'
+          import boto3, hashlib, json
+          from pathlib import Path
+          sts=boto3.client("sts",region_name="ap-southeast-2")
+          assert sts.get_caller_identity()["Account"]=="134387458447"
+          s3=boto3.client("s3",region_name="ap-southeast-2")
+          bucket="afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+          prefix="scenarios/afl-grand-final-winning-kick/v1/video/"
+          root=Path("scenarios/afl-grand-final-winning-kick/v1/video")
+          names=("config.json","scene1-video.txt","scene2-video.txt","scene3-video.txt")
+          matched=True
+          for name in names:
+              local=(root/name).read_bytes()
+              obj=s3.get_object(Bucket=bucket,Key=prefix+name)
+              remote=obj["Body"].read(16000)
+              if len(remote)>12000 or obj["ContentLength"]>12000:
+                  raise ValueError("Published prompt too large: "+name)
+              equal=remote==local
+              print("S3_PROMPT_COMPARE", name,"MATCH" if equal else "DIFFERENT",
+                    "github_sha256", hashlib.sha256(local).hexdigest(),
+                    "s3_sha256",hashlib.sha256(remote).hexdigest(),
+                    "s3_last_modified",obj["LastModified"].isoformat())
+              matched &= equal
+              if name=="config.json":
+                  cfg=json.loads(remote)
+                  print("S3_SCENE_DURATIONS",json.dumps({s["id"]:s["durationSeconds"] for s in cfg["scenes"]},sort_keys=True))
+                  print("S3_CONFIG_VERSION",str(cfg.get("version")))
+                  print("S3_MODEL",str(cfg.get("model")))
+          print("S3_PROMPT_AUDIT_RESULT","ALL_MATCH" if matched else "MISMATCH")
+          PY
