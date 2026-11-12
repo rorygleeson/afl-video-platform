@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""One-time split CloudFormation timeout + verified Lambda code deployment: 300s/150s.
+"""Reconcile verified Google HTTP 150 live worker and deploy CFN 300s Lambda timeout.
 
-Do not modify paid generation submission, Lambda dependencies, other resources or
-Step Functions definitions. Preflight and inspect actual change set before execute.
+Do not modify paid generation submission, retries, or source code. Detect
+CloudFormation transitive reference changes and fail closed on unknown effects.
 """
 import base64
 import hashlib
@@ -45,7 +45,6 @@ def main():
     assert detail["PhysicalResourceId"] == FUNCTION
     before = lam.get_function_configuration(FunctionName=FUNCTION)
     assert before["Timeout"] == 180, "Unexpected live Lambda timeout"
-    assert before["CodeSha256"] == OLD_SHA, "Live Lambda code changed; stop"
     assert before["State"] == "Active"
     assert before["LastUpdateStatus"] == "Successful"
 
@@ -69,9 +68,11 @@ def main():
         assert z.testzip() is None
         assert z.read("handler.py") == changed
     new_sha = digest(newzip)
+    assert before["CodeSha256"] == new_sha, "Live Lambda does not match verified HTTP=150 patch"
 
     params = {p["ParameterKey"]: p["ParameterValue"] for p in stack["Parameters"]}
     assert params["ArtifactBucketName"] == BUCKET
+    new_key = f"google-timeouts/{hashlib.sha256(newzip).hexdigest()}/google-worker.zip"
     template = cf.get_template(StackName=STACK, TemplateStage="Original")["TemplateBody"]
     assert isinstance(template, str), "Unexpected deployed template representation"
     # Change the *deployed* template, not the potentially drifted repository copy.
@@ -86,18 +87,26 @@ def main():
     assert updated_template.replace("Timeout: 300", "Timeout: 180", 1) == template
     print("PRECHECK_OK: exact working ZIP, live SHA, single template timeout alteration")
 
-    # Update ONLY the existing Lambda Timeout through CloudFormation.
-    # Keep the existing artifact parameter, avoiding transitive IAM/SFN changes.
+    # Reconcile the already-running HTTP=150 code with an immutable IaC artifact.
+    # No direct Lambda updates; all final changes owned by CloudFormation.
+    try:
+        stored=s3.get_object(Bucket=BUCKET,Key=new_key)["Body"].read()
+        assert digest(stored)==new_sha
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] not in ("404","NoSuchKey","NotFound"):
+            raise
+        s3.put_object(Bucket=BUCKET,Key=new_key,Body=newzip)
+        assert digest(s3.get_object(Bucket=BUCKET,Key=new_key)["Body"].read())==new_sha
     cfn_params = [
-        {"ParameterKey": key, "ParameterValue": value}
-        for key, value in params.items()
+        {"ParameterKey": key, "ParameterValue": new_key if key=="GoogleWorkerArtifactKey" else value}
+        for key,value in params.items()
     ]
-    cs_name = "afl-google-limit-only-" + hashlib.sha256(newzip).hexdigest()[:12]
+    cs_name = "afl-google-iac-reconcile-" + hashlib.sha256(newzip).hexdigest()[:12]
     try:
         cf.create_change_set(
             StackName=STACK, ChangeSetName=cs_name, ChangeSetType="UPDATE",
             TemplateBody=updated_template, Parameters=cfn_params, RoleARN=CFN_ROLE,
-            Capabilities=["CAPABILITY_NAMED_IAM"], Description="Only Google worker Lambda Timeout 180 to 300"
+            Capabilities=["CAPABILITY_NAMED_IAM"], Description="Reconcile proven HTTP 150 artifact and Lambda Timeout 300"
         )
         cf.get_waiter("change_set_create_complete").wait(
             StackName=STACK, ChangeSetName=cs_name, WaiterConfig={"Delay":5,"MaxAttempts":36}
@@ -109,44 +118,52 @@ def main():
             (c["LogicalResourceId"], c["Action"], c.get("Replacement"))
             for c in changes
         ])
-        # Stop on ANY unexpected IAM, Step Functions, permission, replacement or deletion.
-        assert len(changes) == 1, "Extra CloudFormation resource changes; refusing deployment"
-        c = changes[0]
-        assert c["LogicalResourceId"] == "GoogleWorkerLambda"
-        assert c["ResourceType"] == "AWS::Lambda::Function"
-        assert c["Action"] == "Modify"
-        assert c.get("Replacement") in ("False", False)
-        targets = {(x.get("Target",{}).get("Attribute"), x.get("Target",{}).get("Name"))
-                   for x in c.get("Details",[])}
-        assert targets <= {("Properties","Timeout")}, (
-            "Unexpected Lambda property changes"
+        # CloudFormation's dynamic !GetAtt references can cause indirect modifications.
+        # Inspect every impacted resource before execute; never permit replacements,
+        # direct edits of other resources, or any unknown dependencies.
+        expected = {
+            "GoogleWorkerLambda": "AWS::Lambda::Function",
+            "DeveloperPreflightInvokePermission": "AWS::Lambda::Permission",
+            "GoogleStateMachineRole": "AWS::IAM::Role",
+            "GoogleStateMachine": "AWS::StepFunctions::StateMachine",
+        }
+        assert {c["LogicalResourceId"]:c["ResourceType"] for c in changes} == expected, (
+            "Unexpected CloudFormation resource set"
         )
+        for c in changes:
+            print("CHANGE_DETAIL", c["LogicalResourceId"], c["Action"], c.get("Replacement"),
+                  c.get("Details",[]), flush=True)
+            assert c["Action"]=="Modify", "Destructive CFN action forbidden"
+            logical=c["LogicalResourceId"]
+            assert c.get("Replacement") in ("False",False) or (
+                logical=="DeveloperPreflightInvokePermission"
+                and c.get("Replacement")=="Conditional"
+            ), "Unexpected CFN replacement"
+            details=c.get("Details",[])
+            assert details, "No reason supplied for CFN change"
+            for d in details:
+                if logical=="GoogleWorkerLambda":
+                    assert d.get("Target",{}).get("Attribute")=="Properties"
+                    assert d.get("Target",{}).get("Name") in ("Timeout","Code")
+                else:
+                    assert d.get("ChangeSource")=="ResourceReference", "Direct dependent resource modification blocked"
+                    assert d.get("CausingEntity")=="GoogleWorkerLambda", "Unexpected dependency source"
+                    assert d.get("Evaluation")=="Dynamic", "Static dependent resource modification blocked"
+        print("CFN_DEPENDENCIES_AUDITED: only Lambda code/timeout direct, references indirect",flush=True)
         cf.execute_change_set(StackName=STACK, ChangeSetName=cs_name)
         print("CFN_UPDATE_SUBMITTED: waiting for stack update")
         cf.get_waiter("stack_update_complete").wait(
             StackName=STACK, WaiterConfig={"Delay":10,"MaxAttempts":60}
         )
         after = lam.get_function_configuration(FunctionName=FUNCTION)
-        assert after["Timeout"] == 300
-        assert after["CodeSha256"] == OLD_SHA, "CFN unexpectedly changed Lambda code"
-        # GitHub deploy role is authorized for CODE only. The verified ZIP
-        # patches precisely the HTTP timeout and retains all dependencies.
-        resp = lam.update_function_code(
-            FunctionName=FUNCTION, ZipFile=newzip, RevisionId=after["RevisionId"]
-        )
-        lam.get_waiter("function_updated").wait(
-            FunctionName=FUNCTION, WaiterConfig={"Delay":5,"MaxAttempts":36}
-        )
-        deployed=lam.get_function_configuration(FunctionName=FUNCTION)
-        assert deployed["Timeout"] == 300 and deployed["CodeSha256"] == new_sha
-        assert deployed["State"] == "Active" and deployed["LastUpdateStatus"] == "Successful"
-        assert after["State"] == "Active" and after["LastUpdateStatus"] == "Successful"
+        assert after["Timeout"]==300 and after["CodeSha256"]==new_sha
+        assert after["State"]=="Active" and after["LastUpdateStatus"]=="Successful"
         actual = cf.describe_stacks(StackName=STACK)["Stacks"][0]
         assert actual["StackStatus"] == "UPDATE_COMPLETE"
         final_params = {p["ParameterKey"]: p["ParameterValue"] for p in actual["Parameters"]}
-        assert final_params["GoogleWorkerArtifactKey"] == params["GoogleWorkerArtifactKey"]
+        assert final_params["GoogleWorkerArtifactKey"] == new_key
         print("DEPLOYED_AND_VERIFIED: Google Lambda 300s, Google HTTP 150s, zero paid requests.")
-        print("NOTE: Lambda code drift remains after code-only update; later CloudFormation changes must reconcile artifact safely.")
+        print("CFN_RECONCILED: Lambda code is owned by CloudFormation; checked preexisting Google HTTP 150 artifact.")
     except Exception:
         try:
             cs = cf.describe_change_set(StackName=STACK, ChangeSetName=cs_name)
