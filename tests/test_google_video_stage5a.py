@@ -424,7 +424,10 @@ class GoogleVideoAdapterTests(unittest.TestCase):
             "interactionId": "interact-12345"
         }}}}
         from botocore.exceptions import ClientError
-        w.S3.head_object.side_effect = ClientError({"Error": {"Code": "404"}}, "HeadObject")
+        w.S3.head_object.side_effect = [
+            ClientError({"Error": {"Code": "404"}}, "HeadObject"),
+            {"ContentLength": len(movie), "ContentType": "video/mp4"},
+        ]
         w.google_json = MagicMock(return_value={"status": "completed", "steps": [
             {"type": "model_output", "content": [{
                 "type": "video", "mime_type": "video/mp4",
