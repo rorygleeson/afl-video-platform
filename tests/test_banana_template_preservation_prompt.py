@@ -11,7 +11,7 @@ class TemplatePreservationPromptTests(unittest.TestCase):
         cfg = json.loads(CONFIG.read_text())
         shared = cfg["sharedPrompt"]
         self.assertIn("MASTER FRAME LOCK", shared)
-        self.assertIn("same photograph", shared.lower())
+        self.assertIn("Preserve Image 1 exactly", shared)
         self.assertIn("Image 1", shared)
         self.assertIn("Image 2 is an identity reference only", shared)
         self.assertIn("skin-tone harmonisation", shared)
