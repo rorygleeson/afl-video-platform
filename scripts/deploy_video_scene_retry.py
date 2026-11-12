@@ -208,7 +208,7 @@ def main():
     # Release frontend only after both API and worker verified. Existing
     # versioned S3 bucket and CloudFront distribution remain under IaC.
     frontend=cf.describe_stacks(StackName="afl-app-dev-frontend")["Stacks"][0]
-    assert frontend["StackStatus"]=="UPDATE_COMPLETE"
+    assert frontend["StackStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
     out={v["OutputKey"]:v["OutputValue"] for v in frontend["Outputs"]}
     bucket=out["FrontendBucketName"]
     distribution=out["DistributionId"]
