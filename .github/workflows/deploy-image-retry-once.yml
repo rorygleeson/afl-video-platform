@@ -1,5 +1,5 @@
 name: One-time deploy image retry with strict resource guards
-# Rerun to diagnose unexpected frontend deployment drift; fail closed.
+# Re-run with exactly reviewed legacy Replicate label variance; retain every other fail-closed gate.
 on:
   push:
     branches: [main]
