@@ -7,7 +7,7 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 - [x] **1. Preserve detailed provider failure evidence (high).** At the first failed poll, persist safely bounded/redacted Google error message(s), error codes and relevant structured details; record HTTP status/request identifiers when available. Expose only safe metadata via operator diagnostics. Add no-paid-call tests; verify DynamoDB contents in a future failure.
 - [x] **2. Make read-only polling resilient (high).** Back off/retry transient GET errors and timeouts, without ever retrying POST, changing the interaction ID, or creating a second paid scene. Recover workflow state from an already-created interaction. Add tests for network/429/5xx vs terminal provider errors.
 - [ ] **3. Harden completed-MP4 retrieval (high).** Prevent oversized inline base64 payloads, response-size limits or Lambda memory/timeout failures from unnecessarily losing an already generated MP4. Preserve the interaction ID and allow safe GET recovery. Test bounded 720p payloads and oversized responses without new POSTs.
-- [ ] **4. Improve HTTP error visibility (medium).** Safely capture Google HTTP error code, request/correlation ID, relevant rate-limit/Retry-After metadata and bounded redacted structured provider error; never store credentials, raw images, prompts or media.
+- [x] **4. Improve HTTP error visibility (medium).** Safely capture Google HTTP error code, request/correlation ID, relevant rate-limit/Retry-After metadata and bounded redacted structured provider error; never store credentials, raw images, prompts or media.
 - [ ] **5. Record generation provenance (medium).** Model, scene duration, prompt/version digest, reference-image SHA-256, configuration and bounded polling/timing metrics; allow successful vs failed scene comparisons.
 - [ ] **6. Apply provider-wide concurrency/rate controls (medium, pre-launch).** The existing 0/10/20-second per-batch stagger is *not* a global limiter across customers. Design admission controls that do not compromise idempotency or allow a second paid POST.
 
@@ -37,7 +37,7 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 ## Item 4 release (2026-11-12)
 
 - Code merged via PR #56: https://github.com/rorygleeson/afl-video-platform/pull/56; tests passed.
-- Guarded worker-code-only CloudFormation deployment requested. Verify before marking checked.
+- Guarded worker-code-only CloudFormation deployment successful and verified: https://github.com/rorygleeson/afl-video-platform/actions/runs/43190614335. Lambda CodeSha256 matches the approved package; Step Functions definition unchanged.
 - This diagnostic change has no model POST retries, no prompt/UI changes, no new bucket and no GCS activation.
 
 ## Release discipline
