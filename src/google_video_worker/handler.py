@@ -55,6 +55,58 @@ class UnknownSubmission(RuntimeError):
     pass
 
 
+class GoogleHttpFailure(ContractError):
+    """Sanitized HTTP diagnostics only; never preserve raw provider body."""
+    def __init__(self, method, status, details):
+        super().__init__(f"Google {method} HTTP {status}")
+        self.method = method
+        self.status = status
+        self.details = details
+
+
+def safe_google_http_failure(exc):
+    """Extract a minimal allowlisted subset from a bounded Google error reply.
+
+    Error bodies may echo customer prompts, images, bearer tokens and media.
+    This method never stores raw JSON, arbitrary fields or raw header values.
+    """
+    details = {"googleHttpStatus": int(exc.code)}
+    headers = exc.headers
+    if headers:
+        for header_name, field in (
+            ("x-goog-request-id", "googleRequestId"),
+            ("x-request-id", "googleRequestId"),
+            ("x-cloud-trace-context", "googleTraceContext"),
+        ):
+            value = headers.get(header_name)
+            if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.:/;=-]{1,128}", value):
+                details[field] = value
+                break
+        retry_after = headers.get("Retry-After")
+        if isinstance(retry_after, str) and re.fullmatch(r"[0-9]{1,5}", retry_after):
+            details["googleRetryAfterSeconds"] = min(int(retry_after), 3600)
+    try:
+        # At most 8 KB; never log or store raw content.
+        raw = exc.read(8193)
+        if len(raw) <= 8192:
+            payload = json.loads(raw)
+            if isinstance(payload, dict):
+                error = payload.get("error")
+                if isinstance(error, dict):
+                    raw_code = error.get("status")
+                    if isinstance(raw_code, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{1,63}", raw_code):
+                        details["googleErrorStatus"] = raw_code
+                    reason = error.get("code")
+                    if isinstance(reason, int) and 100 <= reason <= 599:
+                        details["googleErrorNumber"] = reason
+                    safe_message = safe_provider_message(error.get("message"))
+                    if safe_message:
+                        details["googleSafeErrorMessage"] = safe_message
+    except (ValueError, TypeError, UnicodeError, OSError):
+        pass
+    return details
+
+
 def require_paid_unlock(job=None, scene=None):
     if PAID_ENABLED != "true" or MODEL != "gemini-omni-1.2-flash":
         raise PermissionError("PAID_GENERATION_DISABLED")
@@ -164,9 +216,11 @@ def google_json(method, url, payload=None, max_bytes=MAX_RESPONSE_BYTES):
                 raise ContractError("Google response exceeds safety limit")
             return json.loads(raw)
     except urllib.error.HTTPError as exc:
-        LOG.warning("Google HTTP %d operation=%s", exc.code, method)
+        details = safe_google_http_failure(exc)
+        LOG.warning("Google HTTP %d operation=%s status=%s",
+                    exc.code, method, details.get("googleErrorStatus", "UNSPECIFIED"))
         # Even HTTP 4xx may be ambiguous after POST; never resubmit in automation.
-        raise ContractError(f"Google {method} HTTP {exc.code}") from None
+        raise GoogleHttpFailure(method, exc.code, details) from None
 
 
 
@@ -247,6 +301,15 @@ def read_stored_failure(record):
               "providerMessagePresent": record.get("providerMessagePresent", False)}
     if record.get("providerErrorCode"):
         result["errorCode"] = record["providerErrorCode"]
+    for field in ("googleHttpStatus", "googleRetryAfterSeconds", "googleErrorNumber"):
+        value = record.get(field)
+        if isinstance(value, int) and 0 <= value <= 3600:
+            result[field] = value
+    for field in ("googleRequestId", "googleTraceContext", "googleErrorStatus",
+                  "googleSafeErrorMessage", "lastPollHttpObservedAt"):
+        value = record.get(field)
+        if isinstance(value, str) and len(value) <= 320:
+            result[field] = value
     safe_messages = record.get("providerSafeMessages")
     if isinstance(safe_messages, list):
         result["providerSafeMessages"] = [s for s in safe_messages[:3]
@@ -440,9 +503,10 @@ def submit(job, scene, request):
         # Diagnose all scenes without retaining provider payloads, tokens or images.
         # An HTTP response or network error still does not prove the paid POST
         # was not accepted. Never automatically unlock/retry this scene.
-        if isinstance(exc, ContractError):
-            match = re.fullmatch(r"Google POST HTTP ([1-5][0-9]{2})", str(exc))
-            code = "GOOGLE_HTTP_" + match.group(1) if match else "GOOGLE_RESPONSE_ERROR"
+        if isinstance(exc, GoogleHttpFailure):
+            code = "GOOGLE_HTTP_" + str(exc.status)
+        elif isinstance(exc, ContractError):
+            code = "GOOGLE_RESPONSE_ERROR"
         elif isinstance(exc, urllib.error.URLError):
             code = "GOOGLE_NETWORK_ERROR"
         elif isinstance(exc, (TimeoutError, ConnectionError)):
@@ -451,7 +515,8 @@ def submit(job, scene, request):
             code = safe_error_code(exc) if not isinstance(exc, (ValueError, TypeError)) else "GOOGLE_REQUEST_ERROR"
         try:
             transition(job, scene, request, "SUBMISSION_UNKNOWN", "SUBMISSION_UNKNOWN",
-                       {"errorCode": code})
+                       {"errorCode": code,
+                        **(exc.details if isinstance(exc, GoogleHttpFailure) else {})})
         except Exception:
             LOG.exception("Could not save safe Google submission diagnostic")
         LOG.error("Google submission uncertain scene=%s code=%s exception_type=%s",
@@ -565,7 +630,18 @@ def poll(job, scene, request):
     interaction = record.get("interactionId")
     if not isinstance(interaction, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", interaction):
         raise ContractError("Missing Google interaction ID")
-    reply = google_json("GET", BASE + "/" + interaction)
+    try:
+        reply = google_json("GET", BASE + "/" + interaction)
+    except GoogleHttpFailure as exc:
+        # Save bounded error evidence before Step Functions retries this read-only
+        # request. Never change the original Google interaction ID or submit.
+        try:
+            transition(job, scene, request, "PROCESSING", "PROCESSING",
+                       {"lastPollHttpObservedAt": datetime.now(timezone.utc).isoformat(),
+                        **exc.details})
+        except Exception:
+            LOG.warning("Could not persist sanitized polling HTTP diagnostic")
+        raise
     state = reply.get("status")
     # Google's Interactions API can queue asynchronous jobs before execution.
     # A queued job is still alive, not a failure or a second billable request.
