@@ -33,7 +33,7 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertEqual(result.count(self.config["sharedPrompt"]), 1)
                 self.assertEqual(result.count(scene["promptInstructions"]), 1)
                 self.assertIn("the ONLY source for the central player's identity", result)
-                self.assertIn("navy blue and white horizontal hoops; plain unbranded playing kit", result)
+                self.assertIn("navy blue and white horizontal hoops", result)
                 self.assertIn(scene["promptInstructions"], result)
                 self.assertEqual(scene["model"], "gemini-3-pro-image")
                 self.assertIn("selfie", result.lower())
@@ -64,7 +64,7 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertIn("selected team", prompt)
         celebration = self.config["scenes"][2]["promptInstructions"].lower()
         self.assertIn("both teammates", celebration)
-        self.assertIn("the selected team's coordinated kit", celebration)
+        self.assertIn("coordinated unbranded playing kits", celebration)
 
     def test_concise_scene_prompts_do_not_repeat_shared_identity_rules(self):
         shared = self.config["sharedPrompt"].lower()
@@ -107,7 +107,7 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("PREMIER CHAMPIONS", old["scenes"][2]["promptInstructions"])
         for team, value in self.config["teamGuernseys"].items():
             with self.subTest(team=team):
-                self.assertIn("no lettering, logos", value)
+                self.assertNotIn("Magpies", value)
                 self.assertNotIn("Magpies", value)
         for scene in self.config["scenes"]:
             prompt = build_image_prompt(self.config, scene, "collingwood")
