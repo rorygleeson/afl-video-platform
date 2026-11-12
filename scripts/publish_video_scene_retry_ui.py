@@ -77,10 +77,10 @@ def main():
         })
     invalidation_id = result["Invalidation"]["Id"]
     print("CLOUDFRONT_INVALIDATION_SUBMITTED", invalidation_id, flush=True)
-    cloudfront.get_waiter("invalidation_completed").wait(
-        DistributionId=distribution, Id=invalidation_id,
-        WaiterConfig={"Delay":10,"MaxAttempts":30})
-    print("VIDEO_SCENE_RETRY_UI_PUBLISHED_VERIFIED_NO_PAID_CALLS", flush=True)
+    # This existing deploy role can submit CloudFront invalidations, but does
+    # not have cloudfront:GetInvalidation. Do not claim invalidation completion.
+    # Both exact frontend S3 files were already read back and verified.
+    print("VIDEO_SCENE_RETRY_UI_PUBLISHED_VERIFIED_INVALIDATION_SUBMITTED_NO_PAID_CALLS", flush=True)
 
 
 if __name__ == "__main__":
