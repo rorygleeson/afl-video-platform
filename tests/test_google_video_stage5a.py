@@ -376,9 +376,42 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertIn("PAID_GENERATION_ENABLED: !If", template)
         self.assertIn("GOOGLE_VIDEO_MODEL: !If", template)
         self.assertIn('"StartAt":"PaidGate"', template)
-        self.assertNotIn('"Retry"', template)
+        self.assertEqual(template.count('"Retry"'), 1)
+        self.assertIn('"PollVideo":{"Type":"Task"', template)
+        self.assertIn('"ErrorEquals":["States.ALL"]', template)
+        submit_task = template.split('"Submit":{"Type":"Task"')[1].split('"WaitForVideo"')[0]
+        self.assertNotIn('"Retry"', submit_task)
         self.assertNotIn("AWS::ApiGateway::", template)
         self.assertNotIn("AWS::S3::Bucket", template)
+
+    def test_poll_retry_after_completed_is_idempotent(self):
+        w = self.worker
+        w.PAID_ENABLED = "true"
+        w.MODEL = "gemini-omni-1.2-flash"
+        key = f"videos/{self.event['jobId']}/scene1.mp4"
+        with patch.object(w, "owner_record", return_value={
+                "status": "COMPLETED", "requestId": self.event["requestId"],
+                "resultKey": key}), patch.object(w, "require_paid_unlock"), patch.object(w, "google_json") as google:
+            result = w.poll(self.event["jobId"], "scene1", self.event["requestId"])
+        self.assertEqual(result, {"status": "COMPLETED", "resultKey": key})
+        google.assert_not_called()
+        w.S3.put_object.assert_not_called()
+
+    def test_poll_recovers_valid_existing_s3_video_without_google(self):
+        w = self.worker
+        key = f"videos/{self.event['jobId']}/scene1.mp4"
+        w.S3.head_object.return_value = {"ContentLength": 1024,
+                                         "ContentType": "video/mp4"}
+        with patch.object(w, "owner_record", return_value={
+                "status": "PROCESSING", "interactionId": "interaction123",
+                "requestId": self.event["requestId"]}), patch.object(w, "require_paid_unlock"), patch.object(w, "transition") as transition, patch.object(w, "google_json") as google:
+            result = w.poll(self.event["jobId"], "scene1", self.event["requestId"])
+        self.assertEqual(result["resultKey"], key)
+        transition.assert_called_once_with(self.event["jobId"], "scene1",
+            self.event["requestId"], "PROCESSING", "COMPLETED",
+            {"resultKey": key, "sizeBytes": 1024})
+        google.assert_not_called()
+        w.S3.put_object.assert_not_called()
 
     def test_adapter_never_exposes_provider_result_bytes_in_stepfunctions(self):
         w = self.worker
@@ -390,6 +423,11 @@ class GoogleVideoAdapterTests(unittest.TestCase):
             "status": "PROCESSING", "requestId": self.event["requestId"],
             "interactionId": "interact-12345"
         }}}}
+        from botocore.exceptions import ClientError
+        w.S3.head_object.side_effect = [
+            ClientError({"Error": {"Code": "404"}}, "HeadObject"),
+            {"ContentLength": len(movie), "ContentType": "video/mp4"},
+        ]
         w.google_json = MagicMock(return_value={"status": "completed", "steps": [
             {"type": "model_output", "content": [{
                 "type": "video", "mime_type": "video/mp4",
