@@ -1,19 +1,20 @@
-# Australian Rules Grand Final — Scene 3: PREMIERS
+# Australian Rules Grand Final — Scene 3: SOLO PREMIERS CELEBRATION
 # Variables: $fullName, $guernsey, $commentary
 
-FORMAT: 5 seconds, vertical 9:16, photorealistic live Australian rules football broadcast at natural speed. This is a NEW celebration camera shot; animate the supplied PERSONALISED Scene 3 image as the exact opening frame. The winning goal and final siren have ALREADY happened. Do not show either event again.
+FORMAT: 5 seconds, vertical 9:16, photorealistic Australian rules football broadcast at natural speed. Animate the supplied PERSONALISED Scene 3 image as the EXACT opening frame. The winning goal and final siren have ALREADY occurred; do not show either again.
 
-STARTING IMAGE: $fullName stands in the centre with his face toward the camera and mouth open in triumph, ONE fist raised visibly in front of his body. Two teammates are tightly embracing him, one on each side, already smiling/shouting. Gold confetti is already in the air. A plain, unbranded illuminated stadium display appears in the distance. Keep the confetti and existing celebration positions; do not add new text or new confetti bursts.
+STARTING IMAGE: $fullName is the ONLY foreground footballer, facing camera with a natural joyful victory shout and ONE clenched fist raised. His other arm hangs at his side. TWO much smaller, distant teammates cheer several metres behind, left and right, without touching him. Gold confetti already drifts through the night stadium under bright floodlights. The distant display is plain and unbranded. Preserve all starting geometry, faces, wardrobe patterns and distance between people.
 
-0.0–1.2s: Begin immediately in the existing embrace, with jubilant, natural movement. The central player pumps his raised fist once; teammates cheer and hold him. No frozen introduction or second entrance.
-1.2–4.0s: The two teammates jostle and hug him with realistic weight and stable hand contact. The central player briefly cheers but keeps his face toward camera as much as natural. Avoid extreme mouth stretching or facial identity drift. Existing confetti drifts gently.
-4.0–5.0s: Hold a strong close broadcast composition on the central player's recognisable face and teammates as the crowd continues roaring. Finish cleanly without new players or camera cuts.
+0.0–1.2s: Start immediately with joyful motion. The central player makes ONE short fist pump while keeping his face directed toward camera. The two distant teammates continue cheering in place. Do not introduce a new player or an embrace.
+1.2–4.0s: The central player takes one or two small natural forward steps, cheering with realistic body movement, stable facial identity and believable hands. His raised arm returns to a comfortable position. Teammates remain distant, do not approach or touch him. Gold confetti drifts gently; avoid new bursts.
+4.0–5.0s: Settle on a triumphant medium view of the central player's recognisable face, with distant teammates and crowd celebrating. End cleanly without extra players or a camera cut.
 
-CAMERA: ONE gently stabilised close/medium television camera, subtle sideways tracking only. Do not swing behind the player's head or zoom rapidly. Do not invent a trophy presentation, additional players or any second celebration scene.
+CAMERA: ONE continuous, gently stabilised front-facing broadcast camera, only subtle tracking to retain the central player's face and chest in view. No zoom rush, orbit, swing behind the head, replay or camera cut.
 
-WINNING TEAM: The central player AND BOTH teammates wear coordinated plain playing guernseys ($guernsey), as depicted in the personalised starting image. Keep all three players' original positions, faces and contact. Do not introduce opposing players or change the team kit.
+KIT: The central player wears the selected PLAIN unbranded playing kit ($guernsey). Both distant teammates retain coordinated plain kits. Preserve original fabric folds and positions; no identity swapping for anyone except the central selfie subject.
 
-AUDIO: The SAME Australian AFL commentator from Scenes 1 and 2 says exactly "$commentary" ONCE, with a triumphant tone and a clear full name and team. Start immediately and finish by 4.7 seconds. Energetic crowd and player shouts may sit beneath the narration, but no other intelligible commentary. No repeat siren, music or subtitles.
+AUDIO: The SAME enthusiastic Australian rules football commentator as Scenes 1 and 2 says exactly "$commentary" ONCE with triumphant energy, finishing by 4.7 seconds. Background crowd cheering only; no other intelligible commentary, music, captions or additional siren.
 
-STRICT: Stable customer face, hairstyle and age; no face-swap transitions, duplicate hands, disappearing arms, changing uniforms, generated captions, new fireworks or unexplained camera cuts.
-BRANDING: No club crests, league badges, sponsors, manufacturer marks, advertising or branding on any guernsey, shorts, socks, grandstand or display. Replace any such marks visible in the supplied opening frame with plain fabric or neutral surfaces; do not change the customer's face, teammates, contact, pose or camera angle.
+STRICT: Preserve the customer's exact recognisable face, hairstyle, age and natural skin tone throughout. Avoid facial morphing, exaggerated mouth stretching, extra hands, changing uniforms, unexplained camera cuts, new players, foreground embraces, grabbing or jostling. The two background teammates must NEVER move into the foreground.
+
+BRANDING: No AFL or club crests, league insignia, sponsor logos, manufacturer marks, advertising or branded text on guernseys, shorts, stands or displays. Replace any marks already visible in the supplied opening frame with plain fabric or neutral blank surfaces. Preserve the victory celebration itself.
