@@ -16,6 +16,7 @@ jobs:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
           aws-region: ap-southeast-2
       - name: Recent paid scene executions and status (no submissions)
+        continue-on-error: true
         run: |
           set -euo pipefail
           aws stepfunctions list-executions --state-machine-arn arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-google-omni --max-results 15 --output json > /tmp/executions.json
