@@ -19,12 +19,20 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 ## Current work (2026-11-12)
 
 - **Items 1–2: PR #54 merged; guarded CloudFormation deployment verified.** https://github.com/rorygleeson/afl-video-platform/pull/54
-- **Item 3: design identified, implementation pending.** Google recommends `delivery: "uri"` with `gcs_uri` for large generated videos; the present `delivery: "inline"` makes every completed GET carry base64 MP4 data. Requires verified Google Cloud Storage permissions, secure download to existing private S3, and end-to-end tests. Do not switch the output contract without that work.
+- **Item 3: code merged but not activated or live-verified.** PR #55: https://github.com/rorygleeson/afl-video-platform/pull/55. Added opt-in GCS URI output and bounded authenticated download to the existing private S3 path; default remains inline. CI passed. Requires private GCS bucket, verified provider write + worker read permissions, reviewed CFN deployment and live verification before checking off. No paid test was run.
 - **Nothing in this checklist authorizes a paid model run or an automatic paid generation retry.**
 
 ## Deployment run
 
 - 2026-11-12: Guarded release completed and live AWS state verified: https://github.com/rorygleeson/afl-video-platform/actions/runs/43187758873.
+
+## Item 3 activation prerequisites
+
+- Confirm a private GCS bucket in Google project `afl-video-platform`; turn on uniform bucket-level access and public-access prevention.
+- Verify the Agent Platform service agent can create output objects in the bucket and the federated `afl-video-worker@afl-video-platform.iam.gserviceaccount.com` identity can read the generated objects. Keep permissions bucket-scoped; confirm the precise writer identity from Google documentation/provider behaviour rather than assume access.
+- Verify the chosen bucket/prefix, set the disabled-by-default CloudFormation `GoogleVideoGcsOutputPrefix` to that prefix (with trailing slash), and deploy worker + CFN via reviewed change set. The old default must remain inline for all pre-existing jobs.
+- Confirm read-only GCS access with a non-sensitive known fixture object and test output-copy to private AWS S3 before any paid model request. Run a controlled paid scene only after explicit approval.
+- Do not claim item 3 completed until the live GCS-to-S3 path is proven and the existing final MP4 assembly succeeds.
 
 ## Release discipline
 
