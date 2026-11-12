@@ -21,7 +21,7 @@ A mobile-friendly web app that puts you into personalised football scenes. Choos
 
 ## Architecture
 
-The platform uses **AWS CloudFront and S3** for the web app and media, **API Gateway and Lambda** for its backend, **Step Functions** to coordinate image and video generation, and **DynamoDB** to track jobs. AI models generate personalised imagery and videos.
+The platform runs on **AWS** and integrates with **Google Cloud** for AI video generation. **Amazon CloudFront and S3** host the web app and store images and videos; **API Gateway and Lambda** provide the backend; **AWS Step Functions** coordinates processing; and **DynamoDB** tracks each job. Personalised reference images are produced using **Replicate's Google Nano Banana Pro model**, while **Google Vertex AI's Interactions API** uses **Gemini Omni 1.2 Flash** to generate the football video scenes. **Google Cloud Workload Identity Federation** enables the AWS video worker to authenticate securely to Google Cloud.
 
 [**Architecture overview**](docs/ARCHITECTURE.md) · [**Architecture diagram**](docs/architecture-high-level.svg)
 
