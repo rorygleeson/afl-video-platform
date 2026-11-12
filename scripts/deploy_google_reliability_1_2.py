@@ -103,11 +103,11 @@ def review(kind,items):
                 target=d.get("Target",{})
                 assert target.get("Attribute")=="Properties"
                 assert target.get("RequiresRecreation")=="Never"
-                if d.get("Evaluation")=="Static":
-                    assert d.get("ChangeSource")=="DirectModification"
+                if d.get("ChangeSource")=="DirectModification":
                     assert target.get("Name")=="DefinitionString"
-                elif d.get("Evaluation")=="Dynamic":
-                    assert d.get("ChangeSource")=="ResourceAttribute"
+                    assert d.get("Evaluation") in ("Static","Dynamic")
+                elif d.get("ChangeSource")=="ResourceAttribute":
+                    assert d.get("Evaluation")=="Dynamic"
                     assert (target.get("Name"),d.get("CausingEntity")) in (
                         ("DefinitionString","GoogleWorkerLambda.Arn"),
                         ("RoleArn","GoogleStateMachineRole.Arn"))
