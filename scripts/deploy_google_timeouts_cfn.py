@@ -146,9 +146,27 @@ def main():
                     assert d.get("Target",{}).get("Attribute")=="Properties"
                     assert d.get("Target",{}).get("Name") in ("Timeout","Code")
                 else:
-                    assert d.get("ChangeSource")=="ResourceReference", "Direct dependent resource modification blocked"
-                    assert d.get("CausingEntity")=="GoogleWorkerLambda", "Unexpected dependency source"
-                    assert d.get("Evaluation")=="Dynamic", "Static dependent resource modification blocked"
+                    # !GetAtt ARNs are reported as ResourceAttribute, not
+                    # ResourceReference. The physical Lambda name is fixed,
+                    # so the ARN remains unchanged across code/timeout updates.
+                    assert d.get("ChangeSource")=="ResourceAttribute", (
+                        "Direct dependent resource modification blocked"
+                    )
+                    assert d.get("CausingEntity") in (
+                        "GoogleWorkerLambda.Arn", "GoogleStateMachineRole.Arn"
+                    ), "Unexpected dependent-resource attribute"
+                    assert d.get("Evaluation")=="Dynamic", (
+                        "Static dependent resource modification blocked"
+                    )
+                    assert d.get("Target",{}).get("Attribute")=="Properties"
+                    allowed_targets={
+                        "DeveloperPreflightInvokePermission":{"FunctionName"},
+                        "GoogleStateMachineRole":{"Policies"},
+                        "GoogleStateMachine":{"DefinitionString","RoleArn"}
+                    }
+                    assert d.get("Target",{}).get("Name") in allowed_targets[logical], (
+                        "Unexpected dependent-resource target"
+                    )
         print("CFN_DEPENDENCIES_AUDITED: only Lambda code/timeout direct, references indirect",flush=True)
         cf.execute_change_set(StackName=STACK, ChangeSetName=cs_name)
         print("CFN_UPDATE_SUBMITTED: waiting for stack update")
