@@ -113,7 +113,7 @@ def review(kind,items):
                 else:
                     assert d.get("CausingEntity") in (
                         "ApiLambda.Arn","RestApi.RootResourceId","ApiLambda")
-                    assert t.get("Name") in ("FunctionName","Uri")
+                    assert t.get("Name") in ("FunctionName","Integration")
     print("SAFE_CF_CHANGESET",kind,flush=True)
 
 def main():
