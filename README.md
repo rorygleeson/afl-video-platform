@@ -1,47 +1,37 @@
 # AFL Video Platform
 
-<img src="docs/screenshots/00-hero-video-sample.jpg" alt="Example AI-generated AFL premiership video playing on a phone" width="420">
+**Turn a selfie into your own AI-generated AFL Grand Final highlight.**
 
-**Turn your selfie into an AFL Grand Final winning-goal video.**
+A mobile-friendly web app that puts you into personalised football scenes. Choose your AFL team, upload a selfie and enter your name to create AI-generated action, celebration and commentary featuring you.
 
-A mobile-friendly AI video application where you choose an AFL team, upload a selfie and enter your name. It creates a personalised football highlight with cinematic action and commentary featuring your name and team.
+<img src="docs/screenshots/00-hero-video-sample.jpg" alt="Example personalised AFL video on a phone" width="420">
 
 ## How it works
 
-1. **Upload a selfie** and select your AFL team.
-2. **Generate three reference images** — the breakaway, winning kick and premiership celebration.
-3. **Create three video scenes** with Google Gemini Omni 1.2 Flash, using the personalised images and commentary prompts.
-4. **Combine and download** the scenes as one final MP4.
+1. **Choose your team and upload a selfie.** Enter your first and last name.
+2. **Create reference images.** AI places you into three football moments, wearing your team's colours.
+3. **Generate video scenes.** Animate the images into a run-up, a winning kick and a premiership celebration, with personalised commentary.
+4. **Watch your highlights.** Preview the generated scenes and play your MP4 videos.
 
-The developer pilot uses **Replicate** for reference-image generation and **Google Vertex AI** for video generation. **AWS Lambda, Step Functions, DynamoDB and S3** coordinate processing and store the results; the web app runs on **CloudFront**.
+## Screenshots
 
-## Mobile app screenshots
+| Selfie and team | AI-generated reference scenes | Video preview |
+| --- | --- | --- |
+| <img src="docs/screenshots/01-selfie-upload.jpg" alt="Select an AFL team and upload your selfie" width="240"> | <img src="docs/screenshots/02-reference-images.jpg" alt="Three personalised football reference images" width="300"> | <img src="docs/screenshots/03-generated-video-sample.jpg" alt="AI-generated AFL video playback" width="240"> |
 
-Actual screenshots from the developer pilot, in order:
+## Architecture
 
-**1. Select your team and upload a selfie**
+The platform uses **AWS CloudFront and S3** for the web app and media, **API Gateway and Lambda** for its backend, **Step Functions** to coordinate image and video generation, and **DynamoDB** to track jobs. AI models generate personalised imagery and videos.
 
-<img src="docs/screenshots/01-selfie-upload.jpg" alt="Mobile AFL app showing team, name and selfie upload" width="320">
-
-**2. Generate three personalised reference images**
-
-<img src="docs/screenshots/02-reference-images.jpg" alt="Three completed personalised AFL scene reference images" width="520">
-
-**3. See an example of the generated video**
-
-<img src="docs/screenshots/03-generated-video-sample.jpg" alt="Gallery view of an AFL video scene with a personalised player" width="320">
-
-*The third screenshot is a frame shown in the phone gallery, not the final-video download screen.*
-
-## Project status
-
-**Developer pilot:** reference images, video generation, assembly and final playback have been demonstrated. Some video requests fail Google safety or quota checks; reliability and launch readiness remain work in progress. Consumer login and payments are not yet implemented.
-
-**Current access:** development `x-api-key` — **no Cognito**.
+[**Architecture overview**](docs/ARCHITECTURE.md) · [**Architecture diagram**](docs/architecture-high-level.svg)
 
 ## Technical documentation
 
-- [Architecture and AWS diagram](docs/ARCHITECTURE.md)
+- [Architecture and system components](docs/ARCHITECTURE.md)
 - [API endpoints](docs/API_ENDPOINTS.md)
-- [Scenario prompts](docs/VIDEO_PROMPTS.md)
-- [Release workflow](.github/workflows/release.yml)
+- [Video prompts and personalisation](docs/VIDEO_PROMPTS.md)
+- [Deployment and infrastructure](docs/DEPLOYMENT.md)
+- [GitHub Actions release pipeline](.github/workflows/release.yml)
+
+---
+**AFL Video Platform** · Personalised AI-generated football highlights.
