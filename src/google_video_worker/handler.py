@@ -506,7 +506,9 @@ def submit(job, scene, request):
         if isinstance(exc, GoogleHttpFailure):
             code = "GOOGLE_HTTP_" + str(exc.status)
         elif isinstance(exc, ContractError):
-            code = "GOOGLE_RESPONSE_ERROR"
+            # Preserve classification of legacy/typed HTTP contract failures.
+            match = re.fullmatch(r"Google POST HTTP ([1-5][0-9]{2})", str(exc))
+            code = "GOOGLE_HTTP_" + match.group(1) if match else "GOOGLE_RESPONSE_ERROR"
         elif isinstance(exc, urllib.error.URLError):
             code = "GOOGLE_NETWORK_ERROR"
         elif isinstance(exc, (TimeoutError, ConnectionError)):
