@@ -1,4 +1,5 @@
 name: Audit live S3 Nano Banana image prompt (read-only)
+# Recheck after PR 57 live publish: read-only audit, no Google calls.
 on:
   push:
     branches: [main]
