@@ -64,6 +64,29 @@ class SceneRetryTests(unittest.TestCase):
             self.assertIn("REMOVE realVideos.#scene", cmd["UpdateExpression"])
             self.assertIn("realVideos.#scene.requestId = :request", cmd["ConditionExpression"])
 
+    def test_all_confirmed_google_terminal_failures_allow_independent_retry(self):
+        for provider in ("failed", "cancelled", "incomplete", "budget_exceeded"):
+            self.job["realVideos"]["scene2"]["providerFinalStatus"] = provider
+            public = self.api.video_scene_public(self.job, "scene2")
+            self.assertTrue(public["retryAvailable"], provider)
+            self.ddb.reset_mock()
+            self.states.start_execution.reset_mock()
+            code, _ = self.retry(2, key="retry-confirmed-" + provider)
+            self.assertEqual(code, 202, provider)
+            self.states.start_execution.assert_called_once()
+
+    def test_failed_scene_returns_explicit_blocker_instead_of_silent_missing_retry(self):
+        self.job["realVideos"]["scene1"]["providerFinalStatus"] = None
+        result = self.api.video_scene_public(self.job, "scene1")
+        self.assertFalse(result["retryAvailable"])
+        self.assertEqual(result["retryBlockedReason"], "GOOGLE_FAILURE_NOT_CONFIRMED")
+        self.job["realVideos"]["scene1"]["status"] = "PROCESSING"
+        self.states.describe_execution.return_value = {"status": "FAILED"}
+        result = self.api.video_scene_public(self.job, "scene1")
+        self.assertEqual(result["status"], "REVIEW_REQUIRED")
+        self.assertFalse(result["retryAvailable"])
+        self.assertEqual(result["retryBlockedReason"], "WORKFLOW_REVIEW_REQUIRED")
+
     def test_never_retry_unconfirmed_or_inflight_or_successful_scene(self):
         for state, provider in (("COMPLETED", "completed"),
                                 ("PROCESSING", None),
