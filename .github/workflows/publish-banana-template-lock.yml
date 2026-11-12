@@ -1,0 +1,75 @@
+name: Publish guarded Nano Banana master-frame prompt
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-banana-template-lock.yml'
+      - 'docs/BANANA_TEMPLATE_LOCK_RELEASE.md'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: ${{ contains(github.event.head_commit.message, '[publish-banana-template-lock]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Test prompt contract offline
+        run: |
+          python3 -m unittest discover -s tests -p 'test_banana_template_preservation_prompt.py' -v
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Assume existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Verify, conditionally publish only config.json, and read back
+        run: |
+          python3 - <<'PY'
+          import boto3,hashlib,json
+          from pathlib import Path
+          key="scenarios/afl-grand-final-winning-kick/v1/config.json"
+          expected_old="84b0c923015b7bca007399c799881a4b77c68aa01a10ddfb0a376414fb6ed962"
+          sts=boto3.client("sts",region_name="ap-southeast-2")
+          assert sts.get_caller_identity()["Account"]=="134387458447"
+          cf=boto3.client("cloudformation",region_name="ap-southeast-2")
+          stack=cf.describe_stacks(StackName="afl-app-dev-backend")["Stacks"][0]
+          assert stack["StackStatus"]=="UPDATE_COMPLETE"
+          params={p["ParameterKey"]:p["ParameterValue"] for p in stack["Parameters"]}
+          bucket=params["ScenarioAssetsBucket"]
+          s3=boto3.client("s3",region_name="ap-southeast-2")
+          current=s3.get_object(Bucket=bucket,Key=key)
+          old=current["Body"].read(20001)
+          assert hashlib.sha256(old).hexdigest()==expected_old, "S3 image config drift; refusing publish"
+          local=Path(key).read_bytes()
+          new=json.loads(local)
+          oldconfig=json.loads(old)
+          assert len(local)<=20000 and new["scenarioId"]==oldconfig["scenarioId"]
+          assert new["version"]==oldconfig["version"]=="v1"
+          assert new["teamGuernseys"]==oldconfig["teamGuernseys"]
+          assert len(new["scenes"])==len(oldconfig["scenes"])==3
+          for i in range(3):
+              for k,v in oldconfig["scenes"][i].items():
+                  if i==0 and k=="promptInstructions":
+                      continue
+                  assert new["scenes"][i][k]==v, "Unexpected scene change"
+          assert "MASTER FRAME LOCK" in new["sharedPrompt"]
+          assert "same Scene 1 master photograph" in new["scenes"][0]["promptInstructions"]
+          assert new["sharedPrompt"] != oldconfig["sharedPrompt"]
+          print("PREFLIGHT_S3_BASELINE_MATCH",expected_old)
+          response=s3.put_object(Bucket=bucket,Key=key,Body=local,ContentType="application/json",
+               ServerSideEncryption="AES256",IfMatch=current["ETag"])
+          latest=s3.get_object(Bucket=bucket,Key=key)
+          actual=latest["Body"].read(20001)
+          assert actual==local, "Published S3 config differs from reviewed version"
+          print("PUBLISHED_IMAGE_CONFIG_SHA256",hashlib.sha256(actual).hexdigest())
+          print("PUBLISHED_IMAGE_CONFIG_VERSION_ID",response.get("VersionId","none"))
+          print("PUBLISHED_IMAGE_CONFIG_VERIFIED: original templates unchanged; no Google generation")
+          PY
