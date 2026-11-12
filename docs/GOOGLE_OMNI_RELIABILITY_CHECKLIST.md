@@ -34,6 +34,12 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 - Confirm read-only GCS access with a non-sensitive known fixture object and test output-copy to private AWS S3 before any paid model request. Run a controlled paid scene only after explicit approval.
 - Do not claim item 3 completed until the live GCS-to-S3 path is proven and the existing final MP4 assembly succeeds.
 
+## Item 4 release (2026-11-12)
+
+- Code merged via PR #56: https://github.com/rorygleeson/afl-video-platform/pull/56; tests passed.
+- Guarded worker-code-only CloudFormation deployment requested. Verify before marking checked.
+- This diagnostic change has no model POST retries, no prompt/UI changes, no new bucket and no GCS activation.
+
 ## Release discipline
 
 - Implement in small, separately testable stages. Do not change prompts, UI layout, billing or reference-image generation as part of these reliability fixes.
