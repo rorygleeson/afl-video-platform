@@ -1,0 +1,38 @@
+name: Publish verified video scene retry UI (guarded)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/publish_video_scene_retry_ui.py'
+      - '.github/workflows/publish-video-scene-retry-ui.yml'
+      - 'docs/VIDEO_SCENE_RETRY_UI_RELEASE.md'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: ${{ contains(github.event.head_commit.message, '[publish-scene-retry-ui]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Run all offline UI/retry regression tests
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 -m py_compile scripts/publish_video_scene_retry_ui.py src/google_video_worker/handler.py src/api/handler.py
+          python3 -m unittest discover -s tests -p 'test_real_video_scene_retry.py' -v
+          node --test tests/test_frontend_poll.cjs
+      - name: Authenticate existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Verify deployed backend and publish two UI files
+        run: python3 -u scripts/publish_video_scene_retry_ui.py
