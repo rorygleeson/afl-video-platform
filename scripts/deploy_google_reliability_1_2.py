@@ -99,7 +99,20 @@ def review(kind,items):
             assert c["ResourceType"]=="AWS::StepFunctions::StateMachine"
             assert c.get("Replacement") in (False,"False")
             assert c.get("Details")
-            assert all(d.get("Target",{}).get("Name")=="DefinitionString" for d in c["Details"])
+            for d in c["Details"]:
+                target=d.get("Target",{})
+                assert target.get("Attribute")=="Properties"
+                assert target.get("RequiresRecreation")=="Never"
+                if d.get("Evaluation")=="Static":
+                    assert d.get("ChangeSource")=="DirectModification"
+                    assert target.get("Name")=="DefinitionString"
+                elif d.get("Evaluation")=="Dynamic":
+                    assert d.get("ChangeSource")=="ResourceAttribute"
+                    assert (target.get("Name"),d.get("CausingEntity")) in (
+                        ("DefinitionString","GoogleWorkerLambda.Arn"),
+                        ("RoleArn","GoogleStateMachineRole.Arn"))
+                else:
+                    raise AssertionError("Unrecognised CloudFormation dependency")
         else:
             assert c.get("Replacement") in (False,"False","Conditional")
             for d in c.get("Details",[]):
