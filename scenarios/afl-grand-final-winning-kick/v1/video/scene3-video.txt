@@ -1,9 +1,9 @@
-# AFL Grand Final — Scene 3: PREMIERS
-# Variables: $fullName, $teamName, $guernsey, $commentary
+# Australian Rules Grand Final — Scene 3: PREMIERS
+# Variables: $fullName, $guernsey, $commentary
 
 FORMAT: 5 seconds, vertical 9:16, photorealistic live Australian rules football broadcast at natural speed. This is a NEW celebration camera shot; animate the supplied PERSONALISED Scene 3 image as the exact opening frame. The winning goal and final siren have ALREADY happened. Do not show either event again.
 
-STARTING IMAGE: $fullName stands in the centre with his face toward the camera and mouth open in triumph, ONE fist raised visibly in front of his body. Two teammates are tightly embracing him, one on each side, already smiling/shouting. Gold confetti is already in the air. A 'PREMIER CHAMPIONS' stadium display appears in the distance. Keep these existing elements; do not add new text or new confetti bursts.
+STARTING IMAGE: $fullName stands in the centre with his face toward the camera and mouth open in triumph, ONE fist raised visibly in front of his body. Two teammates are tightly embracing him, one on each side, already smiling/shouting. Gold confetti is already in the air. A plain, unbranded illuminated stadium display appears in the distance. Keep the confetti and existing celebration positions; do not add new text or new confetti bursts.
 
 0.0–1.2s: Begin immediately in the existing embrace, with jubilant, natural movement. The central player pumps his raised fist once; teammates cheer and hold him. No frozen introduction or second entrance.
 1.2–4.0s: The two teammates jostle and hug him with realistic weight and stable hand contact. The central player briefly cheers but keeps his face toward camera as much as natural. Avoid extreme mouth stretching or facial identity drift. Existing confetti drifts gently.
@@ -11,8 +11,9 @@ STARTING IMAGE: $fullName stands in the centre with his face toward the camera a
 
 CAMERA: ONE gently stabilised close/medium television camera, subtle sideways tracking only. Do not swing behind the player's head or zoom rapidly. Do not invent a trophy presentation, additional players or any second celebration scene.
 
-WINNING TEAM: The central player AND BOTH teammates wear $teamName's playing guernsey ($guernsey), as depicted in the personalised starting image. Keep all three players' original positions, faces and contact. Do not introduce Essendon opponents or change the team kit.
+WINNING TEAM: The central player AND BOTH teammates wear coordinated plain playing guernseys ($guernsey), as depicted in the personalised starting image. Keep all three players' original positions, faces and contact. Do not introduce opposing players or change the team kit.
 
 AUDIO: The SAME Australian AFL commentator from Scenes 1 and 2 says exactly "$commentary" ONCE, with a triumphant tone and a clear full name and team. Start immediately and finish by 4.7 seconds. Energetic crowd and player shouts may sit beneath the narration, but no other intelligible commentary. No repeat siren, music or subtitles.
 
 STRICT: Stable customer face, hairstyle and age; no face-swap transitions, duplicate hands, disappearing arms, changing uniforms, generated captions, new fireworks or unexplained camera cuts.
+BRANDING: No club crests, league badges, sponsors, manufacturer marks, advertising or branding on any guernsey, shorts, socks, grandstand or display. Replace any such marks visible in the supplied opening frame with plain fabric or neutral surfaces; do not change the customer's face, teammates, contact, pose or camera angle.

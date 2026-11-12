@@ -33,7 +33,7 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertEqual(result.count(self.config["sharedPrompt"]), 1)
                 self.assertEqual(result.count(scene["promptInstructions"]), 1)
                 self.assertIn("the ONLY source for the central player's identity", result)
-                self.assertIn("Geelong Cats: navy blue and white horizontal hoops", result)
+                self.assertIn("navy blue and white horizontal hoops", result)
                 self.assertIn(scene["promptInstructions"], result)
                 self.assertEqual(scene["model"], "gemini-3-pro-image")
                 self.assertIn("selfie", result.lower())
@@ -44,9 +44,9 @@ class GooglePromptTests(unittest.TestCase):
                 text = scene["promptInstructions"].lower()
                 self.assertIn("scene ", text)
                 if scene["id"] in ("scene1", "scene2"):
-                    self.assertIn("essendon", text)
+                    self.assertIn("opposition", text)
                 else:
-                    self.assertIn("no essendon opponents", text)
+                    self.assertIn("no opposition players", text)
         self.assertIn("mouth is open in a triumphant cheer",
                       self.config["scenes"][2]["promptInstructions"])
 
@@ -55,7 +55,7 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("entire visible head", shared)
         self.assertIn("image 2 = the customer selfie", shared)
         self.assertIn("do not retain the template man's facial features", shared)
-        self.assertIn("selected team\'s specified guernsey colours/pattern", shared)
+        self.assertIn("selected unbranded guernsey colours/pattern", shared)
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
                 prompt = namespace["build_image_prompt"](self.config, scene, "geelong").lower()
@@ -64,21 +64,21 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertIn("selected team", prompt)
         celebration = self.config["scenes"][2]["promptInstructions"].lower()
         self.assertIn("both teammates", celebration)
-        self.assertIn("the selected team's coordinated kit", celebration)
+        self.assertIn("coordinated unbranded playing kits", celebration)
 
     def test_concise_scene_prompts_do_not_repeat_shared_identity_rules(self):
         shared = self.config["sharedPrompt"].lower()
         for term in ("the only source for the central player's identity", "entire visible head",
-                     "hairstyle", "skin tone", "selected team\'s specified guernsey colours/pattern"):
+                     "hairstyle", "skin tone", "selected unbranded guernsey colours/pattern"):
             self.assertIn(term, shared)
-        self.assertLess(len(shared.split()), 650)
+        self.assertLess(len(shared.split()), 750)
         for scene in self.config["scenes"]:
             with self.subTest(scene=scene["id"]):
                 scene_text = scene["promptInstructions"].lower()
                 self.assertLess(len(scene_text.split()), 230)
                 self.assertNotIn("full head replacement", scene_text)
                 self.assertNotIn("only facial identity source", scene_text)
-        self.assertIn("red afl football", self.config["scenes"][0]["promptInstructions"].lower())
+        self.assertIn("red australian rules football", self.config["scenes"][0]["promptInstructions"].lower())
         self.assertIn("not been dropped or kicked yet", self.config["scenes"][1]["promptInstructions"].lower())
         self.assertIn("both teammates",
                       self.config["scenes"][2]["promptInstructions"].lower())
@@ -99,6 +99,23 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("two tall central goalposts", video)
         self.assertNotIn("no goalposts are visible", scene)
         self.assertNotIn("drop punt", video)
+
+    def test_old_prompts_backed_up_and_new_prompts_unbranded(self):
+        old = json.loads((CONFIG.parent / "config_old.json").read_text())
+        self.assertEqual(old["scenes"][0]["id"], self.config["scenes"][0]["id"])
+        self.assertIn("Essendon", old["scenes"][0]["promptInstructions"])
+        self.assertIn("PREMIER CHAMPIONS", old["scenes"][2]["promptInstructions"])
+        for team, value in self.config["teamGuernseys"].items():
+            with self.subTest(team=team):
+                self.assertNotIn("Magpies", value)
+                self.assertNotIn("Magpies", value)
+        for scene in self.config["scenes"]:
+            prompt = build_image_prompt(self.config, scene, "collingwood")
+            self.assertIn("REMOVE any existing club crests", prompt)
+            self.assertIn("identity", prompt.lower())
+            self.assertNotIn("Essendon", prompt)
+        self.assertIn("four", self.config["scenes"][1]["promptInstructions"].lower())
+        self.assertIn("BOTH teammates", self.config["scenes"][2]["promptInstructions"])
 
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):

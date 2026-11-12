@@ -1,5 +1,5 @@
-# AFL Grand Final — Scene 2: The Winning Kick
-# Variables: $fullName, $teamName, $guernsey, $commentary
+# Australian Rules Grand Final — Scene 2: The Winning Kick
+# Variables: $fullName, $guernsey, $commentary
 
 FORMAT: 8 seconds, vertical 9:16, photorealistic live Australian rules football broadcast. Natural full-speed movement, realistic ball physics and authentic stadium atmosphere.
 
@@ -17,13 +17,13 @@ The entire sequence follows one continuous football action.
 
 The player continues running naturally towards the goals, carrying the red football in both hands.
 
-A distant Essendon defender runs towards him but remains too far away to interfere.
+A distant opposing player wearing an unbranded black guernsey with a red diagonal sash runs towards him but remains too far away to interfere.
 
 The camera remains stationary, preserving the original angle and framing.
 
 1.5–2.5 seconds — THE KICK
 
-The player performs one natural running AFL kick.
+The player performs one natural running Australian rules drop kick.
 
 While moving forward, he lowers the football in his hands and releases it directly in front of his kicking foot.
 
@@ -83,3 +83,5 @@ ESSENTIAL CONTINUITY
 - Preserve the original four goalposts and their exact positions.
 - The ball crosses between the two tall central posts before continuing into the crowd.
 - Maintain realistic speed, natural player movement and consistent ball physics.
+
+BRANDING: The personalised player's playing kit has $guernsey. The opposing players retain plain black-and-red sash kits. No club badges, league insignia, sponsor marks, manufacturer logos, player-name lettering, advertising or branded signage. Replace any such markings from the starting frame with plain cloth or neutral stadium surfaces; preserve every player and all four goalposts.

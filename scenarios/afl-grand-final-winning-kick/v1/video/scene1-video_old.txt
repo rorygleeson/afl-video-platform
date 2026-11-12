@@ -1,0 +1,16 @@
+# AFL Grand Final — Scene 1: BREAK FREE
+# Variables: $fullName, $teamName, $guernsey, $commentary
+
+FORMAT: 4 seconds, vertical 9:16, photorealistic live Australian rules football broadcast. Normal match speed; no slow motion. The supplied PERSONALISED Scene 1 image is the exact opening frame.
+
+STARTING GEOMETRY: $fullName is in the centre foreground, face aimed toward the tracking camera, sprinting with ONE red AFL football held in both hands. He wears the $teamName guernsey ($guernsey). An Essendon opponent in black with a bold red diagonal sash is close behind on camera-left, already reaching across the runner's upper arm. The stadium is floodlit at night. There are NO goalposts in this frame.
+
+0.0–0.7s: In the motion begun by the image, the runner surges forward and slips the defender's reaching hand. The defender does not complete the tackle. Keep the football securely controlled.
+0.7–3.2s: Fast, natural, ground-covering sprint. Camera tracks backwards in front of the runner and widens subtly to reveal stride and turf parallax. The Essendon defender falls visibly behind. Keep the customer's face recognisable and in view.
+3.2–4.0s: Continue accelerating toward the attacking end, still in possession. No ball drop or kick. End with forward motion that can cut cleanly to a DIFFERENT camera in Scene 2.
+
+CAMERA: ONE continuous front-tracking broadcast shot; small natural handheld broadcast movement, not a perfect locked-off image. No orbit, no cut, no replay. Do not introduce goalposts.
+
+AUDIO: Same enthusiastic Australian AFL commentator across all three scenes; one precise line, spoken ONCE: "$commentary" Emphasise "SIX SECONDS LEFT!" and finish within this four-second clip. Authentic rapid footfalls and swelling crowd. No other intelligible speech, music or captions.
+
+CONTINUITY: The personalised source image, not the unpersonalised template, determines the customer's facial identity, real hairstyle, age and selected team uniform. Preserve the Essendon defender's face and guernsey. One ball; realistic arms, hands, legs and foot contact; no facial morphing, extra players, invented signage or text.

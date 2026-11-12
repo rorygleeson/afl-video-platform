@@ -24,8 +24,8 @@ class TemplatePreservationPromptTests(unittest.TestCase):
     def test_scene_one_freezes_existing_composition(self):
         cfg = json.loads(CONFIG.read_text())
         scene = cfg["scenes"][0]["promptInstructions"]
-        for phrase in ("same Scene 1 master photograph", "ONE red AFL football",
-                       "Essendon", "NO visible goalposts", "Replace ONLY"):
+        for phrase in ("same Scene 1 master photograph", "ONE red Australian rules football",
+                       "opposition", "NO visible goalposts", "Replace ONLY"):
             self.assertIn(phrase, scene)
 
 if __name__ == "__main__":
