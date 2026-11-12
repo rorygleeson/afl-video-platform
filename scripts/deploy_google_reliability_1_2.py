@@ -151,7 +151,7 @@ def main():
             live_template=cf.get_template(StackName=stack,TemplateStage="Original")["TemplateBody"]
             assert isinstance(live_template,str)
             import re
-            matches=list(re.finditer(r'(?m)^(?P<indent>[ \\t]*)"PollVideo":(?P<state>\\{[^\\n]+\\}),?$',live_template))
+            matches=list(re.finditer(r'(?m)^(?P<indent>[ \t]*)"PollVideo":(?P<state>\{[^\n]+\}),?$',live_template))
             assert len(matches)==1,"Could not safely identify exact live PollVideo state"
             match=matches[0]
             poll_state=json.loads(match.group("state"))
