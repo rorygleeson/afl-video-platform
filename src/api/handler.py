@@ -717,24 +717,31 @@ def start_video_sequence(job_id, event):
            or not job.get("scenes", {}).get(scene, {}).get("resultKey")
            for scene in VIDEO_SCENES):
         return response(409, {"error": "All three reference images must be complete"})
-    if job.get("videoSequence"):
-        return response(202, {"status": "ALREADY_APPROVED", "jobId": job_id,
-                              "sequence": {"status": "APPROVED", "mode": "AWS_EVENT_DRIVEN"}})
-    try:
-        DDB.update_item(
-            Key={"jobId": job_id},
-            UpdateExpression="SET videoSequence = :approval",
-            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(videoSequence)",
-            ExpressionAttributeValues={":approval": {
-                "status": "APPROVED", "mode": "AWS_EVENT_DRIVEN",
-                "approvedAt": datetime.now(timezone.utc).isoformat(),
-                "requestFingerprint": hashlib.sha256(token.encode()).hexdigest(),
-            }},
-        )
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-            return response(202, {"status": "ALREADY_APPROVED", "jobId": job_id})
-        raise
+    existing_sequence = job.get("videoSequence")
+    if existing_sequence and existing_sequence.get("status") != "APPROVED":
+        return response(409, {"status": "SEQUENCE_NEEDS_REVIEW",
+                              "error": "Existing paid sequence cannot be resumed automatically"})
+    if not existing_sequence:
+        try:
+            DDB.update_item(
+                Key={"jobId": job_id},
+                UpdateExpression="SET videoSequence = :approval",
+                ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(videoSequence)",
+                ExpressionAttributeValues={":approval": {
+                    "status": "APPROVED", "mode": "AWS_EVENT_DRIVEN",
+                    "approvedAt": datetime.now(timezone.utc).isoformat(),
+                    "requestFingerprint": hashlib.sha256(token.encode()).hexdigest(),
+                }},
+            )
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise
+            # Another request won the approval race. Reconcile its consent
+            # without triggering any already-reserved paid scene.
+            latest = get_job(job_id)
+            if not latest or latest.get("videoSequence", {}).get("status") != "APPROVED":
+                return response(409, {"status": "SEQUENCE_NEEDS_REVIEW"})
+            job = latest
     # Reuse the existing per-scene atomic reservation and named SFN execution.
     # A previously successful Scene 1/2 may be reused without paying again.
     # Resume at the FIRST missing scene, never skip a failed/in-flight scene.
@@ -752,7 +759,8 @@ def start_video_sequence(job_id, event):
             return response(503, {"status": "SEQUENCE_HANDOFF_NEEDS_REVIEW",
                                   "error": "Check existing scene status; never resubmit automatically"})
         break
-    return response(202, {"status": "SEQUENCE_APPROVED", "jobId": job_id,
+    return response(202, {"status": "ALREADY_APPROVED" if existing_sequence else "SEQUENCE_APPROVED",
+                          "jobId": job_id,
                           "sequence": {"status": "APPROVED", "mode": "AWS_EVENT_DRIVEN"}})
 
 
@@ -800,6 +808,23 @@ def video_sequence_event(event):
     next_scene = VIDEO_SCENES[VIDEO_SCENES.index(scene_id) + 1]
     if (job.get("paidVideoApprovals", {}).get(next_scene) or
             job.get("realVideos", {}).get(next_scene)):
+        # Reservation can exist when StartExecution's response was lost.
+        # Never treat a DynamoDB flag alone as proof Google generation began.
+        next_approval = job.get("paidVideoApprovals", {}).get(next_scene, {})
+        execution_name = next_approval.get("executionName")
+        if not isinstance(execution_name, str):
+            return {"status": "NEXT_SCENE_HANDOFF_NEEDS_REVIEW", "sceneId": next_scene}
+        execution_arn = (GOOGLE_STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:", 1)
+                         + ":" + execution_name)
+        try:
+            execution = STATES.describe_execution(executionArn=execution_arn)
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+                LOG.error("Video sequence next scene reserved but workflow absent: %s", next_scene)
+                return {"status": "NEXT_SCENE_HANDOFF_NEEDS_REVIEW", "sceneId": next_scene}
+            raise
+        if execution.get("status") not in ("RUNNING", "SUCCEEDED"):
+            return {"status": "NEXT_SCENE_HANDOFF_NEEDS_REVIEW", "sceneId": next_scene}
         return {"status": "ALREADY_STARTED", "sceneId": next_scene}
     result = start_real_scene(job_id, next_scene, {
         "body": json.dumps({"confirmPaidScene": next_scene}),
