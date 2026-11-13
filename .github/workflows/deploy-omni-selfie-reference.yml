@@ -1,0 +1,38 @@
+name: Deploy Omni two-image selfie reference to AWS
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-omni-selfie-reference.yml'
+      - 'scripts/deploy_omni_selfie_reference.py'
+      - 'src/google_video_worker/handler.py'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[deploy-omni-selfie]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Run offline payload tests and compile worker and guarded deployment
+        run: |
+          set -euo pipefail
+          python3 -m py_compile src/google_video_worker/handler.py scripts/deploy_omni_selfie_reference.py
+          python3 -m unittest discover -s tests -p 'test_omni_selfie_reference_payload.py' -v
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - name: Authenticate existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Update only Omni worker and enable selfie reference with rollback
+        run: python3 -u scripts/deploy_omni_selfie_reference.py
