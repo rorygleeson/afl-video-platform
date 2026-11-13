@@ -71,7 +71,7 @@ The crowd roars as the stadium celebrates the premiership-winning kick.
 
 AUDIO
 
-Use one excited Australian AFL commentator speaking exactly "$commentary" ONCE, using the existing commentary wording. Synchronise "He kicks" with the kick and "IT'S A GOAL!" with the ball crossing between the central posts.
+Use one excited Australian rules football commentator speaking exactly "$commentary" ONCE, using the existing commentary wording. Synchronise "He kicks" with the kick and "IT'S A GOAL!" with the ball crossing between the central posts.
 
 Include authentic football impact, one final siren immediately after the kick, and a powerful crowd roar after the goal.
 
@@ -86,4 +86,4 @@ ESSENTIAL CONTINUITY
 - The ball crosses between the two tall central posts before continuing into the crowd.
 - Maintain realistic speed, natural player movement and consistent ball physics.
 
-BRANDING: The personalised player's playing kit has $guernsey. The opposing players retain plain black-and-red sash kits. No club badges, league insignia, sponsor marks, manufacturer logos, player-name lettering, advertising or branded signage. Replace any such markings from the starting frame with plain cloth or neutral stadium surfaces; preserve every player and all four goalposts.
+BRANDING: Keep the existing unbranded starting frame: the personalised player's plain $guernsey kit, the opponents' black-and-red sash kits and the original stadium surfaces. Never add logos, sponsor text, club badges or new signage. No background reconstruction or stadium retouching.
