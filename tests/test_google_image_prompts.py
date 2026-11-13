@@ -64,7 +64,7 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertIn("selected", prompt)
         celebration = self.config["scenes"][2]["promptInstructions"].lower()
         self.assertIn("two distant teammates", celebration)
-        self.assertIn("matching unbranded playing kits", celebration)
+        self.assertIn("selected unbranded colours and pattern", celebration)
 
     def test_concise_scene_prompts_do_not_repeat_shared_identity_rules(self):
         shared = self.config["sharedPrompt"].lower()
