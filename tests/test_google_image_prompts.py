@@ -203,6 +203,19 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("original shorts", self.config["scenes"][1]["promptInstructions"].lower())
         self.assertIn("original shorts", self.config["scenes"][2]["promptInstructions"].lower())
 
+    def test_scene3_selfie_hair_replaces_all_template_hair(self):
+        shared = self.config["sharedPrompt"]
+        scene3 = self.config["scenes"][2]["promptInstructions"]
+        self.assertIn("TEMPLATE HAIR IS NOT PROTECTED", shared)
+        self.assertIn("NEVER retain template hair", shared)
+        self.assertIn("REPLACE ENTIRE FOREGROUND HEAD AND HAIR", scene3)
+        self.assertIn("REMOVE ALL TEMPLATE HAIR", scene3)
+        self.assertIn("no spiky or longer template haircut", scene3)
+        self.assertIn("Image 2 SELFIE", scene3)
+        self.assertIn("neutral closed mouth", scene3)
+        self.assertLess(len(shared.split()), 850)
+        self.assertLess(len(scene3.split()), 230)
+
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):
             with self.subTest(shared=invalid):
