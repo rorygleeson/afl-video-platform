@@ -149,6 +149,29 @@ class AwsVideoSequenceTests(unittest.TestCase):
         self.assertEqual(result["status"], "NEXT_SCENE_HANDOFF_NEEDS_REVIEW")
         self.states.start_execution.assert_not_called()
 
+    def test_lost_sfn_start_response_never_claims_paid_scene_has_started(self):
+        self.approve()
+        self.mark_complete("scene1")
+        self.states.start_execution.side_effect = RuntimeError("Uncertain AWS acknowledgement")
+        result = self.api.lambda_handler(self.completion("scene1"), None)
+        self.assertEqual(result["status"], "NEXT_SCENE_HANDOFF_NEEDS_REVIEW")
+        self.states.start_execution.assert_called_once()
+
+    def test_missing_workflow_reports_review_after_two_minutes_not_indefinite_wait(self):
+        from botocore.exceptions import ClientError
+        self.approve()
+        self.job["paidVideoApprovals"]["scene1"] = {
+            "executionName": f"real-{self.id}-scene1",
+            "createdAt": "2026-11-12T00:00:00+00:00"}
+        self.states.describe_execution.side_effect = ClientError(
+            {"Error":{"Code":"ExecutionDoesNotExist","Message":"not found"}},
+            "DescribeExecution")
+        status = self.api.video_scene_public(self.job, "scene1")
+        self.assertEqual(status["status"], "REVIEW_REQUIRED")
+        self.assertEqual(status["failureCode"], "WORKFLOW_EXECUTION_NOT_FOUND")
+        self.assertEqual(status["retryBlockedReason"], "WORKFLOW_REVIEW_REQUIRED")
+        self.assertFalse(status["retryAvailable"])
+
     def test_scene2_completed_event_starts_scene3_only_with_both_real_mp4s(self):
         self.approve()
         self.mark_complete("scene1")
