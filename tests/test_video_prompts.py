@@ -69,6 +69,21 @@ class VideoPromptTests(unittest.TestCase):
         self.assertEqual(result["durationSeconds"], 8)
         self.assertEqual(result["commentary"], "He kicks… IT'S A GOAL!")
 
+    def test_scene2_never_turns_to_camera_and_ball_flies_high(self):
+        job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
+        prompt = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene2")["prompt"]
+        self.assertIn("PLAYER ORIENTATION AND IDENTITY — ALWAYS FACING AWAY", prompt)
+        self.assertIn("NO TURN TO CAMERA", prompt)
+        self.assertIn("no glance or turn towards the camera", prompt.lower())
+        self.assertIn("never show a frontal face", prompt.lower())
+        self.assertIn("rockets HIGH into the air", prompt)
+        self.assertIn("HIGH ABOVE THE GROUND", prompt)
+        self.assertIn("below the tops of the two tall central posts", prompt)
+        self.assertIn("BETWEEN the TWO TALL CENTRAL POSTS", prompt)
+        self.assertIn("CAMERA — COMPLETELY STATIONARY", prompt)
+        self.assertIn("Never add or invent a fifth post", prompt)
+        self.assertIn("WHILE IT IS STILL AIRBORNE", prompt)
+
     def test_old_video_templates_preserved_and_active_templates_unbranded(self):
         image = json.loads((SCENARIO / "config.json").read_text())
         for scene in ("scene1", "scene2", "scene3"):
