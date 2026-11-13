@@ -112,6 +112,11 @@ class VideoStage4ApiTests(unittest.TestCase):
         self.api.GOOGLE_STATE_MACHINE_ARN = "arn:aws:states:ap-southeast-2:123456789012:stateMachine:real"
         for n in (1, 2, 3):
             scene = "scene" + str(n)
+            self.job["realVideos"] = {
+                f"scene{p}": {"status": "COMPLETED",
+                              "resultKey": f"videos/{self.jobid}/scene{p}.mp4"}
+                for p in range(1, n)
+            }
             event = {"httpMethod": "POST",
                      "path": "/jobs/" + self.jobid + "/real-videos/" + scene,
                      "headers": {"Idempotency-Key": "request-example-20261108"},
@@ -133,20 +138,45 @@ class VideoStage4ApiTests(unittest.TestCase):
             self.states.start_execution.assert_not_called()
         self.api.REAL_VIDEO_MODE = "DISABLED"
 
-    def test_other_paid_scene_is_independent_of_processing_scene(self):
+    def test_scene2_requires_verified_completed_scene1_not_inflight_or_failed(self):
         self.api.REAL_VIDEO_MODE = "ENABLED"
         self.api.GOOGLE_STATE_MACHINE_ARN = "arn:aws:states:ap-southeast-2:123456789012:stateMachine:real"
-        self.job["paidVideoApprovals"] = {"scene1": {"status": "REQUESTED"}}
-        self.job["realVideos"] = {"scene1": {"status": "PROCESSING"}}
-        self.admission.get_item.return_value = {"Item": {"slotId": "GLOBAL_VIDEO_SLOT_0"}}
         event = {"httpMethod": "POST", "path": "/jobs/" + self.jobid + "/real-videos/scene2",
                  "headers": {"Idempotency-Key": "request-example-20261108"},
                  "body": json.dumps({"confirmPaidScene": "scene2"})}
-        response = self.api.lambda_handler(event, None)
-        self.assertEqual(response["statusCode"], 202)
-        self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
-                         "real-" + self.jobid + "-scene2")
+        for state in ("PROCESSING", "FAILED", "SUBMISSION_UNKNOWN", "REQUESTED"):
+            self.job["realVideos"] = {"scene1": {"status": state}}
+            self.assertEqual(self.api.lambda_handler(event, None)["statusCode"], 409)
+            self.states.start_execution.assert_not_called()
+            self.ddb.update_item.assert_not_called()
+        self.job["realVideos"] = {"scene1": {"status": "COMPLETED",
+            "resultKey": f"videos/{self.jobid}/scene1.mp4"}}
+        self.s3.head_object.return_value = {"ContentLength": 0}
+        self.assertEqual(self.api.lambda_handler(event, None)["statusCode"], 409)
+        self.states.start_execution.assert_not_called()
+        self.s3.head_object.return_value = {"ContentLength": 200}
+        self.assertEqual(self.api.lambda_handler(event, None)["statusCode"], 202)
+        self.states.start_execution.assert_called_once()
         self.admission.get_item.assert_not_called()
+        self.api.REAL_VIDEO_MODE = "DISABLED"
+
+    def test_scene3_requires_both_previous_completed_mp4s(self):
+        self.api.REAL_VIDEO_MODE = "ENABLED"
+        self.api.GOOGLE_STATE_MACHINE_ARN = "arn:aws:states:ap-southeast-2:123456789012:stateMachine:real"
+        event = {"httpMethod": "POST", "path": "/jobs/" + self.jobid + "/real-videos/scene3",
+                 "headers": {"Idempotency-Key": "request-example-20261108"},
+                 "body": json.dumps({"confirmPaidScene": "scene3"})}
+        self.job["realVideos"] = {"scene1": {"status": "COMPLETED",
+            "resultKey": f"videos/{self.jobid}/scene1.mp4"},
+            "scene2": {"status": "PROCESSING"}}
+        self.s3.head_object.return_value = {"ContentLength": 200}
+        self.assertEqual(self.api.lambda_handler(event, None)["statusCode"], 409)
+        self.states.start_execution.assert_not_called()
+        self.job["realVideos"]["scene2"] = {"status": "COMPLETED",
+            "resultKey": f"videos/{self.jobid}/scene2.mp4"}
+        self.assertEqual(self.api.lambda_handler(event, None)["statusCode"], 202)
+        self.states.start_execution.assert_called_once()
+        self.assertGreaterEqual(self.s3.head_object.call_count, 2)
         self.api.REAL_VIDEO_MODE = "DISABLED"
 
     def test_failed_sfn_is_shown_as_review_required_not_new_paid_attempt(self):
