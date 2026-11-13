@@ -11,10 +11,10 @@ class TemplatePreservationPromptTests(unittest.TestCase):
         cfg = json.loads(CONFIG.read_text())
         shared = cfg["sharedPrompt"]
         self.assertIn("MASTER FRAME LOCK", shared)
-        self.assertIn("Preserve Image 1 exactly", shared)
+        self.assertIn("Image 1 is a LOCKED ORIGINAL PHOTOGRAPH", shared)
         self.assertIn("Image 1", shared)
         self.assertIn("Image 2 = the CUSTOMER SELFIE, the ONLY source", shared)
-        self.assertIn("skin blending and kit colours/pattern", shared)
+        self.assertIn("exposed skin tone", shared)
         self.assertLessEqual(len(shared), 8000)
         for scene in cfg["scenes"]:
             self.assertEqual(scene["operation"], "image_edit")
