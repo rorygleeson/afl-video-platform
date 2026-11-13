@@ -207,7 +207,13 @@ const input = document.getElementById('selfie');
         : 'Generate ' + availablePaidScenes.length + ' Remaining Video' +
           (availablePaidScenes.length === 1 ? '' : 's') + ' (paid, sequential)';
       for (const n of [1, 2, 3]) {
-        document.getElementById('videoPanel' + n).hidden = false;
+        // Render only the current stage and already completed stages.
+        // A failed stage remains visible for diagnostics/manual retry.
+        const previous = n === 1 ? null : data.videos?.['scene' + (n - 1)] || {};
+        const previousCompleted = n === 1 ||
+          (previous.mode === 'REAL' && previous.status === 'COMPLETED' &&
+           !!previous.url && !previous.mock);
+        document.getElementById('videoPanel' + n).hidden = !previousCompleted;
       }
       for (const n of [1, 2, 3]) {
         const id = 'scene' + n;
