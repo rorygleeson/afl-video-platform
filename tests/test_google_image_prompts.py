@@ -64,7 +64,7 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertIn("selected", prompt)
         celebration = self.config["scenes"][2]["promptInstructions"].lower()
         self.assertIn("two distant teammates", celebration)
-        self.assertIn("matching unbranded playing kits", celebration)
+        self.assertIn("selected unbranded colours and pattern", celebration)
 
     def test_concise_scene_prompts_do_not_repeat_shared_identity_rules(self):
         shared = self.config["sharedPrompt"].lower()
@@ -174,6 +174,25 @@ class GooglePromptTests(unittest.TestCase):
             self.assertNotIn("replace any marks already", v)
         self.assertIn("four existing goalposts", (root / "scene2-video.txt").read_text().lower())
         self.assertIn("distant teammates", (root / "scene3-video.txt").read_text().lower())
+
+    def test_only_guernsey_is_recoloured_shorts_socks_boots_locked(self):
+        shared = self.config["sharedPrompt"]
+        self.assertIn("TEAM EDIT — GUERNSEY ONLY", shared)
+        self.assertIn("NEVER modify shorts, socks, boots or other clothing", shared)
+        self.assertIn("All other garments are LOCKED to Image 1", shared)
+        self.assertNotIn("with coordinated shorts and socks", shared)
+        self.assertNotIn("guernsey/shorts/socks colours and pattern", shared)
+        for scene in self.config["scenes"]:
+            prompt = build_image_prompt(self.config, scene, "collingwood")
+            self.assertIn("GUERNSEY ONLY", prompt)
+            self.assertNotIn("selected team guernsey, shorts and socks", prompt)
+            self.assertNotIn("matching unbranded playing kits", prompt)
+            self.assertTrue(
+                "shorts, socks and boots" in prompt.lower()
+                or "shorts, socks, boots" in prompt.lower(),
+                scene["id"])
+        self.assertIn("original shorts", self.config["scenes"][1]["promptInstructions"].lower())
+        self.assertIn("original shorts", self.config["scenes"][2]["promptInstructions"].lower())
 
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):
