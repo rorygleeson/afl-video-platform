@@ -123,7 +123,7 @@ class VideoStage4ApiTests(unittest.TestCase):
                      "body": json.dumps({"confirmPaidScene": scene})}
             self.states.reset_mock()
             self.ddb.reset_mock()
-            self.s3.head_object.return_value = {"ContentLength": 100}
+            self.s3.head_object.return_value = {"ContentLength": 200}
             status, body = self.api.lambda_handler(event, None)["statusCode"], None
             self.assertEqual(status, 202)
             self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
