@@ -1,0 +1,45 @@
+name: Fix Omni Step Functions execution context (no paid calls)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-omni-execution-context.yml'
+      - 'scripts/deploy_omni_execution_context_fix.py'
+      - 'infrastructure/app/google-video.yaml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[fix-omni-execution-context]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify exactly four execution-context lookups
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/deploy_omni_execution_context_fix.py
+          python3 - <<'PY'
+          from pathlib import Path
+          template=Path('infrastructure/app/google-video.yaml').read_text()
+          correct='"requestId.$":"$$.Execution.Name"'
+          incorrect='"requestId.$":"$.Execution.Name"'
+          assert template.count(correct)==4
+          assert incorrect not in template
+          print('OFFLINE_CONTEXT_VALIDATED')
+          PY
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Deploy and verify Omni Step Functions only
+        run: python3 -u scripts/deploy_omni_execution_context_fix.py
