@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  AWS-owned progression for previously approved paid AFL video scenes.
+  EventBridge receives only successful terminal Google Step Functions executions.
+  The API Lambda checks consent, original execution ownership, completed MP4 in
+  DynamoDB and S3, and atomically reserves the next scene. Failed provider
+  results do not trigger another paid request.
+Resources:
+  CompletedGoogleVideoExecution:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: afl-app-dev-google-video-completed
+      Description: Advance consented video sequence after Google scene workflow completes
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.states
+        detail-type:
+          - Step Functions Execution Status Change
+        detail:
+          stateMachineArn:
+            - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-google-omni'
+          status:
+            - SUCCEEDED
+      Targets:
+        - Id: AwsOwnedVideoSequenceApi
+          Arn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-api'
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 3600
+            MaximumRetryAttempts: 24
+  AllowVideoSequenceEvent:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-api'
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CompletedGoogleVideoExecution.Arn
+Outputs:
+  CompletionRuleArn:
+    Value: !GetAtt CompletedGoogleVideoExecution.Arn
