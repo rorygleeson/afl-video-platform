@@ -97,6 +97,15 @@ class VideoPromptTests(unittest.TestCase):
         self.assertIn("Never add or invent a fifth post", prompt)
         self.assertIn("CAMERA — COMPLETELY STATIONARY", prompt)
 
+    def test_scene3_neutral_selfie_identity_then_small_smile(self):
+        job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
+        prompt = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")["prompt"]
+        self.assertIn("0.0–0.5s: Hold the SAME neutral", prompt)
+        self.assertIn("0.5–1.5s: Animate only a SMALL, gradual natural smile", prompt)
+        self.assertIn("SELFIE-DERIVED FACIAL IDENTITY IS IMMUTABLE", prompt)
+        self.assertIn("No wide-open shouting mouth", prompt)
+        self.assertEqual(mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")["durationSeconds"], 5)
+
     def test_old_video_templates_preserved_and_active_templates_unbranded(self):
         image = json.loads((SCENARIO / "config.json").read_text())
         for scene in ("scene1", "scene2", "scene3"):
