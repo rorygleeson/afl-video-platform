@@ -9,7 +9,7 @@ STARTING FRAME
 
 Use the supplied personalised Scene 2 reference image as the exact opening frame.
 
-Preserve the player's appearance, selected team uniform, camera angle, surrounding players and stadium. Treat the EXACT FOUR original goalposts visible in this supplied personalised opening image as IMMUTABLE stadium architecture throughout all 8 seconds. Reuse their existing geometry: four separate, straight, vertical, solid white poles in their original left-to-right order, with two taller central goalposts and two shorter outside behind posts. Keep their original heights, thickness, bases, spacing and orientation. These posts are already present: NEVER create, copy, split, merge, replace, tilt, bend, sway, stretch, snap, collapse, disappear or animate any pole. Never create a fifth upright, extra crossbar or temporary pole.
+Preserve the player's appearance, selected team uniform, camera angle, surrounding players and stadium. Treat the four existing goalposts — the EXACT FOUR original goalposts visible in this supplied personalised opening image — as IMMUTABLE stadium architecture throughout all 8 seconds. Reuse their existing geometry: four separate, straight, vertical, solid white poles in their original left-to-right order, with two taller central goalposts and two shorter outside behind posts. Keep their original heights, thickness, bases, spacing and orientation. These posts are already present: NEVER create, copy, split, merge, replace, tilt, bend, sway, stretch, snap, collapse, disappear or animate any pole. Never create a fifth upright, extra crossbar or temporary pole.
 
 The camera is behind and slightly to the right of the player. The player runs towards the goals approximately 30–35 metres ahead.
 
