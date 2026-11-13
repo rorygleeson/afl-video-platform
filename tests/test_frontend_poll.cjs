@@ -568,6 +568,55 @@ test('Scene 2 and Scene 3 video panels unlock only after previous MP4 completion
   assert.equal(h.els.assembleFinal.hidden,true);
 });
 
+test('failed Scene 2 pauses sequence; confirmed manual retry completion safely starts Scene 3', async () => {
+  const options = {paidScenes:{scene1:true,scene2:true,scene3:true},realVideos:{}};
+  const h=setup(options);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  await h.els.generateAllVideos.listeners.click(); await h.flush();
+  const paid = () => h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST');
+  assert.deepEqual(paid().map(c=>c.url.match(/scene[123]$/)[0]), ['scene1']);
+  options.realVideos.scene1 = {mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.deepEqual(paid().map(c=>c.url.match(/scene[123]$/)[0]), ['scene1','scene2']);
+  options.realVideos.scene2 = {mode:'REAL',status:'FAILED',retryAvailable:true,
+    providerFinalStatus:'failed',providerErrorCode:'too_many_requests'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.retryVideoScene2.hidden,false,'Scene 2 retry remains available');
+  assert.equal(h.els.videoPanel3.hidden,true);
+  assert.equal(paid().length,2,'Failed Scene 2 must never cause a billable Scene 3');
+  await h.els.retryVideoScene2.listeners.click(); await h.flush();
+  const retries=h.calls.filter(c=>/\/real-videos\/scene2\/retry$/.test(c.url) && c.opts.method === 'POST');
+  assert.equal(retries.length,1,'Exactly one explicit retry, never an automatic paid retry');
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(paid().length,2,'Scene 3 must remain blocked until the retry completes');
+  options.realVideos.scene2 = {mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene2.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.deepEqual(paid().map(c=>c.url.match(/scene[123]$/)[0]), ['scene1','scene2','scene3']);
+  assert.equal(h.els.videoPanel3.hidden,false);
+  assert.equal(h.els.assembleFinal.hidden,true);
+});
+
+test('backgrounded tab never submits next paid scene; visibility resumes confirmed sequence', async () => {
+  const options={paidScenes:{scene1:true,scene2:true,scene3:true},realVideos:{}};
+  const h=setup(options);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  await h.els.generateAllVideos.listeners.click(); await h.flush();
+  const paid=()=>h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST');
+  assert.equal(paid().length,1);
+  h.doc.hidden=true;
+  h.doc.listeners.visibilitychange();
+  options.realVideos.scene1={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
+  await h.flush();
+  assert.equal(paid().length,1,'No paid POST from a backgrounded tab');
+  h.doc.hidden=false;
+  h.doc.listeners.visibilitychange();
+  await h.flush();
+  assert.deepEqual(paid().map(c=>c.url.match(/scene[123]$/)[0]), ['scene1','scene2'],
+    'A new read-only status poll resumes an already confirmed batch');
+});
+
 test('pending paid POST blocks all other scenes; no duplicate request or automatic paid retry', async () => {
   const options = {paidScenes:{scene1:true,scene2:true,scene3:true},
                    realVideos:{},deferPaidVideoResponses:true};
