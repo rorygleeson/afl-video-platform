@@ -98,7 +98,13 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("camera remains stationary", video)
         self.assertIn("two tall central goalposts", video)
         self.assertNotIn("no goalposts are visible", scene)
-        self.assertNotIn("drop punt", video)
+        self.assertIn("authentic australian rules drop punt", video)
+        self.assertIn("boot strikes the ball while it is still airborne", video)
+        self.assertIn("no pan, tilt, zoom, tracking", video)
+        self.assertIn("their image positions must never move", video)
+        self.assertIn("never add or invent a fifth post", video)
+        self.assertNotIn("small upward tilt", video)
+        self.assertNotIn("camera may", video)
 
     def test_old_prompts_backed_up_and_new_prompts_unbranded(self):
         old = json.loads((CONFIG.parent / "config_old.json").read_text())
