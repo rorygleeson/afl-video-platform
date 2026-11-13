@@ -111,7 +111,7 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertNotIn("Magpies", value)
         for scene in self.config["scenes"]:
             prompt = build_image_prompt(self.config, scene, "collingwood")
-            self.assertIn("REMOVE any existing club crests", prompt)
+            self.assertIn("The clean master is already unbranded", prompt)
             self.assertIn("identity", prompt.lower())
             self.assertNotIn("Essendon", prompt)
         self.assertIn("four", self.config["scenes"][1]["promptInstructions"].lower())
@@ -145,6 +145,33 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertEqual(video_text.count("CONSENT AND FICTIONAL CONTEXT"), 1)
                 self.assertIn("has authorised use of their likeness", video_text)
                 self.assertIn("not actual match footage", video_text)
+
+    def test_clean_master_prioritised_over_unnecessary_reconstruction(self):
+        shared = self.config["sharedPrompt"]
+        self.assertIn("MASTER FRAME LOCK", shared)
+        self.assertIn("HIGHEST VISUAL PRIORITY", shared)
+        self.assertIn("maintaining that exact view takes priority over face visibility", shared)
+        self.assertIn("SCENE 2 IS NOT A FRONT-FACING SELFIE REPLACEMENT", shared)
+        self.assertNotIn(r"\\n\\n", shared)
+        self.assertNotIn("REMOVE any existing club crests", shared)
+        self.assertNotIn("removal of existing branded marks", shared)
+        for scene in self.config["scenes"]:
+            self.assertNotIn("remove any identifiable sponsor", scene["promptInstructions"].lower())
+            self.assertNotIn("remove any existing afl", scene["promptInstructions"].lower())
+        s2 = self.config["scenes"][1]["promptInstructions"].lower()
+        self.assertIn("one red australian rules football", s2)
+        self.assertIn("no background retouching or reconstruction", s2)
+        self.assertIn("never turn the head", s2)
+        self.assertIn("four existing", s2)
+        root = ROOT / "scenarios/afl-grand-final-winning-kick/v1/video"
+        for scene in self.config["scenes"]:
+            v = (root / f"{scene['id']}-video.txt").read_text().lower()
+            self.assertIn("consent and fictional context", v)
+            self.assertIn("already unbranded", v)
+            self.assertNotIn("replace any such markings", v)
+            self.assertNotIn("replace any marks already", v)
+        self.assertIn("four existing goalposts", (root / "scene2-video.txt").read_text().lower())
+        self.assertIn("distant teammates", (root / "scene3-video.txt").read_text().lower())
 
     def test_missing_or_invalid_prompt_fails_before_generation(self):
         for invalid in (None, "", 10, "short"):
