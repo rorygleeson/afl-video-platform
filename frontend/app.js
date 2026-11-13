@@ -76,7 +76,10 @@ const input = document.getElementById('selfie');
     lastVideoSnapshot = null;
     generateAllVideos.hidden = true;
     generateAllVideos.disabled = true;
-    generateAllVideos.textContent = 'Generate All 3 Videos (paid)';
+    generateAllVideos.textContent = 'Generate All 3 Videos (paid, sequential)';
+    document.getElementById('videoPanel1').hidden = false;
+    document.getElementById('videoPanel2').hidden = true;
+    document.getElementById('videoPanel3').hidden = true;
     for (const n of [1, 2, 3]) {
       const button = document.getElementById('diagnoseScene' + n);
       button.hidden = true;
