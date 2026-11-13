@@ -1,5 +1,5 @@
 # Australian Rules Grand Final — Scene 3: SOLO PREMIERS CELEBRATION
-# Variables: $fullName, $guernsey, $commentary
+# Variables: $fullName, $teamName, $guernsey, $commentary
 
 CONSENT AND FICTIONAL CONTEXT: This is a fictional, AI-generated personalised Australian rules football entertainment video. The person depicted in the supplied personalised reference image has authorised use of their likeness for this experience. It is not actual match footage, a news report or an endorsement by any real club, league or player. Preserve the authorised person's recognisable identity, and do not impersonate any unrelated real person. This context does not override content safety requirements.
 
@@ -15,7 +15,7 @@ CAMERA: ONE continuous, gently stabilised front-facing broadcast camera, only su
 
 KIT: The central player wears the selected PLAIN unbranded playing kit ($guernsey). Both distant teammates retain coordinated plain kits. Preserve original fabric folds and positions; no identity swapping for anyone except the central selfie subject.
 
-AUDIO: The SAME enthusiastic Australian rules football commentator as Scenes 1 and 2 says exactly "$commentary" ONCE with triumphant energy, finishing by 4.7 seconds. Background crowd cheering only; no other intelligible commentary, music, captions or additional siren.
+AUDIO: The SAME enthusiastic Australian rules football commentator as Scenes 1 and 2 says exactly "$commentary" ONCE with triumphant energy, finishing by 4.7 seconds. The selected team ($teamName) wins the premiership; $fullName delivers the winning kick. Background crowd cheering only; no other intelligible commentary, music, captions or additional siren.
 
 STRICT: Preserve the customer's exact recognisable face, hairstyle, age and natural skin tone throughout. Avoid facial morphing, exaggerated mouth stretching, extra hands, changing uniforms, unexplained camera cuts, new players, foreground embraces, grabbing or jostling. The two background teammates must NEVER move into the foreground.
 
