@@ -402,8 +402,10 @@ test('reference images gate video controls, existing mock records do not unlock 
   h.mockStatuses.scene3 = 'MOCK_COMPLETED';
   h.doc.listeners.visibilitychange();
   await h.flush();
-  assert.equal(h.els.videoPanel2.hidden, false, 'Prompt for Scene 2 remains available');
-  assert.equal(h.els.videoPanel3.hidden, false, 'Prompt for Scene 3 remains available');
+  assert.equal(h.els.videoPanel2.hidden, true,
+    'Mock video does not unlock Scene 2; only a completed real MP4 does');
+  assert.equal(h.els.videoPanel3.hidden, true,
+    'Mock video does not unlock Scene 3; only a completed real MP4 does');
   assert.equal(h.els.generateAllVideos.hidden, true, 'Mock result cannot authorize paid scene');
   assert.match(h.els.videoStatus1.textContent, /Real video not generated/);
   assert.equal(h.els.assembleFinal.hidden, true);
