@@ -13,7 +13,7 @@ STARTING GEOMETRY: $fullName is in the centre foreground, face aimed toward the 
 
 CAMERA: ONE continuous front-tracking broadcast shot; small natural handheld broadcast movement, not a perfect locked-off image. No orbit, no cut, no replay. Do not introduce goalposts.
 
-AUDIO: Same enthusiastic Australian rules football commentator across all three scenes; one precise line, spoken ONCE: "$commentary" Emphasise "SIX SECONDS LEFT!" and finish within this four-second clip. Authentic rapid footfalls and swelling crowd. No other intelligible speech, music or captions.
+AUDIO: OFF-SCREEN SPORTS COMMENTATOR VOICE-OVER ONLY. The footballer NEVER speaks, mouths words, lip-syncs, recites, whispers or moves his lips in time with the commentary; his mouth stays relaxed and closed throughout the run. The commentator is not the player and is not visible. Same enthusiastic Australian rules football commentator across all three scenes; one precise line, spoken ONCE: "$commentary" Emphasise "SIX SECONDS LEFT!" and finish within this four-second clip. Authentic rapid footfalls and swelling crowd. No other intelligible speech, music or captions.
 
 CONTINUITY: The personalised source image, not the unpersonalised template, determines the customer's facial identity, real hairstyle, age and selected team uniform. Preserve the opposition defender's face and unbranded black-and-red sash guernsey. One ball; realistic arms, hands, legs and foot contact; no facial morphing, extra players, invented signage or text.
 BRANDING: The supplied opening image is already unbranded. Keep existing plain surfaces and kit patterns intact; do not introduce logos, sponsor text, club badges or new signage. Do not regenerate the background to remove anything.
