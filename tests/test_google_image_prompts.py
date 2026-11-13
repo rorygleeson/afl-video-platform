@@ -111,7 +111,7 @@ class GooglePromptTests(unittest.TestCase):
                 self.assertNotIn("Magpies", value)
         for scene in self.config["scenes"]:
             prompt = build_image_prompt(self.config, scene, "collingwood")
-            self.assertIn("The clean master is already unbranded", prompt)
+            self.assertIn("The master images are already free of branding", prompt)
             self.assertIn("identity", prompt.lower())
             self.assertNotIn("Essendon", prompt)
         self.assertIn("four", self.config["scenes"][1]["promptInstructions"].lower())
@@ -150,6 +150,8 @@ class GooglePromptTests(unittest.TestCase):
         shared = self.config["sharedPrompt"]
         self.assertIn("MASTER FRAME LOCK", shared)
         self.assertIn("HIGHEST VISUAL PRIORITY", shared)
+        self.assertIn("EVERYTHING ELSE MUST STAY AS IN IMAGE 1", shared)
+        self.assertIn("Edit ONLY these regions", shared)
         self.assertIn("maintaining that exact view takes priority over face visibility", shared)
         self.assertIn("SCENE 2 IS NOT A FRONT-FACING SELFIE REPLACEMENT", shared)
         self.assertNotIn(r"\\n\\n", shared)
