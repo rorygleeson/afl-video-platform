@@ -106,6 +106,16 @@ class VideoPromptTests(unittest.TestCase):
         self.assertIn("No wide-open shouting mouth", prompt)
         self.assertEqual(mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")["durationSeconds"], 5)
 
+    def test_commentary_is_offscreen_no_player_lip_sync(self):
+        job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
+        for scene in ("scene1", "scene2", "scene3"):
+            with self.subTest(scene=scene):
+                prompt = mod.render_scene(LocalS3(), "test-scenario-bucket", job, scene)["prompt"]
+                self.assertIn("OFF-SCREEN", prompt)
+                self.assertIn("commentator", prompt.lower())
+                self.assertTrue("lip-sync" in prompt.lower() or "mouthing" in prompt.lower())
+                self.assertTrue("never" in prompt.lower() or "no player" in prompt.lower())
+
     def test_old_video_templates_preserved_and_active_templates_unbranded(self):
         image = json.loads((SCENARIO / "config.json").read_text())
         for scene in ("scene1", "scene2", "scene3"):
