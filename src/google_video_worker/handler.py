@@ -39,6 +39,8 @@ PROMPT_BUCKET = os.environ["SCENARIO_ASSET_BUCKET"]
 
 MODEL = os.environ.get("GOOGLE_VIDEO_MODEL", "UNCONFIGURED")
 PAID_ENABLED = os.environ.get("PAID_GENERATION_ENABLED", "false")
+# Disabled until combined first-frame + identity-reference request is validated end-to-end.
+OMNI_SELFIE_REFERENCE_ENABLED = os.environ.get("OMNI_SELFIE_REFERENCE_ENABLED", "false") == "true"
 PROJECT = os.environ.get("GOOGLE_PROJECT_ID", "afl-video-platform")
 BASE = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT}/locations/global/interactions"
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
@@ -352,7 +354,30 @@ def checked_gcs_prefix(job, scene):
     return prefix + job + "/" + scene + "/"
 
 
-def image_payload(blob, content_type, prompt, duration, gcs_prefix=None):
+def selfie_object_key(item):
+    """Use only the selfie already belonging to this job; never accept a caller key."""
+    key = item.get("uploadKey")
+    if not isinstance(key, str) or not re.fullmatch(r"uploads/[0-9a-f]{32}\\.(jpg|png|webp)", key):
+        raise ContractError("Invalid original selfie key")
+    return key
+
+
+def load_selfie(item):
+    key = selfie_object_key(item)
+    result = S3.get_object(Bucket=BUCKET, Key=key)
+    mime_type = result.get("ContentType", "")
+    expected = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
+    ext = "." + key.rsplit(".", 1)[1]
+    if mime_type != expected[ext]:
+        raise ContractError("Original selfie MIME type does not match upload key")
+    blob = result["Body"].read(MAX_IMAGE_BYTES + 1)
+    if not 0 < len(blob) <= 10 * 1024 * 1024:
+        raise ContractError("Original selfie size invalid")
+    return blob, mime_type
+
+
+def image_payload(blob, content_type, prompt, duration, gcs_prefix=None,
+                  selfie_blob=None, selfie_type=None):
     if content_type not in {"image/png", "image/jpeg", "image/webp"}:
         raise ContractError("Unsupported reference image MIME type")
     if not 0 < len(blob) <= MAX_IMAGE_BYTES:
@@ -361,14 +386,37 @@ def image_payload(blob, content_type, prompt, duration, gcs_prefix=None):
         raise ContractError("Invalid S3 scene prompt")
     if duration not in range(3, 16):
         raise ContractError("Unexpected scene duration")
+    if (selfie_blob is None) != (selfie_type is None):
+        raise ContractError("Selfie data and MIME type must be supplied together")
+
+    inputs = [
+        {"type": "text", "text": prompt},
+        {"type": "image", "data": base64.b64encode(blob).decode("ascii"),
+         "mime_type": content_type},
+    ]
+    if selfie_blob is not None:
+        if selfie_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise ContractError("Unsupported selfie MIME type")
+        if not isinstance(selfie_blob, bytes) or not 0 < len(selfie_blob) <= 10 * 1024 * 1024:
+            raise ContractError("Original selfie size invalid")
+        # The second image must NEVER be treated as the last frame. This routing
+        # instruction lives only in the request adapter, not the S3 scene prompts.
+        role_contract = (
+            "INPUT IMAGE ROLES: Image 1 is the exact first frame of the output video. "
+            "Image 2 is ONLY an identity reference for the foreground player's real "
+            "face, hair, hairline, and age throughout the video. Image 2 is NOT a "
+            "last frame, NOT an end frame, and NOT a scene to recreate. "
+            "The football scene, uniforms, and action come from Image 1. "
+            "Animate forward from Image 1 while keeping the person from Image 2 "
+            "recognisable in every visible frame. "
+        )
+        inputs[0]["text"] = role_contract + prompt
+        inputs.append({"type": "image", "data": base64.b64encode(selfie_blob).decode("ascii"),
+                       "mime_type": selfie_type})
     return {
         "model": "gemini-omni-1.2-flash",
         "background": True,
-        "input": [
-            {"type": "text", "text": prompt},
-            {"type": "image", "data": base64.b64encode(blob).decode("ascii"),
-             "mime_type": content_type},
-        ],
+        "input": inputs,
         "response_format": [{
             "type": "video", "delivery": "uri" if gcs_prefix else "inline",
             **({"gcs_uri": gcs_prefix} if gcs_prefix else {}),
@@ -398,7 +446,12 @@ def scene_preflight(job, scene):
     # Validate actual current S3 object. Expired 7-day images must fail closed.
     response = S3.get_object(Bucket=BUCKET, Key=key)
     raw = response["Body"].read(MAX_IMAGE_BYTES + 1)
-    req = image_payload(raw, response.get("ContentType", ""), config["prompt"], config["durationSeconds"])
+    selfie_args = {}
+    if OMNI_SELFIE_REFERENCE_ENABLED:
+        selfie_blob, selfie_type = load_selfie(item)
+        selfie_args = {"selfie_blob": selfie_blob, "selfie_type": selfie_type}
+    req = image_payload(raw, response.get("ContentType", ""), config["prompt"],
+                        config["durationSeconds"], **selfie_args)
     assert req["background"] is True and req["response_format"][0]["duration"] == str(config["durationSeconds"]) + "s"
     # Return only metadata, never the image, prompt, PII, auth token or encoded payload.
     return {"status": "READY", "sceneId": scene, "durationSeconds": config["durationSeconds"],
@@ -500,7 +553,12 @@ def submit(job, scene, request):
         content_type = image.get("ContentType", "")
         blob = image["Body"].read(MAX_IMAGE_BYTES + 1)
         destination = checked_gcs_prefix(job, scene)
-        body = image_payload(blob, content_type, rendered["prompt"], rendered["durationSeconds"], destination)
+        selfie_args = {}
+        if OMNI_SELFIE_REFERENCE_ENABLED:
+            selfie_blob, selfie_type = load_selfie(get_job(job))
+            selfie_args = {"selfie_blob": selfie_blob, "selfie_type": selfie_type}
+        body = image_payload(blob, content_type, rendered["prompt"], rendered["durationSeconds"],
+                             destination, **selfie_args)
     except Exception:
         try:
             transition(job, scene, request, "PREPARED", "FAILED",
