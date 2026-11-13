@@ -26,7 +26,7 @@ class VideoPromptTests(unittest.TestCase):
             with self.subTest(scene=scene):
                 result = mod.render_scene(LocalS3(), "test-scenario-bucket", job, scene)
                 self.assertIn("Alex Tonelli", result["prompt"])
-                self.assertNotIn("Geelong Cats", result["prompt"])
+                self.assertIn("Geelong Cats", result["prompt"]) if scene == "scene3" else self.assertNotIn("Geelong Cats", result["prompt"])
                 self.assertIn("navy blue and white horizontal hoops", result["prompt"])
                 self.assertIn(result["commentary"], result["prompt"])
                 self.assertNotIn("$fullName", result["prompt"])
@@ -36,11 +36,11 @@ class VideoPromptTests(unittest.TestCase):
                 self.assertNotIn("videoConcurrency", result)
                 self.assertEqual(result["sceneId"], scene)
         scene3 = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")
-        self.assertEqual(scene3["commentary"], "Alex Tonelli has won the premiership!")
+        self.assertEqual(scene3["commentary"], "Alex Tonelli has won the premiership for Geelong Cats!")
         expected = {
             "scene1": ("Tonelli breaks free! SIX SECONDS LEFT!", 4),
             "scene2": ("He kicks… IT'S A GOAL!", 8),
-            "scene3": ("Alex Tonelli has won the premiership!", 5),
+            "scene3": ("Alex Tonelli has won the premiership for Geelong Cats!", 5),
         }
         for scene_id, (commentary, duration) in expected.items():
             with self.subTest(scene_id=scene_id):
@@ -57,7 +57,7 @@ class VideoPromptTests(unittest.TestCase):
             original = (SCENARIO / "video" / f"{scene}-video_old.txt").read_text()
             self.assertIn("AFL Grand Final", original)
             self.assertIn("BRANDING:", source)
-            self.assertNotIn("$teamName", source)
+            self.assertIn("$teamName", source) if scene == "scene3" else self.assertNotIn("$teamName", source)
             self.assertNotIn("Essendon", source)
         self.assertEqual(image["version"], "v1")
         self.assertEqual(
