@@ -1,23 +1,26 @@
 #!/usr/bin/env python3
-"""One-time guarded deployment: Omni first-frame + optional selfie reference.
+"""Deploy Omni dual-image worker through the existing CloudFormation execution role.
 
-Only replaces handler.py inside existing Google worker Lambda ZIP and enables
-OMNI_SELFIE_REFERENCE_ENABLED. Does not POST to Google or modify other stacks.
-Preserves installed dependencies and restores original code/config on failure.
+GitHub role has no lambda:GetFunction or direct update rights. Validate the
+change set before applying. Preserve dependencies from the managed artifact.
+Never submit a paid Google request.
 """
 import base64
 import hashlib
 import io
+import os
 from pathlib import Path
 import zipfile
 
 import boto3
+from botocore.exceptions import ClientError
 
 REGION = "ap-southeast-2"
 ACCOUNT = "134387458447"
-FUNCTION = "afl-app-dev-google-omni-worker"
+ROLE = f"arn:aws:iam::{ACCOUNT}:role/afl-video-cfn-execution-role"
 STACK = "afl-app-dev-google-video"
 BUCKET = "afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+PARAM = "GoogleWorkerArtifactKey"
 
 
 def digest(data):
@@ -25,105 +28,115 @@ def digest(data):
 
 
 def main():
-    s = boto3.session.Session(region_name=REGION)
-    sts, cf, lam, s3 = (s.client(x) for x in ("sts", "cloudformation", "lambda", "s3"))
-    ident = sts.get_caller_identity()
-    assert ident["Account"] == ACCOUNT
-    assert ":assumed-role/afl-video-github-deploy-role/" in ident["Arn"]
+    session = boto3.session.Session(region_name=REGION)
+    cf, s3, sts = (session.client(name) for name in ("cloudformation", "s3", "sts"))
+    identity = sts.get_caller_identity()
+    assert identity["Account"] == ACCOUNT
+    assert ":assumed-role/afl-video-github-deploy-role/" in identity["Arn"]
+
     stack = cf.describe_stacks(StackName=STACK)["Stacks"][0]
     assert stack["StackStatus"] == "UPDATE_COMPLETE"
-    resource = cf.describe_stack_resource(StackName=STACK, LogicalResourceId="GoogleWorkerLambda")["StackResourceDetail"]
-    assert resource["PhysicalResourceId"] == FUNCTION
-    before = lam.get_function_configuration(FunctionName=FUNCTION)
-    assert before["State"] == "Active" and before["LastUpdateStatus"] == "Successful"
-    assert before["Timeout"] == 300
-    assert before["Environment"]["Variables"]["PAID_GENERATION_ENABLED"] == "true"
-    assert before["Environment"]["Variables"]["GOOGLE_VIDEO_MODEL"] == "gemini-omni-1.2-flash"
-    assert before.get("CodeSha256") and before.get("RevisionId")
-    prior_env = dict(before["Environment"]["Variables"])
+    assert stack["RoleARN"] == ROLE
+    previous = {p["ParameterKey"]:p["ParameterValue"] for p in stack["Parameters"]}
+    assert previous["ArtifactBucketName"] == BUCKET
+    assert previous["PaidVideoEnabled"] == "true"
+    assert previous[PARAM]
+    original = s3.get_object(Bucket=BUCKET, Key=previous[PARAM])["Body"].read()
+    assert len(original) < 55 * 1024 * 1024
 
-    # Read exact deployed package; preserve dependencies and all other archive members.
-    pkg = lam.get_function(FunctionName=FUNCTION)["Code"]["Location"]
-    import urllib.request
-    with urllib.request.urlopen(pkg, timeout=35) as response:
-        old_zip = response.read(55 * 1024 * 1024)
-    assert digest(old_zip) == before["CodeSha256"], "Live package changed during inspection"
     source = Path("src/google_video_worker/handler.py").read_bytes()
     assert b"def load_selfie(item):" in source
     assert b"OMNI_SELFIE_REFERENCE_ENABLED" in source
     assert b'"task": "image_to_video"' in source
     compile(source, "handler.py", "exec")
 
-    original = io.BytesIO(old_zip)
-    new = io.BytesIO()
-    with zipfile.ZipFile(original) as archive:
-        assert archive.testzip() is None
-        names = archive.namelist()
-        assert names.count("handler.py") == 1 and names.count("video_prompts.py") == 1
-        old_handler = archive.read("handler.py")
-        assert b"def image_payload(" in old_handler and b"def submit(" in old_handler
-        with zipfile.ZipFile(new, "w") as target:
-            for member in archive.infolist():
-                target.writestr(member, source if member.filename == "handler.py" else archive.read(member.filename))
-    new_zip = new.getvalue()
-    with zipfile.ZipFile(io.BytesIO(new_zip)) as check:
-        assert check.testzip() is None
-        assert check.read("handler.py") == source
-        assert check.read("video_prompts.py") == zipfile.ZipFile(io.BytesIO(old_zip)).read("video_prompts.py")
-    new_sha = digest(new_zip)
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(original)) as old:
+        assert old.testzip() is None
+        assert old.namelist().count("handler.py") == 1
+        assert old.namelist().count("video_prompts.py") == 1
+        with zipfile.ZipFile(output, "w") as new:
+            for member in old.infolist():
+                new.writestr(member, source if member.filename == "handler.py"
+                             else old.read(member.filename))
+        prior_prompts = old.read("video_prompts.py")
+        member_names = set(old.namelist())
+    packed = output.getvalue()
+    with zipfile.ZipFile(io.BytesIO(packed)) as verify:
+        assert verify.testzip() is None
+        assert set(verify.namelist()) == member_names
+        assert verify.read("handler.py") == source
+        assert verify.read("video_prompts.py") == prior_prompts
 
-    # Immutable S3 backup for recovery, then code/config update (no model invocation).
-    backup_key = "releases/omni-selfie-reference/backup-" + hashlib.sha256(old_zip).hexdigest() + ".zip"
-    s3.put_object(Bucket=BUCKET, Key=backup_key, Body=old_zip)
-    assert digest(s3.get_object(Bucket=BUCKET, Key=backup_key)["Body"].read()) == before["CodeSha256"]
-    print("BACKUP_VERIFIED", backup_key, flush=True)
-
-    changed = False
+    key = "releases/omni-selfie-reference/" + hashlib.sha256(packed).hexdigest() + "/google.zip"
     try:
-        if new_sha != before["CodeSha256"]:
-            lam.update_function_code(FunctionName=FUNCTION, ZipFile=new_zip, RevisionId=before["RevisionId"])
-            changed = True
-            lam.get_waiter("function_updated").wait(FunctionName=FUNCTION, WaiterConfig={"Delay":5,"MaxAttempts":48})
-        current = lam.get_function_configuration(FunctionName=FUNCTION)
-        assert current["LastUpdateStatus"] == "Successful"
-        env = dict(current["Environment"]["Variables"])
-        env["OMNI_SELFIE_REFERENCE_ENABLED"] = "true"
-        if env != current["Environment"]["Variables"]:
-            lam.update_function_configuration(FunctionName=FUNCTION, Environment={"Variables":env},
-                                              RevisionId=current["RevisionId"])
-            changed = True
-            lam.get_waiter("function_updated").wait(FunctionName=FUNCTION, WaiterConfig={"Delay":5,"MaxAttempts":48})
-        after = lam.get_function_configuration(FunctionName=FUNCTION)
-        assert after["CodeSha256"] == new_sha
-        assert after["Environment"]["Variables"]["OMNI_SELFIE_REFERENCE_ENABLED"] == "true"
-        assert after["State"] == "Active" and after["LastUpdateStatus"] == "Successful"
-        assert after["Timeout"] == before["Timeout"]
-        for key in prior_env:
-            assert after["Environment"]["Variables"][key] == prior_env[key]
-        print("OMNI_SELFIE_REFERENCE_DEPLOYED_VERIFIED", flush=True)
-        print("No Google paid generation, prompts, templates, or state-machine changes.", flush=True)
-    except Exception:
-        if changed:
-            print("DEPLOY_FAILED_ROLLING_BACK", flush=True)
-            current = lam.get_function_configuration(FunctionName=FUNCTION)
-            if current.get("LastUpdateStatus") == "InProgress":
-                lam.get_waiter("function_updated").wait(FunctionName=FUNCTION)
-                current = lam.get_function_configuration(FunctionName=FUNCTION)
-            if current["CodeSha256"] != before["CodeSha256"]:
-                lam.update_function_code(FunctionName=FUNCTION, ZipFile=old_zip,
-                                         RevisionId=current["RevisionId"])
-                lam.get_waiter("function_updated").wait(FunctionName=FUNCTION)
-                current = lam.get_function_configuration(FunctionName=FUNCTION)
-            if current["Environment"]["Variables"] != prior_env:
-                lam.update_function_configuration(
-                    FunctionName=FUNCTION, Environment={"Variables":prior_env},
-                    RevisionId=current["RevisionId"])
-                lam.get_waiter("function_updated").wait(FunctionName=FUNCTION)
-            restored = lam.get_function_configuration(FunctionName=FUNCTION)
-            assert restored["CodeSha256"] == before["CodeSha256"]
-            assert restored["Environment"]["Variables"] == prior_env
-            print("ROLLBACK_VERIFIED", flush=True)
-        raise
+        existing = s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
+        assert existing == packed
+    except ClientError as error:
+        assert error.response["Error"]["Code"] in ("NoSuchKey", "NotFound", "404")
+        s3.put_object(Bucket=BUCKET, Key=key, Body=packed)
+        assert s3.get_object(Bucket=BUCKET, Key=key)["Body"].read() == packed
+    print("IMMUTABLE_GOOGLE_ARTIFACT_VERIFIED", digest(packed), flush=True)
+
+    template = Path("infrastructure/app/google-video.yaml").read_text()
+    assert "Sid: OriginalSelfieReadOnly" in template
+    assert "/uploads/*" in template
+    assert "OMNI_SELFIE_REFERENCE_ENABLED: 'true'" in template
+    assert "Timeout: 300" in template
+    assert "GoogleWorkerArtifactKey" in template
+    run = os.environ["GITHUB_RUN_ID"]
+    changeset = "omni-selfie-" + run
+    args = [
+        {"ParameterKey": name,
+         **({"ParameterValue": key} if name == PARAM else {"UsePreviousValue": True})}
+        for name in previous
+    ]
+    cf.create_change_set(
+        StackName=STACK, ChangeSetName=changeset, ChangeSetType="UPDATE",
+        TemplateBody=template, Parameters=args, RoleARN=ROLE,
+        Capabilities=["CAPABILITY_NAMED_IAM"],
+        Description="Omni code, exact upload-key read-only permission, selfie flag only",
+    )
+    cf.get_waiter("change_set_create_complete").wait(
+        StackName=STACK, ChangeSetName=changeset,
+        WaiterConfig={"Delay":5, "MaxAttempts":48})
+    change = cf.describe_change_set(StackName=STACK, ChangeSetName=changeset)
+    assert not change.get("NextToken")
+    resources = [x["ResourceChange"] for x in change["Changes"]]
+    assert resources
+    permitted = {"GoogleWorkerLambda", "GoogleWorkerRole",
+                 "GoogleStateMachine", "GoogleStateMachineRole",
+                 "DeveloperPreflightInvokePermission"}
+    touched = {item["LogicalResourceId"] for item in resources}
+    assert "GoogleWorkerLambda" in touched
+    assert "GoogleWorkerRole" in touched
+    assert touched <= permitted, f"Unexpected resources: {touched}"
+    for item in resources:
+        print("REVIEW", item["LogicalResourceId"], item["Action"],
+              item.get("Replacement"), item.get("Details"), flush=True)
+        assert item["Action"] == "Modify"
+        assert item.get("Replacement") in (False, "False", "Conditional")
+        if item["LogicalResourceId"] == "GoogleWorkerLambda":
+            names = {d.get("Target", {}).get("Name") for d in item.get("Details", [])
+                     if d.get("Target", {}).get("Attribute") == "Properties"}
+            assert names <= {"Code", "Environment", "Role"}
+        elif item["LogicalResourceId"] == "GoogleWorkerRole":
+            names = {d.get("Target", {}).get("Name") for d in item.get("Details", [])
+                     if d.get("Target", {}).get("Attribute") == "Properties"}
+            assert names <= {"Policies"}
+        else:
+            assert all(d.get("Evaluation") == "Dynamic" for d in item.get("Details", []))
+    print("SAFE_CFN_CHANGESET_APPROVED", sorted(touched), flush=True)
+    cf.execute_change_set(StackName=STACK, ChangeSetName=changeset)
+    cf.get_waiter("stack_update_complete").wait(
+        StackName=STACK, WaiterConfig={"Delay":10, "MaxAttempts":60})
+    updated = cf.describe_stacks(StackName=STACK)["Stacks"][0]
+    assert updated["StackStatus"] == "UPDATE_COMPLETE"
+    params = {p["ParameterKey"]:p["ParameterValue"] for p in updated["Parameters"]}
+    assert params[PARAM] == key
+    assert all(params[k] == v for k,v in previous.items() if k != PARAM)
+    print("AWS_CLOUDFORMATION_OMNI_SELFIE_DEPLOYED_VERIFIED", flush=True)
+    print("No paid Google requests; no S3 video prompts/templates touched.", flush=True)
 
 
 if __name__ == "__main__":
