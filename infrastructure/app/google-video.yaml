@@ -51,6 +51,10 @@ Resources:
                 Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/results/*'
+              - Sid: OriginalSelfieReadOnly
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${UploadsBucketName}/uploads/*'
               - Sid: PrivateVideoOutputOnly
                 Effect: Allow
                 Action: [s3:PutObject, s3:GetObject]
@@ -89,6 +93,7 @@ Resources:
       Environment:
         Variables:
           PAID_GENERATION_ENABLED: !If [PaidVideoOn, 'true', 'false']
+          OMNI_SELFIE_REFERENCE_ENABLED: 'true'
           GOOGLE_VIDEO_MODEL: !If [PaidVideoOn, gemini-omni-1.2-flash, UNCONFIGURED]
           GOOGLE_VIDEO_OUTPUT_GCS_PREFIX: !Ref GoogleVideoGcsOutputPrefix
           GOOGLE_PROJECT_ID: afl-video-platform
