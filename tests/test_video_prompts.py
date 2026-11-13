@@ -63,7 +63,7 @@ class VideoPromptTests(unittest.TestCase):
         self.assertIn("No pan, tilt, zoom, tracking", prompt)
         self.assertIn("WHILE IT IS STILL AIRBORNE", prompt)
         self.assertIn("NOT a rugby drop kick", prompt)
-        self.assertIn("without touching a post", prompt)
+        self.assertIn("never touching a post", prompt)
         self.assertNotIn("camera may", prompt.lower())
         self.assertNotIn("small upward tilt", prompt.lower())
         self.assertEqual(result["durationSeconds"], 8)
