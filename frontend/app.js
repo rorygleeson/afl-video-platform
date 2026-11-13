@@ -143,14 +143,20 @@ const input = document.getElementById('selfie');
         return prior.mode === 'REAL' && prior.status === 'COMPLETED' &&
           !!prior.url && !prior.mock;
       });
-      const canStart = !!priorReady && data.sequence?.status !== "APPROVED" &&
-        !videoSequenceAttemptUncertain && !videoBatchSubmitting;
+      // When consent was durably recorded but a scene was never reserved
+      // (for example an API timeout just before Step Functions handoff),
+      // offer a deliberate recovery click. The API atomically checks that
+      // the scene has NOT been reserved; it never reissues a paid attempt.
+      const resumeApproved = data.sequence?.status === 'APPROVED';
+      const canStart = !!priorReady && !videoSequenceAttemptUncertain && !videoBatchSubmitting;
       generateAllVideos.hidden = !canStart;
       generateAllVideos.disabled = !canStart;
-      generateAllVideos.textContent = availablePaidScenes.length === 3
-        ? 'Generate All 3 Videos (paid, sequential)'
-        : 'Generate ' + availablePaidScenes.length + ' Remaining Video' +
-          (availablePaidScenes.length === 1 ? '' : 's') + ' (paid, sequential)';
+      generateAllVideos.textContent = resumeApproved
+        ? 'Resume approved AWS sequence (paid)'
+        : availablePaidScenes.length === 3
+          ? 'Generate All 3 Videos (paid, sequential)'
+          : 'Generate ' + availablePaidScenes.length + ' Remaining Video' +
+            (availablePaidScenes.length === 1 ? '' : 's') + ' (paid, sequential)';
       for (const n of [1, 2, 3]) {
         // Render only the current stage and already completed stages.
         // A failed stage remains visible for diagnostics/manual retry.
@@ -622,10 +628,16 @@ const input = document.getElementById('selfie');
     const jobId = currentJobId;
     const count = availablePaidScenes.length;
     if (!count || !lastVideoSnapshot) return;
-    if (!window.confirm('Approve ' + count + ' paid Google video' +
+    const previouslyApproved = lastVideoSnapshot.sequence?.status === 'APPROVED';
+    const message = previouslyApproved
+      ? 'Resume the already-approved AWS video sequence? This only starts the ' +
+        'next scene if there is NO existing paid request for it. Each new scene ' +
+        'is billed separately. Failed scenes still require manual retry.'
+      : 'Approve ' + count + ' paid Google video' +
         (count === 1 ? '' : 's') + ' in sequence? AWS will start each next scene ' +
         'ONLY after the previous scene completes, even when you switch apps. ' +
-        'Each scene is billed separately. Failed scenes require manual retry.')) return;
+        'Each scene is billed separately. Failed scenes require manual retry.';
+    if (!window.confirm(message)) return;
     // One explicit approval per job. An uncertain HTTP response is NOT retried.
     videoBatchSubmitting = true;
     videoSequenceAttemptUncertain = true;
