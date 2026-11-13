@@ -33,7 +33,7 @@ const input = document.getElementById('selfie');
   const videoRetryInFlight = new Set();
   let videoBatchSubmitting = false;
   let availablePaidScenes = [];
-  let sequentialBatchJobId = null;
+  let videoSequenceAttemptUncertain = false;
   let lastVideoSnapshot = null;
   const videoSubmissionLog = new Map();
   let lastImageScenes = {};
@@ -72,7 +72,7 @@ const input = document.getElementById('selfie');
     }
     videoBatchSubmitting = false;
     availablePaidScenes = [];
-    sequentialBatchJobId = null;
+    videoSequenceAttemptUncertain = false;
     lastVideoSnapshot = null;
     generateAllVideos.hidden = true;
     generateAllVideos.disabled = true;
@@ -108,70 +108,10 @@ const input = document.getElementById('selfie');
     document.getElementById('downloadFinal').hidden = true;
   }
 
-  // A single explicit confirmation authorises the three original paid scenes,
-  // one at a time. The browser NEVER starts another paid scene until the
-  // preceding MP4 is confirmed complete. Manual scene retries remain separate.
-  // Closing/reloading the tab clears this consent; resuming requires a click.
-  async function submitNextSequentialScene(jobId, snapshot) {
-    if (jobId !== currentJobId || sequentialBatchJobId !== jobId ||
-        videoBatchSubmitting || document.hidden) return;
-    const videos = snapshot.videos || {};
-    const approvals = snapshot.paidScenes || {};
-    let next = null;
-    for (const n of [1, 2, 3]) {
-      const sceneId = 'scene' + n;
-      const current = videos[sceneId] || {};
-      // A failed, in-progress or unknown submission blocks the whole sequence.
-      // A manually retried scene can resume progression only after COMPLETED.
-      if (current.mode === 'REAL' || approvals[sceneId] !== true) {
-        if (current.mode === 'REAL' && current.status === 'COMPLETED' &&
-            current.url && !current.mock) continue;
-        return;
-      }
-      if (videoSubmittedScenes.has(sceneId)) return;
-      next = n;
-      break;
-    }
-    if (next === null) return;
-    const sceneId = 'scene' + next;
-    // Lock before any await, including ambiguous network errors.
-    videoBatchSubmitting = true;
-    videoSubmittedScenes.add(sceneId);
-    generateAllVideos.hidden = true;
-    generateAllVideos.disabled = true;
-    const submission = {
-      status: 'Submitting paid request for Scene ' + next + '…',
-      events: ['Sequential paid generation: Scene ' + next + ' of 3',
-               'POST /jobs/' + jobId + '/real-videos/' + sceneId + ' started']
-    };
-    videoSubmissionLog.set(sceneId, submission);
-    document.getElementById('scene' + next + 'PaidStatus').textContent = submission.status;
-    document.getElementById('videoDebugText' + next).textContent = submission.events.join('\\n');
-    try {
-      const result = await api('/jobs/' + jobId + '/real-videos/' + sceneId, {
-        method: 'POST',
-        headers: {'Idempotency-Key': crypto.randomUUID()},
-        body: JSON.stringify({confirmPaidScene: sceneId}),
-      });
-      submission.status = 'Paid request accepted (' + result.status + '). Checking AWS status…';
-      submission.events.push('API response: ' + (result.status || 'ACCEPTED') +
-                             ' at ' + new Date().toLocaleTimeString());
-    } catch (error) {
-      // Even a failed HTTP response may be ambiguous after a paid POST.
-      // Never automatically resubmit; require an explicit status review.
-      submission.status = 'Submission needs review: ' + error.message + ' Do not retry until checked.';
-      submission.events.push('API error: ' + error.message);
-      submission.events.push('Result may be uncertain; paid request will NOT be retried.');
-      sequentialBatchJobId = null;
-    } finally {
-      videoBatchSubmitting = false;
-      if (jobId === currentJobId) {
-        document.getElementById('scene' + next + 'PaidStatus').textContent = submission.status;
-        document.getElementById('videoDebugText' + next).textContent = submission.events.join('\\n');
-        void refreshVideos();
-      }
-    }
-  }
+  // Paid video progression is owned by AWS EventBridge and the API Lambda.
+  // The browser only approves the full paid sequence once and polls read-only.
+  // Switching tabs, locking the phone or backgrounding this page cannot
+  // interrupt the AWS handoff between completed scene MP4s.
 
   async function refreshVideos() {
     if (!currentJobId || document.hidden || videoTestSection.hidden) return;
@@ -189,6 +129,7 @@ const input = document.getElementById('selfie');
       if (jobId !== currentJobId) return;
       const approvals = data.paidScenes || {};
       lastVideoSnapshot = data;
+      if (data.sequence?.status === "APPROVED") videoSequenceAttemptUncertain = false;
       availablePaidScenes = [1, 2, 3].filter(n => {
         const id = 'scene' + n;
         return approvals[id] === true && !videoSubmittedScenes.has(id) &&
@@ -202,7 +143,8 @@ const input = document.getElementById('selfie');
         return prior.mode === 'REAL' && prior.status === 'COMPLETED' &&
           !!prior.url && !prior.mock;
       });
-      const canStart = !!priorReady && !sequentialBatchJobId && !videoBatchSubmitting;
+      const canStart = !!priorReady && data.sequence?.status !== "APPROVED" &&
+        !videoSequenceAttemptUncertain && !videoBatchSubmitting;
       generateAllVideos.hidden = !canStart;
       generateAllVideos.disabled = !canStart;
       generateAllVideos.textContent = availablePaidScenes.length === 3
@@ -356,11 +298,9 @@ const input = document.getElementById('selfie');
       }
       realVideoTracking = realStates.some(st => st.mode === 'REAL' &&
         !['COMPLETED', 'FAILED', 'CANCELLED', 'REVIEW_REQUIRED'].includes(st.status));
-      // Continue only a previously user-confirmed sequential paid batch.
-      // No automatic paid retries or unapproved scene generation.
-      if (sequentialBatchJobId === jobId) {
-        void submitNextSequentialScene(jobId, data);
-      }
+      // This is display-only polling. AWS advances the previously approved
+      // sequence even while the browser is hidden or the phone is locked.
+      // No GET response can trigger a billable POST.
       // Poll current job status, including manual scene retries and diagnostics.
       stopVideoPoll();
       if (!document.hidden && jobId === currentJobId && !videoTestSection.hidden) {
@@ -678,21 +618,50 @@ const input = document.getElementById('selfie');
 
   generateAllVideos.addEventListener('click', async () => {
     if (!currentJobId || videoTestSection.hidden || generateAllVideos.hidden ||
-        generateAllVideos.disabled || videoBatchSubmitting || sequentialBatchJobId) return;
+        generateAllVideos.disabled || videoBatchSubmitting || videoSequenceAttemptUncertain) return;
     const jobId = currentJobId;
     const count = availablePaidScenes.length;
     if (!count || !lastVideoSnapshot) return;
-    if (!window.confirm('Generate ' + count + ' paid Google video' +
-        (count === 1 ? '' : 's') + ' sequentially? Scene 2 starts ONLY after ' +
-        'Scene 1 completes, and Scene 3 ONLY after Scene 2 completes. ' +
-        'Each scene is billed separately. Failed scenes require manual retry. ' +
-        'Keep this tab open until all three scenes finish.')) return;
-    sequentialBatchJobId = jobId;
+    if (!window.confirm('Approve ' + count + ' paid Google video' +
+        (count === 1 ? '' : 's') + ' in sequence? AWS will start each next scene ' +
+        'ONLY after the previous scene completes, even when you switch apps. ' +
+        'Each scene is billed separately. Failed scenes require manual retry.')) return;
+    // One explicit approval per job. An uncertain HTTP response is NOT retried.
+    videoBatchSubmitting = true;
+    videoSequenceAttemptUncertain = true;
     generateAllVideos.hidden = true;
     generateAllVideos.disabled = true;
-    // One paid POST per confirmed, eligible scene. Status polling unlocks the
-    // next scene only after its predecessor has a completed real MP4.
-    await submitNextSequentialScene(jobId, lastVideoSnapshot);
+    const submission = {
+      status: 'Submitting one paid sequence approval to AWS…',
+      events: ['User confirmed three-scene AWS sequence: ' + new Date().toLocaleTimeString(),
+               'POST /jobs/' + jobId + '/real-videos/sequence started']
+    };
+    videoSubmissionLog.set('scene1', submission);
+    document.getElementById('scene1PaidStatus').textContent = submission.status;
+    try {
+      const result = await api('/jobs/' + jobId + '/real-videos/sequence', {
+        method: 'POST',
+        headers: {'Idempotency-Key': crypto.randomUUID()},
+        body: JSON.stringify({confirmPaidSequence: true}),
+      });
+      submission.status = 'AWS sequential generation approved. Checking Scene 1…';
+      submission.events.push('API response: ' + (result.status || 'ACCEPTED') +
+                             ' at ' + new Date().toLocaleTimeString());
+      videoTestMessage.textContent = 'AWS is generating scenes in sequence. You can switch apps.';
+    } catch (error) {
+      submission.status = 'Sequence approval needs review: ' + error.message +
+        '. Check status before submitting another paid request.';
+      submission.events.push('API error: ' + error.message);
+      submission.events.push('Result may be uncertain; paid request will NOT be retried.');
+      videoTestMessage.textContent = submission.status;
+    } finally {
+      videoBatchSubmitting = false;
+      if (jobId === currentJobId) {
+        document.getElementById('scene1PaidStatus').textContent = submission.status;
+        document.getElementById('videoDebugText1').textContent = submission.events.join('\n');
+        void refreshVideos();
+      }
+    }
   });
 
   // A retry is explicitly confirmed, charged separately and applies to only

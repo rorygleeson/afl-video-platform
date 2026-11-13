@@ -479,6 +479,8 @@ def video_status(job_id, scene_id=None):
     return response(200, {"jobId": job_id, "videoGenerationMode": VIDEO_MODE,
                           "realVideoMode": REAL_VIDEO_MODE,
                           "scene1PaidApproved": REAL_VIDEO_MODE == "ENABLED",
+                          "sequence": {k: v for k, v in job.get("videoSequence", {}).items()
+                                       if k in ("status", "mode", "approvedAt")},
                           "paidScenes": {scene: REAL_VIDEO_MODE == "ENABLED" and not job.get("paidVideoApprovals", {}).get(scene) and not job.get("realVideos", {}).get(scene) for scene in VIDEO_SCENES},
                           "videos": {scene: video_scene_public(job, scene) for scene in VIDEO_SCENES},
                           "assembly": assembly_public(job)})
@@ -688,6 +690,130 @@ def start_real_scene(job_id, scene_id, event):
                               "error": "Please check status; do not retry this scene"})
     return response(202, {"status": "REAL_VIDEO_REQUESTED", "sceneId": scene_id})
 
+
+
+
+def start_video_sequence(job_id, event):
+    """One explicit paid consent authorises three ORIGINAL scenes in order.
+
+    The browser submits this once. Google terminal-success events advance the
+    sequence on AWS; no paid status GET and no browser timer starts a scene.
+    Failed scenes still require a separately confirmed paid manual retry.
+    """
+    if REAL_VIDEO_MODE != "ENABLED" or not GOOGLE_STATE_MACHINE_ARN:
+        return response(503, {"status": "PAID_GENERATION_DISABLED"})
+    if body_json(event) != {"confirmPaidSequence": True}:
+        return response(400, {"error": "Explicit confirmation of three sequential paid scenes required"})
+    headers = {str(k).lower(): str(v) for k, v in (event.get("headers") or {}).items()}
+    token = headers.get("idempotency-key", "")
+    if not IDEMPOTENCY_RE.fullmatch(token):
+        return response(400, {"error": "Idempotency-Key required (12-128 characters)"})
+    job = get_job(job_id)
+    if not job:
+        return response(404, {"error": "Job not found"})
+    if job.get("assembly"):
+        return response(409, {"error": "Final assembly already started"})
+    if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
+           or not job.get("scenes", {}).get(scene, {}).get("resultKey")
+           for scene in VIDEO_SCENES):
+        return response(409, {"error": "All three reference images must be complete"})
+    if job.get("videoSequence"):
+        return response(202, {"status": "ALREADY_APPROVED", "jobId": job_id,
+                              "sequence": {"status": "APPROVED", "mode": "AWS_EVENT_DRIVEN"}})
+    try:
+        DDB.update_item(
+            Key={"jobId": job_id},
+            UpdateExpression="SET videoSequence = :approval",
+            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(videoSequence)",
+            ExpressionAttributeValues={":approval": {
+                "status": "APPROVED", "mode": "AWS_EVENT_DRIVEN",
+                "approvedAt": datetime.now(timezone.utc).isoformat(),
+                "requestFingerprint": hashlib.sha256(token.encode()).hexdigest(),
+            }},
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return response(202, {"status": "ALREADY_APPROVED", "jobId": job_id})
+        raise
+    # Reuse the existing per-scene atomic reservation and named SFN execution.
+    # A previously successful Scene 1/2 may be reused without paying again.
+    # Resume at the FIRST missing scene, never skip a failed/in-flight scene.
+    for scene in VIDEO_SCENES:
+        record = job.get("realVideos", {}).get(scene, {})
+        if record or job.get("paidVideoApprovals", {}).get(scene):
+            if record.get("status") == "COMPLETED" and record.get("resultKey") == f"videos/{job_id}/{scene}.mp4":
+                continue
+            break
+        result = start_real_scene(job_id, scene, {
+            "body": json.dumps({"confirmPaidScene": scene}),
+            "headers": {"Idempotency-Key": "seq-" + job_id + "-" + scene},
+        })
+        if result["statusCode"] != 202:
+            return response(503, {"status": "SEQUENCE_HANDOFF_NEEDS_REVIEW",
+                                  "error": "Check existing scene status; never resubmit automatically"})
+        break
+    return response(202, {"status": "SEQUENCE_APPROVED", "jobId": job_id,
+                          "sequence": {"status": "APPROVED", "mode": "AWS_EVENT_DRIVEN"}})
+
+
+def video_sequence_event(event):
+    """EventBridge only: advance after the existing Step Functions execution SUCCEEDED.
+
+    The Google worker must have durably persisted a COMPLETED real MP4.
+    Workflow success for a Google FAILED result is deliberately ignored.
+    EventBridge duplicates are harmless because start_real_scene atomically
+    reserves each original paid scene exactly once.
+    """
+    detail = event.get("detail") or {}
+    if (event.get("source") != "aws.states" or
+            event.get("detail-type") != "Step Functions Execution Status Change" or
+            detail.get("status") != "SUCCEEDED" or
+            detail.get("stateMachineArn") != GOOGLE_STATE_MACHINE_ARN):
+        return {"status": "IGNORED"}
+    arn = detail.get("executionArn", "")
+    if not isinstance(arn, str):
+        return {"status": "IGNORED"}
+    expected_prefix = GOOGLE_STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:", 1) + ":"
+    if not arn.startswith(expected_prefix):
+        return {"status": "IGNORED"}
+    name = arn[len(expected_prefix):]
+    match = re.fullmatch(r"real-([0-9a-f]{32})-(scene[123])(?:-r(?:[2-9]|10))?", name)
+    if not match:
+        return {"status": "IGNORED"}
+    job_id, scene_id = match.groups()
+    if scene_id == "scene3":
+        return {"status": "ALL_SCENES_FINISHED"}
+    job = get_job(job_id)
+    if not job or job.get("videoSequence", {}).get("status") != "APPROVED" or job.get("assembly"):
+        return {"status": "IGNORED_NO_SEQUENCE"}
+    approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
+    if approval.get("executionName") != name:
+        return {"status": "IGNORED_SUPERSEDED_ATTEMPT"}
+    video = job.get("realVideos", {}).get(scene_id, {})
+    key = f"videos/{job_id}/{scene_id}.mp4"
+    if video.get("status") != "COMPLETED" or video.get("resultKey") != key:
+        return {"status": "WAITING_FOR_MANUAL_RETRY_OR_REVIEW"}
+    # The prior MP4 must exist before starting the next chargeable scene.
+    object_head = S3.head_object(Bucket=UPLOAD_BUCKET, Key=key)
+    if object_head.get("ContentLength", 0) < 128:
+        raise RuntimeError("Completed scene MP4 not yet verifiable")
+    next_scene = VIDEO_SCENES[VIDEO_SCENES.index(scene_id) + 1]
+    if (job.get("paidVideoApprovals", {}).get(next_scene) or
+            job.get("realVideos", {}).get(next_scene)):
+        return {"status": "ALREADY_STARTED", "sceneId": next_scene}
+    result = start_real_scene(job_id, next_scene, {
+        "body": json.dumps({"confirmPaidScene": next_scene}),
+        "headers": {"Idempotency-Key": f"seq-{job_id}-{next_scene}"},
+    })
+    if result["statusCode"] == 202:
+        LOG.info("Server-side video sequence advanced %s to %s", scene_id, next_scene)
+        return {"status": "NEXT_SCENE_REQUESTED", "sceneId": next_scene}
+    # An atomic concurrent reservation can win while this event is running.
+    refreshed = get_job(job_id)
+    if refreshed and (refreshed.get("paidVideoApprovals", {}).get(next_scene) or
+                      refreshed.get("realVideos", {}).get(next_scene)):
+        return {"status": "ALREADY_STARTED", "sceneId": next_scene}
+    raise RuntimeError("Video sequence handoff not confirmed; no paid retry performed")
 
 
 def retry_failed_real_scene(job_id, scene_id, event):
@@ -900,6 +1026,10 @@ def google_auth_check():
 
 
 def lambda_handler(event, context):
+    # AWS EventBridge cannot be invoked through the public API Gateway path.
+    # This branch uses only AWS IAM-protected Lambda event delivery.
+    if event.get("source") == "aws.states":
+        return video_sequence_event(event)
     method = (event.get("httpMethod") or "").upper()
     path = event.get("path") or ""
     try:
@@ -920,6 +1050,9 @@ def lambda_handler(event, context):
         retry_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/(scene[123])/retry", path)
         if method == "POST" and retry_match:
             return retry_failed_real_scene(retry_match.group(1), retry_match.group(2), event)
+        sequence_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/sequence", path)
+        if method == "POST" and sequence_match:
+            return start_video_sequence(sequence_match.group(1), event)
         real_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/real-videos/(scene[123])", path)
         if method == "POST" and real_match:
             return start_real_scene(real_match.group(1), real_match.group(2), event)
