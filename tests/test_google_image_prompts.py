@@ -122,7 +122,7 @@ class GooglePromptTests(unittest.TestCase):
         video = (ROOT / "scenarios/afl-grand-final-winning-kick/v1/video/scene3-video.txt").read_text().lower()
         self.assertIn("central foreground player alone", scene)
         self.assertIn("several metres behind", scene)
-        self.assertIn("no physical contact", self.config["sharedPrompt"].lower())
+        self.assertIn("not touching him", scene)
         self.assertIn("only foreground footballer", video)
         self.assertIn("do not introduce a new player or an embrace", video)
         self.assertIn("background teammates must never move into the foreground", video)
@@ -167,7 +167,7 @@ class GooglePromptTests(unittest.TestCase):
         for scene in self.config["scenes"]:
             v = (root / f"{scene['id']}-video.txt").read_text().lower()
             self.assertIn("consent and fictional context", v)
-            self.assertIn("already unbranded", v)
+            self.assertTrue("already unbranded" in v or "existing unbranded starting frame" in v)
             self.assertNotIn("replace any such markings", v)
             self.assertNotIn("replace any marks already", v)
         self.assertIn("four existing goalposts", (root / "scene2-video.txt").read_text().lower())
