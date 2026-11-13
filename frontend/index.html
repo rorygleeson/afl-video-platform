@@ -45,7 +45,7 @@
   </section>
   <section id="videoTestSection" hidden>
     <h2 style="margin-bottom:6px">Create your videos</h2>
-    <p class="poll-status" id="realVideoGate">Generate the three MP4s in parallel with one confirmation. Each scene is protected against duplicate paid submissions.</p>
+    <p class="poll-status" id="realVideoGate">Generate your three MP4s in sequence. Scene 2 appears after Scene 1 completes, then Scene 3 appears after Scene 2 completes. Failed scenes retain their individual retry controls.</p>
     <button id="generateAllVideos" type="button" hidden disabled>Generate All 3 Videos (paid)</button>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 4 seconds</strong>
@@ -57,7 +57,7 @@
       <div id="videoPlayer1"></div>
 
     </div>
-    <div class="video-scene" id="videoPanel2">
+    <div class="video-scene" id="videoPanel2" hidden>
       <strong>Scene 2 — Winning kick · 8 seconds</strong>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <button id="retryVideoScene2" type="button" class="quiet-button" hidden>Retry Scene 2 Video (paid)</button>
@@ -65,7 +65,7 @@
       <div id="videoPlayer2"></div>
 
     </div>
-    <div class="video-scene" id="videoPanel3">
+    <div class="video-scene" id="videoPanel3" hidden>
       <strong>Scene 3 — Celebration · 5 seconds</strong>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
       <button id="retryVideoScene3" type="button" class="quiet-button" hidden>Retry Scene 3 Video (paid)</button>

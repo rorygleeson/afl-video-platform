@@ -622,6 +622,26 @@ def start_real_scene(job_id, scene_id, event):
            or not job.get("scenes", {}).get(scene, {}).get("resultKey")
            for scene in VIDEO_SCENES):
         return response(409, {"error": "All three reference images must be complete"})
+    # Server-side sequencing guard: a client cannot bypass the one-at-a-time
+    # contract by POSTing scene2 or scene3 early (or from another browser).
+    # Only a real, completed, persisted MP4 from each previous scene unlocks
+    # the next initial paid submission. Existing failed-scene retries are
+    # handled separately and never discard earlier successful MP4s.
+    for previous in VIDEO_SCENES[:VIDEO_SCENES.index(scene_id)]:
+        prior = job.get("realVideos", {}).get(previous, {})
+        expected = f"videos/{job_id}/{previous}.mp4"
+        if prior.get("status") != "COMPLETED" or prior.get("resultKey") != expected:
+            return response(409, {"error": f"{previous} must complete before {scene_id} starts",
+                                  "status": "PREVIOUS_VIDEO_NOT_COMPLETED",
+                                  "waitingFor": previous})
+        try:
+            obj = S3.head_object(Bucket=UPLOAD_BUCKET, Key=expected)
+            if obj.get("ContentLength", 0) < 128:
+                return response(409, {"error": f"{previous} MP4 is empty",
+                                      "status": "PREVIOUS_VIDEO_NOT_VERIFIED"})
+        except ClientError:
+            return response(409, {"error": f"{previous} MP4 is missing",
+                                  "status": "PREVIOUS_VIDEO_NOT_VERIFIED"})
     source = job["scenes"][scene_id]["resultKey"]
     if not re.fullmatch(r"results/" + re.escape(job_id) + "/" + scene_id + r"\.(png|jpg|jpeg|webp)", source):
         return response(409, {"error": "Unexpected reference image key"})
