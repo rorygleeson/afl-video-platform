@@ -47,7 +47,7 @@ class GooglePromptTests(unittest.TestCase):
                     self.assertIn("opposition", text)
                 else:
                     self.assertIn("do not introduce an embrace", text)
-        self.assertIn("mouth open in a triumphant natural shout",
+        self.assertIn("neutral, relaxed, CLOSED-MOUTH expression",
                       self.config["scenes"][2]["promptInstructions"])
 
     def test_customer_hair_and_selected_team_override_master(self):
@@ -82,6 +82,9 @@ class GooglePromptTests(unittest.TestCase):
         self.assertIn("not been dropped or kicked yet", self.config["scenes"][1]["promptInstructions"].lower())
         self.assertIn("two distant teammates",
                       self.config["scenes"][2]["promptInstructions"].lower())
+        self.assertIn("SELFIE IDENTITY LOCK — MANDATORY", self.config["sharedPrompt"])
+        self.assertIn("actual selfie person", self.config["sharedPrompt"])
+        self.assertIn("smiling starts later in VIDEO", self.config["sharedPrompt"])
 
     def test_scene2_rear_camera_master_and_video_match(self):
         scene = self.config["scenes"][1]["promptInstructions"].lower()
