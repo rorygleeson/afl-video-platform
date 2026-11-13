@@ -9,7 +9,7 @@ STARTING FRAME
 
 Use the supplied personalised Scene 2 reference image as the exact opening frame.
 
-Preserve the player's appearance, selected team uniform, camera angle, surrounding players, stadium and four existing goalposts.
+Preserve the player's appearance, selected team uniform, camera angle, surrounding players and stadium. Treat the four existing goalposts — the EXACT FOUR original goalposts visible in this supplied personalised opening image — as IMMUTABLE stadium architecture throughout all 8 seconds. Reuse their existing geometry: four separate, straight, vertical, solid white poles in their original left-to-right order, with two tall central goalposts and two shorter outer behind posts. The two tall central goalposts must retain exactly their starting-frame positions. Keep their original heights, thickness, bases, spacing and orientation. These posts are already present: NEVER create, copy, split, merge, replace, tilt, bend, sway, stretch, snap, collapse, disappear or animate any pole. Never create a fifth upright, extra crossbar or temporary pole.
 
 The camera is behind and slightly to the right of the player. The player runs towards the goals approximately 30–35 metres ahead.
 
@@ -21,7 +21,7 @@ The player continues running naturally towards the goals, carrying the red footb
 
 A distant opposing player wearing an unbranded black guernsey with a red diagonal sash runs towards him but remains too far away to interfere.
 
-The camera remains stationary, preserving the original angle and framing.
+The camera remains stationary during the approach, retaining the same position and viewing direction. The four goalposts and the stadium remain static background architecture while the player moves.
 
 1.5–2.5 seconds — THE KICK
 
@@ -43,7 +43,7 @@ The final siren sounds immediately after the kick.
 
 2.5–5.8 seconds — BALL FLIGHT
 
-Only after the kick is completed, the camera gently tilts upward and widens slightly to follow the football.
+Only after the kick is completed, the camera may make a SMALL upward tilt to follow the football. Do not zoom out, orbit, change lens, jump to another shot or reveal newly generated stadium geometry. If a wider view would require inventing any part of a goalpost or stadium, stay at the original framing. The original four posts must remain recognisably the SAME four rigid poles, subject only to ordinary image-space projection from the slight camera tilt.
 
 The camera maintains the same general viewing direction throughout.
 
@@ -51,11 +51,11 @@ The ball travels in one continuous, fast, rising arc towards the existing goalpo
 
 Maintain clear visual continuity between the kicked ball and the ball approaching the goals.
 
-The goalposts remain fixed in their original positions, with exactly four white uprights: two taller central goalposts and two shorter outer behind posts, approximately 80% of the central height.
+The four and ONLY four goalposts retain the exact heights and spacing already defined by the reference image. Do not impose new post-height ratios or redraw them when tracking the ball. Their visible bases remain rooted in the grass with red pads unchanged. No collision, damage, deformation, snapping or movement of any post occurs at any time.
 
 5.8–6.5 seconds — THE WINNING GOAL
 
-The football passes high through the open space between the two tall central goalposts, clearly crossing the goal line in the air.
+The football flies through EMPTY AIR between the two taller central posts, without touching either post or their padding. Every goalpost remains straight, rigid and anchored before, during and after the ball crosses the line. No goalpost impact or structural reaction.
 
 The commentator erupts: "IT'S A GOAL!"
 
@@ -82,7 +82,8 @@ ESSENTIAL CONTINUITY
 - One football, one running kick, one uninterrupted scoring trajectory.
 - The football leaves the hands, is struck directly by the boot and remains airborne throughout the scoring flight.
 - Camera movement begins only after the kick.
-- Preserve the original four goalposts and their exact positions.
+- GOALPOST IMMUTABILITY IS THE TOP SCENE-CONTINUITY PRIORITY: exactly four pre-existing goalposts, no additional or missing poles, no breakage or bending. Preserve their original physical geometry, heights, spacing, pads and vertical alignment for the full clip.
+- If camera motion competes with post continuity, reduce camera motion rather than alter the posts. The only moving sports object near the posts is the red football, which must pass BETWEEN the two tall posts without touching them.
 - The ball crosses between the two tall central posts before continuing into the crowd.
 - Maintain realistic speed, natural player movement and consistent ball physics.
 

@@ -50,6 +50,23 @@ class VideoPromptTests(unittest.TestCase):
                 self.assertIn(commentary, result["prompt"])
                 self.assertTrue(result["prompt"].strip())
 
+    def test_scene2_goalposts_are_fixed_architecture_not_generated_objects(self):
+        job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
+        result = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene2")
+        prompt = result["prompt"]
+        self.assertIn("EXACT FOUR original goalposts", prompt)
+        self.assertIn("IMMUTABLE stadium architecture", prompt)
+        self.assertIn("NEVER create, copy, split, merge, replace", prompt)
+        self.assertIn("a fifth upright", prompt)
+        self.assertIn("No collision, damage, deformation, snapping", prompt)
+        self.assertIn("without touching either post", prompt)
+        self.assertIn("GOALPOST IMMUTABILITY IS THE TOP SCENE-CONTINUITY PRIORITY", prompt)
+        self.assertIn("reduce camera motion rather than alter the posts", prompt)
+        self.assertNotIn("approximately 80% of the central height", prompt)
+        self.assertNotIn("widens slightly to follow the football", prompt)
+        self.assertEqual(result["durationSeconds"], 8)
+        self.assertEqual(result["commentary"], "He kicks… IT'S A GOAL!")
+
     def test_old_video_templates_preserved_and_active_templates_unbranded(self):
         image = json.loads((SCENARIO / "config.json").read_text())
         for scene in ("scene1", "scene2", "scene3"):
