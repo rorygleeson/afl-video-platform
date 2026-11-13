@@ -154,6 +154,20 @@ def main():
             machine_arn=machine_def=machine_role=None
         oldzip=s3.get_object(Bucket=BUCKET,Key=old[parameter])["Body"].read()
         assert digest(oldzip)==current["CodeSha256"],"Live Lambda/CFN artifact drift"
+        # If the API Lambda is already deployed and verified, a retry of this
+        # guarded release publishes the frontend without a needless CFN update.
+        # This matters after a partial success: CFN code was updated but UI
+        # publication was interrupted. Never change Google worker resources.
+        if kind=="api":
+            with zipfile.ZipFile(io.BytesIO(oldzip)) as archive:
+                assert archive.testzip() is None
+                backend_matches = (
+                    archive.read("handler.py")==Path("src/api/handler.py").read_bytes()
+                    and archive.read("video_prompts.py")==Path("src/api/video_prompts.py").read_bytes()
+                )
+            if backend_matches:
+                print("API_ALREADY_DEPLOYED_VERIFIED",flush=True)
+                continue
         packed=new_package(kind,oldzip)
         new_key=f"releases/sequential-video/{hashlib.sha256(packed).hexdigest()}/{kind}.zip"
         try:
@@ -214,7 +228,7 @@ def main():
     js=Path("frontend/app.js").read_bytes()
     html=Path("frontend/index.html").read_bytes()
     assert b"submitNextSequentialScene" in js
-    assert b"sequential" in html.lower() and b"retryVideoScene1" in html
+    assert b"in sequence" in html.lower() and b"retryVideoScene1" in html
     assert b"PREVIOUS_VIDEO_NOT_COMPLETED" in Path("src/api/handler.py").read_bytes()
     assert all((f"retryVideoScene{n}".encode() in html) for n in (1,2,3))
     for key,data,ctype in (
