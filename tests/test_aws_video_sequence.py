@@ -46,6 +46,11 @@ class AwsVideoSequenceTests(unittest.TestCase):
         self.ddb.get_item.return_value = {"Item": self.job}
         self.s3.head_object.return_value = {"ContentLength": 2048}
         self.states.describe_execution.return_value = {"status": "RUNNING"}
+        # Botocore exposes an Exception subclass here, unlike MagicMock's
+        # default placeholder. Exercise the non-ExecutionAlreadyExists path.
+        class ExecutionAlreadyExists(Exception):
+            pass
+        self.states.exceptions.ExecutionAlreadyExists = ExecutionAlreadyExists
 
     def route(self, body=None, path=None):
         event = {"httpMethod": "POST",
