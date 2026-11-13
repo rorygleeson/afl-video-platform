@@ -21,7 +21,7 @@ The player continues running naturally towards the goals, carrying the red footb
 
 A distant opposing player wearing an unbranded black guernsey with a red diagonal sash runs towards him but remains too far away to interfere.
 
-Keep the same camera position and viewing direction during the approach. The four goalposts and the stadium remain static background architecture while the player moves.
+The camera remains stationary during the approach, retaining the same position and viewing direction. The four goalposts and the stadium remain static background architecture while the player moves.
 
 1.5–2.5 seconds — THE KICK
 
