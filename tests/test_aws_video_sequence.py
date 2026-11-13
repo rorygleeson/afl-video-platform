@@ -45,6 +45,12 @@ class AwsVideoSequenceTests(unittest.TestCase):
         }
         self.ddb.get_item.return_value = {"Item": self.job}
         self.s3.head_object.return_value = {"ContentLength": 2048}
+        self.states.describe_execution.return_value = {"status": "RUNNING"}
+        # Botocore exposes an Exception subclass here, unlike MagicMock's
+        # default placeholder. Exercise the non-ExecutionAlreadyExists path.
+        class ExecutionAlreadyExists(Exception):
+            pass
+        self.states.exceptions.ExecutionAlreadyExists = ExecutionAlreadyExists
 
     def route(self, body=None, path=None):
         event = {"httpMethod": "POST",
@@ -87,11 +93,39 @@ class AwsVideoSequenceTests(unittest.TestCase):
                             for c in self.ddb.update_item.call_args_list))
         self.assertEqual(self.route({"confirmPaidSequence": False})[0], 400)
 
-    def test_existing_approval_does_not_restart_paid_generation(self):
+    def test_existing_approval_reconciles_unreserved_scene_after_lost_handoff(self):
         self.approve()
         status, data = self.route()
         self.assertEqual(status, 202)
         self.assertEqual(data["status"], "ALREADY_APPROVED")
+        self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
+                         f"real-{self.id}-scene1")
+        self.assertFalse(any("videoSequence" in c.kwargs.get("UpdateExpression", "")
+                             for c in self.ddb.update_item.call_args_list))
+
+    def test_existing_approval_does_not_restart_reserved_paid_scene(self):
+        self.approve()
+        self.job["paidVideoApprovals"]["scene1"] = {
+            "executionName": f"real-{self.id}-scene1", "status": "REQUESTED"}
+        status, data = self.route()
+        self.assertEqual(status, 202)
+        self.assertEqual(data["status"], "ALREADY_APPROVED")
+        self.states.start_execution.assert_not_called()
+
+    def test_existing_approval_can_resume_at_missing_scene2_safely(self):
+        self.approve()
+        self.mark_complete("scene1")
+        status, data = self.route()
+        self.assertEqual(status, 202)
+        self.assertEqual(data["status"], "ALREADY_APPROVED")
+        self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
+                         f"real-{self.id}-scene2")
+
+    def test_existing_approval_rejects_nonapproved_status(self):
+        self.job["videoSequence"] = {"status": "REVIEW_REQUIRED"}
+        status, data = self.route()
+        self.assertEqual(status, 409)
+        self.assertEqual(data["status"], "SEQUENCE_NEEDS_REVIEW")
         self.states.start_execution.assert_not_called()
 
     def test_scene1_completed_event_starts_scene2_exactly_once(self):
@@ -106,6 +140,42 @@ class AwsVideoSequenceTests(unittest.TestCase):
         replay = self.api.lambda_handler(event, None)
         self.assertEqual(replay["status"], "ALREADY_STARTED")
         self.states.start_execution.assert_called_once()
+
+    def test_duplicate_completion_with_missing_next_execution_never_claims_started(self):
+        from botocore.exceptions import ClientError
+        self.approve()
+        self.mark_complete("scene1")
+        self.job["paidVideoApprovals"]["scene2"] = {
+            "executionName": f"real-{self.id}-scene2"}
+        self.states.describe_execution.side_effect = ClientError(
+            {"Error":{"Code":"ExecutionDoesNotExist","Message":"not found"}},
+            "DescribeExecution")
+        result = self.api.lambda_handler(self.completion("scene1"), None)
+        self.assertEqual(result["status"], "NEXT_SCENE_HANDOFF_NEEDS_REVIEW")
+        self.states.start_execution.assert_not_called()
+
+    def test_lost_sfn_start_response_never_claims_paid_scene_has_started(self):
+        self.approve()
+        self.mark_complete("scene1")
+        self.states.start_execution.side_effect = RuntimeError("Uncertain AWS acknowledgement")
+        result = self.api.lambda_handler(self.completion("scene1"), None)
+        self.assertEqual(result["status"], "NEXT_SCENE_HANDOFF_NEEDS_REVIEW")
+        self.states.start_execution.assert_called_once()
+
+    def test_missing_workflow_reports_review_after_two_minutes_not_indefinite_wait(self):
+        from botocore.exceptions import ClientError
+        self.approve()
+        self.job["paidVideoApprovals"]["scene1"] = {
+            "executionName": f"real-{self.id}-scene1",
+            "createdAt": "2026-11-12T00:00:00+00:00"}
+        self.states.describe_execution.side_effect = ClientError(
+            {"Error":{"Code":"ExecutionDoesNotExist","Message":"not found"}},
+            "DescribeExecution")
+        status = self.api.video_scene_public(self.job, "scene1")
+        self.assertEqual(status["status"], "REVIEW_REQUIRED")
+        self.assertEqual(status["failureCode"], "WORKFLOW_EXECUTION_NOT_FOUND")
+        self.assertEqual(status["retryBlockedReason"], "WORKFLOW_REVIEW_REQUIRED")
+        self.assertFalse(status["retryAvailable"])
 
     def test_scene2_completed_event_starts_scene3_only_with_both_real_mp4s(self):
         self.approve()

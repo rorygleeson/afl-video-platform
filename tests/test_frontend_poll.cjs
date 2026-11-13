@@ -628,6 +628,24 @@ test('background app pauses read-only polling but AWS completion becomes visible
 });
 
 
+test('approved sequence with unreserved scene offers safe manual resume', async () => {
+  const options={paidScenes:{scene1:false,scene2:true,scene3:true},
+    sequence:{status:'APPROVED',mode:'AWS_EVENT_DRIVEN'},
+    realVideos:{scene1:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'}}};
+  const h=setup(options);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.generateAllVideos.hidden,false,
+    'Existing approval without reserved Scene 2 must be recoverable');
+  assert.match(h.els.generateAllVideos.textContent,/Resume approved AWS sequence/);
+  await h.els.generateAllVideos.listeners.click(); await h.flush();
+  const approvals=h.calls.filter(c=>c.url.endsWith('/real-videos/sequence') && c.opts.method==='POST');
+  assert.equal(approvals.length,1);
+  assert.deepEqual(JSON.parse(approvals[0].opts.body),{confirmPaidSequence:true});
+  assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,0,
+    'Browser must not start any individual paid scene');
+});
+
 test('ambiguous batch approval cannot duplicate paid requests', async () => {
   const options={paidScenes:{scene1:true,scene2:true,scene3:true},
                  realVideos:{},deferPaidVideoResponses:true};
