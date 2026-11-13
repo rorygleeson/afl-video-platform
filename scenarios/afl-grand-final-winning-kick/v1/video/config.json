@@ -22,11 +22,11 @@
       "id": "scene3",
       "template": "scene3-video.txt",
       "durationSeconds": 5,
-      "commentaryTemplate": "$fullName has won the premiership!"
+      "commentaryTemplate": "$fullName has won the premiership for $teamName!"
     }
   ],
   "maxPaidScenesPerRequest": 1,
-  "notes": "Paid video requires explicit per-scene consent and conditional per-job DynamoDB approval; no global concurrency slot or implicit generation. Test variant removes club/team spoken branding from video prompts and celebration commentary; team colour patterns and UI team selection remain unchanged.",
+  "notes": "Paid video requires explicit per-scene consent and conditional per-job DynamoDB approval; no global concurrency slot or implicit generation. Visual scenes use unbranded uniform patterns; Scene 3 commentary names the user's selected team as the premiership winner.",
   "requiredVariables": [
     "firstName",
     "lastName",
