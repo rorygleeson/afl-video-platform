@@ -321,7 +321,8 @@ test('video controls appear after three reference images without prompt toggles'
   await h.flush(); await h.nextTimer(); await h.nextTimer();
   assert.equal(h.els.videoTestSection.hidden, false);
   for (const n of [1, 2, 3]) {
-    assert.equal(h.els['videoPanel'+n].hidden, false);
+    assert.equal(h.els['videoPanel'+n].hidden, n !== 1,
+      'Scene 2/3 panels remain hidden until earlier real MP4 completes');
     assert.doesNotMatch(html, new RegExp('id="videoScene' + n + '"'));
     assert.doesNotMatch(html, new RegExp('id="videoPromptDetails' + n + '"'));
     assert.match(h.els['videoStatus'+n].textContent, /Real video not generated/);
@@ -527,6 +528,42 @@ test('one paid confirmation runs scenes sequentially only after completed real M
     assert.ok(c.opts.headers['Idempotency-Key']);
   }
   assert.equal(h.els.assembleFinal.hidden, true, 'Assembly is locked until Scene 3 MP4 completes');
+  assert.equal(h.els.videoPanel2.hidden, false);
+  assert.equal(h.els.videoPanel3.hidden, false,
+    'Scene 3 panel appears only after Scene 2 has completed');
+  options.realVideos.scene3 = {mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene3.mp4'};
+  options.assembly = {enabled:true,status:'READY'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.assembleFinal.hidden, false,
+    'Stitching is enabled only after all three real MP4s complete');
+});
+
+test('Scene 2 and Scene 3 video panels unlock only after previous MP4 completion', async () => {
+  const options = {paidScenes:{scene1:true,scene2:true,scene3:true},realVideos:{}};
+  const h = setup(options);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.videoPanel1.hidden,false);
+  assert.equal(h.els.videoPanel2.hidden,true);
+  assert.equal(h.els.videoPanel3.hidden,true);
+  options.realVideos.scene1 = {mode:'REAL',status:'FAILED',errorCode:'GOOGLE_FAILED',retryAvailable:true};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.videoPanel2.hidden,true, 'Scene 1 failure must not reveal Scene 2');
+  assert.equal(h.els.retryVideoScene1.hidden,false, 'Manual retry stays accessible');
+  options.realVideos.scene1 = {mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
+  options.paidScenes.scene1 = false;
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.videoPanel2.hidden,false);
+  assert.equal(h.els.videoPanel3.hidden,true);
+  options.realVideos.scene2 = {mode:'REAL',status:'FAILED',errorCode:'GOOGLE_FAILED',retryAvailable:true};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.videoPanel3.hidden,true,'Scene 2 failure must not reveal Scene 3');
+  assert.equal(h.els.retryVideoScene2.hidden,false);
+  options.realVideos.scene2 = {mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene2.mp4'};
+  options.paidScenes.scene2 = false;
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.videoPanel3.hidden,false);
+  assert.equal(h.els.assembleFinal.hidden,true);
 });
 
 test('pending paid POST blocks all other scenes; no duplicate request or automatic paid retry', async () => {
