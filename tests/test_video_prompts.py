@@ -78,7 +78,7 @@ class VideoPromptTests(unittest.TestCase):
         self.assertIn("never show a frontal face", prompt.lower())
         self.assertIn("rockets HIGH into the air", prompt)
         self.assertIn("HIGH ABOVE THE GROUND", prompt)
-        self.assertIn("below their tops", prompt)
+        self.assertIn("below the tops of the two tall central posts", prompt)
         self.assertIn("BETWEEN the TWO TALL CENTRAL POSTS", prompt)
         self.assertIn("CAMERA — COMPLETELY STATIONARY", prompt)
         self.assertIn("Never add or invent a fifth post", prompt)
