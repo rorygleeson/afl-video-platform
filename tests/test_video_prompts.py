@@ -84,6 +84,19 @@ class VideoPromptTests(unittest.TestCase):
         self.assertIn("Never add or invent a fifth post", prompt)
         self.assertIn("WHILE IT IS STILL AIRBORNE", prompt)
 
+    def test_scene2_existing_crowd_raises_arms_after_goal_only(self):
+        job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
+        prompt = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene2")["prompt"]
+        self.assertIn("the EXISTING spectators visible in the stands", prompt)
+        self.assertIn("BOTH ARMS HIGH OVERHEAD", prompt)
+        self.assertIn("stand up or rise from their seats", prompt)
+        self.assertIn("The stand MUST NOT remain a motionless backdrop", prompt)
+        self.assertIn("no new people, crowd duplication", prompt)
+        self.assertIn("ONLY once the goal is scored", prompt)
+        self.assertIn("NO TURN TO CAMERA", prompt)
+        self.assertIn("Never add or invent a fifth post", prompt)
+        self.assertIn("CAMERA — COMPLETELY STATIONARY", prompt)
+
     def test_old_video_templates_preserved_and_active_templates_unbranded(self):
         image = json.loads((SCENARIO / "config.json").read_text())
         for scene in ("scene1", "scene2", "scene3"):
