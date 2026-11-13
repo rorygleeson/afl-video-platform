@@ -152,7 +152,7 @@ class AwsVideoSequenceTests(unittest.TestCase):
 
     def test_original_paid_request_does_not_imply_batch_consent(self):
         self.mark_complete("scene1")
-        self.assertEqual(self.api.lambda_handler(self.completion("scene1"))["status"],
+        self.assertEqual(self.api.lambda_handler(self.completion("scene1"), None)["status"],
                          "IGNORED_NO_SEQUENCE")
         self.states.start_execution.assert_not_called()
 
