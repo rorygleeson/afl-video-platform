@@ -435,7 +435,21 @@ def video_scene_public(job, scene_id):
                 result["workflowStatus"] = "RUNNING"
         except ClientError as exc:
             code = exc.response.get("Error", {}).get("Code")
-            if code != "ExecutionDoesNotExist":
+            if code == "ExecutionDoesNotExist":
+                # Newly reserved executions may not be visible immediately.
+                # After two minutes, surface a clear review-required problem
+                # instead of displaying an indefinite REQUESTED state.
+                submitted_at = approval.get("createdAt", "")
+                try:
+                    age_seconds = (datetime.now(timezone.utc) -
+                        datetime.fromisoformat(submitted_at.replace("Z", "+00:00"))).total_seconds()
+                except (ValueError, AttributeError, TypeError):
+                    age_seconds = 0
+                if age_seconds > 120:
+                    result["status"] = "REVIEW_REQUIRED"
+                    result["failureCode"] = "WORKFLOW_EXECUTION_NOT_FOUND"
+                    result["workflowStatus"] = "NOT_FOUND"
+            else:
                 LOG.warning("Could not read real scene workflow status: %s", str(code)[:60])
                 result["workflowStatus"] = "UNKNOWN"
 
@@ -833,12 +847,25 @@ def video_sequence_event(event):
     if result["statusCode"] == 202:
         LOG.info("Server-side video sequence advanced %s to %s", scene_id, next_scene)
         return {"status": "NEXT_SCENE_REQUESTED", "sceneId": next_scene}
-    # An atomic concurrent reservation can win while this event is running.
+    # An atomic concurrent reservation may win, or the Step Functions start
+    # response may be lost after DynamoDB is reserved. Do not claim success
+    # without checking the named workflow. Never repeat the paid POST.
     refreshed = get_job(job_id)
-    if refreshed and (refreshed.get("paidVideoApprovals", {}).get(next_scene) or
-                      refreshed.get("realVideos", {}).get(next_scene)):
-        return {"status": "ALREADY_STARTED", "sceneId": next_scene}
-    raise RuntimeError("Video sequence handoff not confirmed; no paid retry performed")
+    if refreshed and refreshed.get("paidVideoApprovals", {}).get(next_scene):
+        next_name = refreshed["paidVideoApprovals"][next_scene].get("executionName")
+        if isinstance(next_name, str):
+            arn = (GOOGLE_STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:", 1)
+                   + ":" + next_name)
+            try:
+                found = STATES.describe_execution(executionArn=arn)
+            except ClientError as exc:
+                if exc.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+                    LOG.error("Video handoff reserved but execution not found for %s", next_scene)
+                    return {"status": "NEXT_SCENE_HANDOFF_NEEDS_REVIEW", "sceneId": next_scene}
+                raise
+            if found.get("status") in ("RUNNING", "SUCCEEDED"):
+                return {"status": "ALREADY_STARTED", "sceneId": next_scene}
+    return {"status": "NEXT_SCENE_HANDOFF_NEEDS_REVIEW", "sceneId": next_scene}
 
 
 def retry_failed_real_scene(job_id, scene_id, event):
