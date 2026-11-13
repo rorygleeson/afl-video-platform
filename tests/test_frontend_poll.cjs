@@ -499,53 +499,56 @@ test('one batch button stays hidden until real videos are approved', async () =>
   assert.equal(h.calls.filter(c => c.url.includes('/real-videos/scene')).length, 0);
 });
 
-test('one confirmed click submits three Google scenes concurrently, once each', async () => {
-  const h = setup({paidScenes: {scene1:true,scene2:true,scene3:true}});
+test('one paid confirmation runs scenes sequentially only after completed real MP4', async () => {
+  const options = {paidScenes: {scene1:true,scene2:true,scene3:true}, realVideos:{}};
+  const h = setup(options);
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  assert.equal(h.els.generateAllVideos.hidden, false);
-  assert.match(h.els.generateAllVideos.textContent, /All 3 Videos/);
+  assert.match(h.els.generateAllVideos.textContent, /sequential/);
   const first = h.els.generateAllVideos.listeners.click();
-  const second = h.els.generateAllVideos.listeners.click();
-  await Promise.all([first, second]);
-  await h.flush();
-  const submitted = h.calls.filter(c => c.url.includes('/real-videos/scene'));
-  assert.equal(submitted.length, 3);
-  assert.deepEqual(submitted.map(c=>c.url.match(/scene[123]$/)[0]).sort(),
-    ['scene1','scene2','scene3']);
-  for (const c of submitted) {
+  const double = h.els.generateAllVideos.listeners.click();
+  await Promise.all([first, double]); await h.flush();
+  const paid = () => h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST');
+  assert.deepEqual(paid().map(c=>c.url.match(/scene[123]$/)[0]), ['scene1']);
+  assert.deepEqual(JSON.parse(paid()[0].opts.body), {confirmPaidScene:'scene1'});
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(paid().length, 1, 'Scene 2 must not start until Scene 1 completes');
+  options.realVideos.scene1 = {mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.deepEqual(paid().map(c=>c.url.match(/scene[123]$/)[0]), ['scene1','scene2']);
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(paid().length, 2, 'Scene 3 must not start until Scene 2 completes');
+  options.realVideos.scene2 = {mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene2.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.deepEqual(paid().map(c=>c.url.match(/scene[123]$/)[0]), ['scene1','scene2','scene3']);
+  for (const c of paid()) {
     const scene = c.url.match(/scene[123]$/)[0];
-    assert.equal(c.opts.method, 'POST');
-    assert.deepEqual(JSON.parse(c.opts.body), {confirmPaidScene: scene});
+    assert.deepEqual(JSON.parse(c.opts.body), {confirmPaidScene:scene});
     assert.ok(c.opts.headers['Idempotency-Key']);
   }
-  for (const n of [1,2,3])
-    assert.match(h.els['videoDebugText'+n].textContent,/API response: REAL_VIDEO_REQUESTED/);
-  assert.equal(h.els.generateAllVideos.hidden,true);
-  await h.els.refresh.listeners.click(); await h.flush();
-  assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,3);
+  assert.equal(h.els.assembleFinal.hidden, true, 'Assembly is locked until Scene 3 MP4 completes');
 });
 
-test('all three paid requests are simultaneously in flight; failure does not cancel or retry siblings', async () => {
-  const h = setup({paidScenes:{scene1:true,scene2:true,scene3:true}, deferPaidVideoResponses:true});
+test('pending paid POST blocks all other scenes; no duplicate request or automatic paid retry', async () => {
+  const options = {paidScenes:{scene1:true,scene2:true,scene3:true},
+                   realVideos:{},deferPaidVideoResponses:true};
+  const h = setup(options);
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   const batch = h.els.generateAllVideos.listeners.click();
-  assert.equal(h.pendingVideoPosts.size, 3, 'three independent POSTs must begin before any response');
-  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.equal(h.pendingVideoPosts.size,1);
+  assert.ok(h.pendingVideoPosts.has('scene1'));
   await h.els.generateAllVideos.listeners.click();
-  assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,3,
-    'double click cannot add paid requests while requests are in flight');
-  h.pendingVideoPosts.get('scene2')({ok:false,status:503, async json(){return {error:'Provider unavailable'};}});
-  h.pendingVideoPosts.get('scene3')({ok:true,status:202,async json(){return {status:'REAL_VIDEO_REQUESTED'};}});
-  h.pendingVideoPosts.get('scene1')({ok:true,status:202,async json(){return {status:'REAL_VIDEO_REQUESTED'};}});
-  await batch;
-  await h.flush();
-  assert.match(h.els.scene2PaidStatus.textContent,/Submission needs review/);
-  assert.match(h.els.videoDebugText2.textContent,/will NOT be retried/);
-  assert.match(h.els.videoDebugText1.textContent,/REAL_VIDEO_REQUESTED/);
-  assert.match(h.els.videoDebugText3.textContent,/REAL_VIDEO_REQUESTED/);
-  assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,3);
+  assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,1);
+  h.pendingVideoPosts.get('scene1')({
+    ok:false,status:503,async json(){return {error:'Status uncertain'};}
+  });
+  await batch; await h.flush();
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.match(h.els.scene1PaidStatus.textContent,/Submission needs review/);
+  assert.match(h.els.videoDebugText1.textContent,/will NOT be retried/);
+  assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,1);
+  assert.equal(h.els.assembleFinal.hidden,true);
 });
 
 test('paid batch outcome survives stale read-only status polling', async () => {
@@ -578,7 +581,8 @@ test('batch only submits remaining eligible scenes, not completed MP4', async ()
   assert.match(h.els.generateAllVideos.textContent,/2 Remaining Videos/);
   await h.els.generateAllVideos.listeners.click();
   const submitted=h.calls.filter(c=>c.url.includes('/real-videos/scene'));
-  assert.deepEqual(submitted.map(c=>c.url.match(/scene[123]$/)[0]).sort(),['scene2','scene3']);
+  assert.deepEqual(submitted.map(c=>c.url.match(/scene[123]$/)[0]),['scene2'],
+    'Only Scene 2 is submitted; Scene 3 must wait for Scene 2 completion');
 });
 
 test('uncertain scene stays read-only and is never automatically resubmitted', async () => {
