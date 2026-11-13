@@ -357,7 +357,7 @@ def checked_gcs_prefix(job, scene):
 def selfie_object_key(item):
     """Use only the selfie already belonging to this job; never accept a caller key."""
     key = item.get("uploadKey")
-    if not isinstance(key, str) or not re.fullmatch(r"uploads/[0-9a-f]{32}\\.(jpg|png|webp)", key):
+    if not isinstance(key, str) or not re.fullmatch(r"uploads/[0-9a-f]{32}\.(jpg|png|webp)", key):
         raise ContractError("Invalid original selfie key")
     return key
 
