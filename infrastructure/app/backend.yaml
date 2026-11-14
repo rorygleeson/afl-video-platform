@@ -468,7 +468,7 @@ Resources:
       StateMachineType: STANDARD
       RoleArn: !GetAtt ImageStateMachineRole.Arn
       Definition:
-        Comment: Parallel direct Google Nano Banana Pro image edits for all configured scenes.
+        Comment: Sequential direct Google Nano Banana Pro image edits; existing retry and failure handling retained.
         StartAt: Prepare
         TimeoutSeconds: 1800
         States:
@@ -489,7 +489,7 @@ Resources:
           ParallelScenes:
             Type: Map
             ItemsPath: $.prepared.Payload.scenes
-            MaxConcurrency: 3
+            MaxConcurrency: 1
             ItemSelector:
               jobId.$: $.jobId
               sceneId.$: $$.Map.Item.Value
