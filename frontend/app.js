@@ -272,7 +272,8 @@ const input = document.getElementById('selfie');
             video.muted = true;
             video.defaultMuted = true;
             video.setAttribute('muted', '');
-            video.autoplay = false;
+            video.autoplay = true;
+            video.setAttribute('autoplay', '');
             video.loop = false;
             video.playsInline = true;
             video.setAttribute('playsinline', '');
@@ -305,6 +306,18 @@ const input = document.getElementById('selfie');
             preview.appendChild(playButton);
             player.replaceChildren(preview);
             player.dataset.url = item.url;
+            // Play the completed scene ONCE, silently, as soon as it appears.
+            // If a browser blocks autoplay, expose the same one-tap Play
+            // button used for replay. Polling never restarts playback.
+            playButton.hidden = true;
+            try {
+              const started = video.play();
+              if (started && typeof started.catch === 'function') {
+                void started.catch(() => { playButton.hidden = false; });
+              }
+            } catch {
+              playButton.hidden = false;
+            }
           }
 
         } else {
