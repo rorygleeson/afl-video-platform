@@ -1,4 +1,4 @@
-name: Deploy reference image heading and divider
+name: Deploy final stitching estimated progress bar
 on:
   push:
     branches: [main]
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite verifies reference image heading only after upload, and existing behavior.
+          # Regression suite verifies assembly progress, retries, autoplay and existing behavior.
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
@@ -31,6 +31,7 @@ jobs:
           grep -q 'autoAssemblyAttemptedJobs.add(jobId)' frontend/app.js
           grep -q 'VIDEO_AVERAGE_SECONDS' frontend/app.js
           grep -q 'scene1ProgressBar' frontend/index.html
+          grep -q 'assemblyProgressBar' frontend/index.html
           grep -q 'async function submitFinalAssembly(jobId)' frontend/app.js
           grep -q 'retryVideoScene1' frontend/index.html
           grep -q 'retryVideoScene2' frontend/index.html
