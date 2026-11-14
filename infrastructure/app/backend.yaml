@@ -389,6 +389,21 @@ Resources:
                 Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub 'arn:${AWS::Partition}:s3:::${ScenarioAssetsBucket}/scenarios/afl-grand-final-winning-kick/v1/*'
+              # Refresh the exact team-artwork object permission and permit
+              # existence checks to return 404 rather than an opaque S3 403.
+              # The worker only needs this one versioned scenario prefix.
+              - Sid: ReadTeamArtworkExplicit
+                Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ScenarioAssetsBucket}/scenarios/afl-grand-final-winning-kick/v1/teams/*'
+              - Sid: ListScenarioTeamArtworkForPreflight
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ScenarioAssetsBucket}'
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - 'scenarios/afl-grand-final-winning-kick/v1/teams/*'
               - Sid: UpdateAndReadJobs
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Scan]
