@@ -291,11 +291,13 @@ def generate(worker, job_id, scene_id):
     scene = next(s for s in config["scenes"] if s["id"] == scene_id)
     stage = "MASTER_READ"
     try:
-        master = s3_image(worker.S3, worker.ASSET_BUCKET, scene["masterKey"])
+        master_key = job.get("teamMasterKeys", {}).get(scene_id, scene["masterKey"])
+        master = s3_image(worker.S3, worker.ASSET_BUCKET, master_key)
         stage = "SELFIE_READ"
         selfie = s3_image(worker.S3, worker.UPLOAD_BUCKET, job["uploadKey"])
         stage = "PROMPT"
-        prompt = worker.build_image_prompt(config, scene, job["team"])
+        prompt = worker.build_image_prompt(config, scene, job["team"],
+                                           bool(job.get("teamArtworkReady", False)))
         stage = "AUTH"
         token = access_token()
         stage = "REQUEST_FORMAT"
