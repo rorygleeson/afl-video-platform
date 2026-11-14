@@ -57,8 +57,7 @@ def load_scenario():
         raise RuntimeError("Three enabled scenes are required")
     for scene in scenes:
         if (scene.get("model") != "gemini-3-pro-image" or
-                scene.get("operation") != "image_edit" or
-                scene.get("masterKey") != SCENARIO_PREFIX + scene["id"] + "-start.png"):
+                scene.get("operation") != "image_edit"):
             raise RuntimeError("Invalid scene model or master image")
     # Reject missing or malformed prompt data before any billable image submission.
     validate_prompt_config(config)
@@ -66,9 +65,6 @@ def load_scenario():
 
 
 def validate_prompt_config(config):
-    shared = config.get("sharedPrompt")
-    if not isinstance(shared, str) or not 100 <= len(shared) <= 8000:
-        raise RuntimeError("Invalid or missing shared image prompt in S3 configuration")
     identity_only = config.get("identityOnlyPrompt")
     if not isinstance(identity_only, str) or not 100 <= len(identity_only) <= 8000:
         raise RuntimeError("Invalid team identity-only prompt")
@@ -76,47 +72,41 @@ def validate_prompt_config(config):
         identity_instructions = scene.get("identityOnlyInstructions")
         if not isinstance(identity_instructions, str) or not 100 <= len(identity_instructions) <= 5000:
             raise RuntimeError("Invalid team identity-only scene instructions: " + scene["id"])
-        instructions = scene.get("promptInstructions")
-        if not isinstance(instructions, str) or not 100 <= len(instructions) <= 5000:
-            raise RuntimeError("Invalid or missing image scene instructions: " + scene["id"])
 
 
 def team_master_keys(config, team):
-    """Use a complete, pre-coloured team master set or the legacy three masters.
+    """Require a complete set of finished masters for the selected team.
 
-    Never mix teams or fall back for only one scene: partial uploads must not
-    produce inconsistent team clothing across the three output images.
+    Do not use legacy masters or mix individual scenes across teams. A missing
+    image must fail preflight before any billable Nano Banana requests.
     """
     if team not in config["teamGuernseys"]:
         raise RuntimeError("Unsupported team")
     prefix = SCENARIO_PREFIX + "teams/" + team + "/"
     keys = {scene["id"]: prefix + scene["id"] + "-start.png"
             for scene in config["scenes"]}
-    present = 0
     for key in keys.values():
         try:
-            S3.head_object(Bucket=ASSET_BUCKET, Key=key)
-            present += 1
+            obj = S3.head_object(Bucket=ASSET_BUCKET, Key=key)
         except ClientError as error:
             code = str(error.response.get("Error", {}).get("Code", ""))
             status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if code not in ("404", "NoSuchKey", "NotFound") and status != 404:
-                raise
-    if present == len(keys):
-        return keys, True
-    # A partially uploaded team must never be used; preserve existing app.
-    return {scene["id"]: scene["masterKey"] for scene in config["scenes"]}, False
+            if code in ("404", "NoSuchKey", "NotFound") or status == 404:
+                raise RuntimeError("Team master artwork incomplete for " + team) from None
+            raise
+        # Reject empty/invalid objects before a paid call; full PNG validation
+        # happens in the asset publishing workflow.
+        if not 100_000 <= obj.get("ContentLength", 0) <= 15_000_000:
+            raise RuntimeError("Team master artwork has invalid size for " + team)
+    return keys
 
 
-def build_image_prompt(config, scene, team, team_artwork=False):
-    # Team-specific images contain the final jersey and shorts. Only change
-    # identity in those images; never instruct Google to recolour their clothes.
+def build_image_prompt(config, scene, team):
+    """Four identity-only prompts are shared by every team and scene."""
     validate_prompt_config(config)
-    if team_artwork:
-        return config["identityOnlyPrompt"] + " " + scene["identityOnlyInstructions"]
-    guernsey = config["teamGuernseys"][team]
-    return (config["sharedPrompt"] + " Selected playing guernsey style: " +
-            guernsey + ". " + scene["promptInstructions"])
+    if team not in config["teamGuernseys"]:
+        raise RuntimeError("Unsupported team")
+    return config["identityOnlyPrompt"] + "\n\n" + scene["identityOnlyInstructions"]
 
 
 def prepare(job_id):
@@ -128,7 +118,7 @@ def prepare(job_id):
         raise RuntimeError("Unsupported team")
     S3.head_object(Bucket=UPLOAD_BUCKET, Key=item["uploadKey"])
     # Fail before any billable call if any source asset is missing.
-    masters, team_artwork = team_master_keys(config, item["team"])
+    masters = team_master_keys(config, item["team"])
     for key in masters.values():
         S3.head_object(Bucket=ASSET_BUCKET, Key=key)
     scenes = {scene["id"]: {"status": "PENDING"} for scene in config["scenes"]}
@@ -136,11 +126,11 @@ def prepare(job_id):
         job_id,
         "SET #status = :generating, scenes = :scenes, sceneCount = :three, "
         "completedScenes = :zero, failedScenes = :zero, generationStartedAt = :now, "
-        "teamMasterKeys = :masterkeys, teamArtworkReady = :teamartwork",
+        "teamMasterKeys = :masterkeys",
         {":generating": "GENERATING_IMAGES",
          ":waiting": "AWAITING_IMAGE_PIPELINE",
          ":scenes": scenes, ":three": 3, ":zero": 0, ":now": int(time.time()),
-         ":masterkeys": masters, ":teamartwork": team_artwork},
+         ":masterkeys": masters},
         {"#status": "status"},
         "#status = :waiting",
     )
