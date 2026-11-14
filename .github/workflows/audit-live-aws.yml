@@ -57,6 +57,26 @@ jobs:
                   d=ev.get('stateEnteredEventDetails',{})
                   print('STATE',ev['id'],d.get('name'),flush=True)
           PY
+      - name: Read existing image-worker CloudWatch errors (read-only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3
+          from datetime import datetime,timezone,timedelta
+          l=boto3.client('logs',region_name='ap-southeast-2')
+          group='/aws/lambda/afl-app-dev-image-worker'
+          begin=int((datetime.now(timezone.utc)-timedelta(hours=3)).timestamp()*1000)
+          try:
+            data=l.filter_log_events(logGroupName=group,startTime=begin,limit=100)
+            for item in data.get('events',[]):
+              msg=item.get('message','').strip()
+              if any(s in msg for s in ('ERROR','Error','Exception','Traceback','MASTER','Task timed out','Runtime.')):
+                # Avoid printing request details or customer inputs.
+                if msg.startswith(('Traceback','  File','[ERROR]','[WARNING]','Runtime.','Task timed out')) or any(t in msg for t in ('AccessDenied','ValidationException','NameError','KeyError','TypeError','RuntimeError','ClientError','AttributeError','ConditionalCheckFailed')):
+                  print('WORKER_LOG',msg[:450],flush=True)
+          except Exception as e:
+            print('LOG_READ_ERROR',type(e).__name__,str(e)[:260],flush=True)
+          PY
       - name: Preserve sanitized inventory even on drift or read-access failure
         if: always()
         uses: actions/upload-artifact@v4
