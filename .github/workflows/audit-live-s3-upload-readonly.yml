@@ -35,8 +35,11 @@ jobs:
           bucket=f'afl-app-dev-uploads-{account}-{region}'
           s3=session.client('s3')
           info={'frontend_url':expected,'backend_cors_frontend_origin':actual,
-                'origins_match':expected==actual,
-                'bucket_region':s3.get_bucket_location(Bucket=bucket)['LocationConstraint']}
+                'origins_match':expected==actual}
+          try:
+            info['bucket_region']=s3.get_bucket_location(Bucket=bucket)['LocationConstraint']
+          except Exception as exc:
+            info['bucket_region_read_error']=type(exc).__name__+': '+str(exc)
           try:
             cors=s3.get_bucket_cors(Bucket=bucket)
             rules=cors.get('CORSRules',[])
