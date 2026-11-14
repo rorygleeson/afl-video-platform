@@ -1,6 +1,9 @@
 name: Audit live AWS deployment state (read-only)
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-live-aws.yml']
 permissions:
   contents: read
   id-token: write
@@ -24,6 +27,36 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
           python scripts/audit_live_aws.py
+      - name: Inspect latest image execution failure (READ ONLY, no customer data)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3, json
+          sfn=boto3.client('stepfunctions',region_name='ap-southeast-2')
+          arn='arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-scene1-pilot'
+          for status in ('SUCCEEDED','FAILED','TIMED_OUT'):
+            try:
+              runs=sfn.list_executions(stateMachineArn=arn,statusFilter=status,maxResults=25)['executions']
+            except Exception as e:
+              print('LIST_EXECUTIONS_ERROR', type(e).__name__, str(e)[:240],flush=True)
+              continue
+            for run in runs[:8]:
+              print('EXECUTION',run['name'][-12:],run['status'],run['startDate'],flush=True)
+              try:
+                events=sfn.get_execution_history(executionArn=run['executionArn'],maxResults=1000,includeExecutionData=False)['events']
+              except Exception as e:
+                print('HISTORY_ERROR',type(e).__name__,str(e)[:240],flush=True)
+                continue
+              for ev in events:
+                typ=ev['type']
+                if typ.endswith('Failed') or typ.endswith('TimedOut') or typ in ('LambdaFunctionFailed','TaskFailed'):
+                  details=ev.get(typ[0].lower()+typ[1:]+'EventDetails',{})
+                  minimal={k: str(v)[:300] for k,v in details.items() if k in ('error','cause','resourceType','resource')}
+                  print('FAILURE',ev['id'],typ,minimal,flush=True)
+                elif typ=='TaskStateEntered':
+                  d=ev.get('stateEnteredEventDetails',{})
+                  print('STATE',ev['id'],d.get('name'),flush=True)
+          PY
       - name: Preserve sanitized inventory even on drift or read-access failure
         if: always()
         uses: actions/upload-artifact@v4
