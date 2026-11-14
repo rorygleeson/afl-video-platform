@@ -1,4 +1,4 @@
-name: Deploy automatic video-start frontend only
+name: Deploy automatic video and stitching frontend only
 on:
   push:
     branches: [main]
@@ -23,11 +23,13 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite covers automatic single-flight paid sequence start.
+          # Regression suite covers automatic single-flight video and assembly starts.
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
           grep -q 'confirmPaidSequence: true' frontend/app.js
+          grep -q 'autoAssemblyAttemptedJobs.add(jobId)' frontend/app.js
+          grep -q 'async function submitFinalAssembly(jobId)' frontend/app.js
           grep -q 'retryVideoScene1' frontend/index.html
           grep -q 'retryVideoScene2' frontend/index.html
           grep -q 'retryVideoScene3' frontend/index.html
