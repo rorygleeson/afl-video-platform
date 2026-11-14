@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite verifies that only the latest auto-playing scene remains active.
+          # Regression suite verifies one-at-a-time silent autoplay and manual replay.
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
