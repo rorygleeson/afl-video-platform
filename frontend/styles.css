@@ -15,6 +15,11 @@
     .video-scene{border:1px solid #d4dce5;border-radius:10px;padding:14px;margin:12px 0}
     .video-scene button{margin-top:8px}
     .video-scene video{width:100%;max-height:330px;border-radius:8px;margin-top:10px}
+    .scene-video-preview{position:relative}
+    .scene-video-preview video{display:block}
+    .scene-video-preview .scene-preview-play{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:64px;height:64px;min-height:64px;margin:0;padding:0;border-radius:50%;background:rgba(18,97,160,.90);color:white;font-size:28px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px #0005}
+    .scene-video-preview .scene-preview-play[hidden]{display:none!important}
+
     .video-state{font-size:.9rem;color:#465569;white-space:pre-wrap}
     .diagnostic-result{margin:6px 0 0;font-weight:700}
     .diagnostic-result.success{color:#16733b}
