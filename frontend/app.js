@@ -592,6 +592,7 @@ const input = document.getElementById('selfie');
       refresh.hidden = true;
         resetVideoUi();
         results.replaceChildren();
+        document.getElementById('referenceImagesHeading').hidden = true;
       showStatus('Selection changed. Upload selfie and create a new job before generating.');
     }
   }
@@ -1105,6 +1106,7 @@ const input = document.getElementById('selfie');
       resetVideoUi();
       currentJobId = created.job.jobId;
       results.replaceChildren();
+      document.getElementById('referenceImagesHeading').hidden = false;
       generate.hidden = true;
       refresh.hidden = true;
       videoTestSection.hidden = true;
