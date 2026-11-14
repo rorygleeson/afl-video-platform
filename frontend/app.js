@@ -43,6 +43,23 @@ const input = document.getElementById('selfie');
   // Assembly starts at most once per job in this page; never retry an uncertain POST.
   const autoAssemblyAttemptedJobs = new Set();
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
+  let activeScenePreview = null;
+
+  async function playScenePreview(video, playButton, replay = false) {
+    if (activeScenePreview && activeScenePreview !== video) {
+      activeScenePreview.pause();
+    }
+    activeScenePreview = video;
+    video.muted = true;
+    if (replay) video.currentTime = 0;
+    playButton.hidden = true;
+    try {
+      await video.play();
+    } catch {
+      if (activeScenePreview === video) activeScenePreview = null;
+      playButton.hidden = false; // Browser blocked autoplay: allow one tap.
+    }
+  }
 
   function clearPollTimer() {
     if (pollTimer !== null) {
@@ -65,6 +82,8 @@ const input = document.getElementById('selfie');
 
   function resetVideoUi() {
     stopVideoPoll();
+    if (activeScenePreview) activeScenePreview.pause();
+    activeScenePreview = null;
     videoRefreshRequested = false;
     realVideoTracking = false;
     videoSubmittedScenes.clear();
@@ -272,8 +291,8 @@ const input = document.getElementById('selfie');
             video.muted = true;
             video.defaultMuted = true;
             video.setAttribute('muted', '');
-            video.autoplay = true;
-            video.setAttribute('autoplay', '');
+            // Trigger autoplay explicitly only when this clip first completes.
+            video.autoplay = false;
             video.loop = false;
             video.playsInline = true;
             video.setAttribute('playsinline', '');
@@ -286,18 +305,16 @@ const input = document.getElementById('selfie');
             playButton.className = 'scene-preview-play';
             playButton.textContent = '▶';
             playButton.setAttribute('aria-label', 'Play Scene ' + n + ' video silently');
-            playButton.addEventListener('click', async () => {
-              // Keep the preview silent, even when replaying.
-              video.muted = true;
-              playButton.hidden = true;
-              try {
-                await video.play();
-              } catch {
-                playButton.hidden = false;
-              }
+            playButton.addEventListener('click', () => {
+              void playScenePreview(video, playButton, true);
             });
             video.addEventListener('ended', () => {
-              playButton.hidden = false; // User can replay once it finishes.
+              if (activeScenePreview === video) activeScenePreview = null;
+              playButton.hidden = false;
+            });
+            video.addEventListener('pause', () => {
+              if (activeScenePreview === video) activeScenePreview = null;
+              playButton.hidden = false;
             });
             video.addEventListener('error', () => {
               playButton.hidden = false;
@@ -306,18 +323,9 @@ const input = document.getElementById('selfie');
             preview.appendChild(playButton);
             player.replaceChildren(preview);
             player.dataset.url = item.url;
-            // Play the completed scene ONCE, silently, as soon as it appears.
-            // If a browser blocks autoplay, expose the same one-tap Play
-            // button used for replay. Polling never restarts playback.
-            playButton.hidden = true;
-            try {
-              const started = video.play();
-              if (started && typeof started.catch === 'function') {
-                void started.catch(() => { playButton.hidden = false; });
-              }
-            } catch {
-              playButton.hidden = false;
-            }
+            // Each newly completed clip autoplays once. Polling will not replay
+            // it, and only one scene preview may play at a time.
+            void playScenePreview(video, playButton);
           }
 
         } else {
