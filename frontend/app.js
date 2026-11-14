@@ -586,8 +586,10 @@ const input = document.getElementById('selfie');
         }
         const progress = card.querySelector('p');
         const imageStatus = scenes[id]?.status;
-        const retrying = imageStatus === 'RETRY_WAIT' ||
-          (['SUBMITTING', 'GENERATING'].includes(imageStatus) && Number(scenes[id]?.retryCount) > 0);
+        // Only show the retry message while waiting between attempts.
+        // Once the provider request is active again, display Generating…
+        // with the same green spinning cog as a normal image request.
+        const retrying = imageStatus === 'RETRY_WAIT';
         progress.className = 'reference-progress' +
           (imageStatus === 'COMPLETED' ? ' completed' :
            (imageStatus === 'GENERATING' || retrying) ? ' generating' : '');
