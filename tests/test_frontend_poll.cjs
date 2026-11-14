@@ -14,6 +14,7 @@ new vm.Script(script, {filename: 'frontend/app.js'});
 
 function setup(options = {}) {
   let statusPolls = 0;
+  let s3UploadAttempts = 0;
   const mockStatuses = {scene1: 'NOT_REQUESTED', scene2: 'NOT_REQUESTED', scene3: 'NOT_REQUESTED'};
   const calls = [];
   const downloads = [];
@@ -137,8 +138,12 @@ function setup(options = {}) {
         upload: {url: 'https://s3.example.com/upload', fields: {}},
       }; },
     };
-    if (url === 'https://s3.example.com/upload')
+    if (url === 'https://s3.example.com/upload') {
+      s3UploadAttempts++;
+      if (s3UploadAttempts <= (options.networkS3Failures || 0))
+        throw new TypeError('Failed to fetch');
       return options.failSelfieUpload ? {ok:false, status:500} : {ok:true};
+    }
     if (url.endsWith('/jobs') && opts.method === 'POST') return {
       ok: !options.failJobCreation, status: options.failJobCreation ? 503 : 200,
       async json() { return options.failJobCreation ? {error:'Job creation unavailable'} : {job: {jobId: 'a'.repeat(32),
@@ -231,7 +236,7 @@ function setup(options = {}) {
   const ctx = {
     document: doc,
     window: {AFL_CONFIG: {apiBaseUrl: 'https://api.example.com'}, confirm: () => true, sessionStorage},
-    fetch, Set, Blob, URL: {createObjectURL() { return 'blob:test'; }, revokeObjectURL() {}},
+    fetch, TypeError, Set, Blob, URL: {createObjectURL() { return 'blob:test'; }, revokeObjectURL() {}},
     FormData: class { append() {} },
     crypto: {randomUUID() { return 'test-idempotency-key'; }},
     setTimeout(fn, delay) {
@@ -252,7 +257,7 @@ function setup(options = {}) {
     await flush();
     return scheduled.delay;
   }
-  return {els, doc, calls, downloads, timers, pendingVideoPosts, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses};
+  return {els, doc, calls, downloads, timers, pendingVideoPosts, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses, getS3Attempts: () => s3UploadAttempts};
 }
 
 test('auto polls every 5 seconds, adds each image once and stops when complete', async () => {
@@ -812,7 +817,7 @@ test('reference image cards show clean status, green completion and animated gen
   await h.nextTimer();
   assert.equal(progressFor(3).textContent, 'Completed');
   assert.equal(progressFor(3).className, 'reference-progress completed');
-  assert.match(css, /reference-progress\.generating::before,\.video-state\.generating::before\{content:"⚙"/);
+  assert.match(css, /reference-progress\.generating::before,\.video-state\.generating::before,#status\.upload-retrying::before\{content:"⚙"/);
   assert.match(css, /@keyframes reference-gear-spin/);
   assert.match(css, /prefers-reduced-motion:reduce/);
 });
@@ -913,7 +918,7 @@ test('two independent failures show separate retry controls and explain a blocke
 
 
 test('image, video and stitching spinner styles use the same green rotating cog', () => {
-  assert.match(css, /\.reference-progress\.generating::before,\.video-state\.generating::before\{/);
+  assert.match(css, /\.reference-progress\.generating::before,\.video-state\.generating::before,#status\.upload-retrying::before\{/);
   assert.match(css, /color:#16733b;animation:reference-gear-spin/);
   assert.match(script, /paidStatus\.classList\.toggle\('generating'/);
   assert.match(script, /assemblyStatus\.classList\.toggle\('generating'/);
@@ -936,4 +941,44 @@ test('image retry waiting switches to green-cog Generating when attempt resumes'
   await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(progress().textContent, 'Completed');
   assert.equal(progress().className, 'reference-progress completed');
+});
+
+test('transient S3 network error retries with fresh presign and then creates exactly one job', async () => {
+  const h=setup({networkS3Failures:1});
+  const submitted=h.els.generate.listeners.click();
+  await h.flush();
+  assert.equal(h.els.status.classList.contains('upload-retrying'),true);
+  assert.match(h.els.status.textContent,/Upload interrupted — retrying \(1\/2\)/);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/uploads')).length,1);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/jobs') && c.opts.method==='POST').length,0);
+  assert.equal(await h.nextTimer(),700);
+  await submitted;
+  assert.equal(h.getS3Attempts(),2);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/uploads')).length,2);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/jobs') && c.opts.method==='POST').length,1);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/generate') && c.opts.method==='POST').length,1);
+  assert.equal(h.els.status.classList.contains('upload-retrying'),false);
+});
+test('persistent S3 network error gives up after two retries without creating a job', async () => {
+  const h=setup({networkS3Failures:3});
+  const submitted=h.els.generate.listeners.click();
+  await h.flush();
+  assert.equal(await h.nextTimer(),700);
+  assert.match(h.els.status.textContent,/Upload interrupted — retrying \(2\/2\)/);
+  assert.equal(await h.nextTimer(),1400);
+  await submitted;
+  assert.equal(h.getS3Attempts(),3);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/uploads')).length,3);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/jobs') && c.opts.method==='POST').length,0);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/generate')).length,0);
+  assert.equal(h.els.status.classList.contains('upload-retrying'),false);
+  assert.match(h.els.status.textContent,/Reference image generation was not started/);
+});
+test('observed S3 HTTP error is not automatically retried', async () => {
+  const h=setup({failSelfieUpload:true});
+  await h.els.generate.listeners.click();
+  assert.equal(h.getS3Attempts(),1);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/uploads')).length,1);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/jobs') && c.opts.method==='POST').length,0);
+  assert.equal(h.els.status.classList.contains('upload-retrying'),false);
 });
