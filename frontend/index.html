@@ -51,6 +51,11 @@
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
       <p id="scene1PreflightStatus" class="video-state" role="status" aria-live="polite" hidden></p>
       <p id="scene1PaidStatus" class="video-state" role="status">MP4 generation: locked (not charged)</p>
+      <div id="scene1Progress" class="scene-estimate" hidden aria-label="Estimated video generation progress">
+        <div class="scene-estimate-header"><span>Estimated progress</span><span id="scene1Percent">0%</span></div>
+        <div id="scene1ProgressBar" class="scene-estimate-track" role="progressbar" aria-label="Scene 1 estimated generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="scene1ProgressFill" class="scene-estimate-fill"></div></div>
+        <p id="scene1ProgressNote" class="scene-estimate-note"></p>
+      </div>
       <button id="retryVideoScene1" type="button" class="quiet-button" hidden>Retry Scene 1 Video (paid)</button>
       <p id="videoStatus1" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer1"></div>
@@ -59,6 +64,11 @@
     <div class="video-scene" id="videoPanel2" hidden>
       <strong>Scene 2 — Winning kick · 8 seconds</strong>
       <p id="scene2PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
+      <div id="scene2Progress" class="scene-estimate" hidden aria-label="Estimated video generation progress">
+        <div class="scene-estimate-header"><span>Estimated progress</span><span id="scene2Percent">0%</span></div>
+        <div id="scene2ProgressBar" class="scene-estimate-track" role="progressbar" aria-label="Scene 2 estimated generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="scene2ProgressFill" class="scene-estimate-fill"></div></div>
+        <p id="scene2ProgressNote" class="scene-estimate-note"></p>
+      </div>
       <button id="retryVideoScene2" type="button" class="quiet-button" hidden>Retry Scene 2 Video (paid)</button>
       <p id="videoStatus2" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer2"></div>
@@ -67,6 +77,11 @@
     <div class="video-scene" id="videoPanel3" hidden>
       <strong>Scene 3 — Celebration · 5 seconds</strong>
       <p id="scene3PaidStatus" class="video-state">MP4 generation: locked (not charged)</p>
+      <div id="scene3Progress" class="scene-estimate" hidden aria-label="Estimated video generation progress">
+        <div class="scene-estimate-header"><span>Estimated progress</span><span id="scene3Percent">0%</span></div>
+        <div id="scene3ProgressBar" class="scene-estimate-track" role="progressbar" aria-label="Scene 3 estimated generation progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="scene3ProgressFill" class="scene-estimate-fill"></div></div>
+        <p id="scene3ProgressNote" class="scene-estimate-note"></p>
+      </div>
       <button id="retryVideoScene3" type="button" class="quiet-button" hidden>Retry Scene 3 Video (paid)</button>
       <p id="videoStatus3" class="video-state" role="status">Real video not generated.</p>
       <div id="videoPlayer3"></div>
