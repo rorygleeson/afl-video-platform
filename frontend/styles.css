@@ -8,6 +8,8 @@
     button:disabled{background:#9eaab7;cursor:not-allowed}
     .note{padding:12px;background:#edf5ff;border-radius:8px;font-size:.9rem}
     #preview{max-width:100%;max-height:240px;margin-top:12px;border-radius:8px}
+    .reference-images-heading{border-top:1px solid #d4dce5;margin-top:24px;padding-top:20px}
+    .reference-images-heading h2{font-size:1.35rem;margin:0 0 12px}
     #results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
     #results img{width:100%;border-radius:6px}
     #status{white-space:pre-wrap;overflow-wrap:anywhere}
