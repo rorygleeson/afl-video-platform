@@ -37,8 +37,9 @@ jobs:
           assert all((base/'teams'/team/'README.md').is_file() for team in cfg['teamGuernseys'])
           collingwood = sorted((base/'teams'/'collingwood').glob('scene*-start.png'))
           assert [p.name for p in collingwood] == [f'scene{i}-start.png' for i in range(1, 4)]
-          assert (base/'teams'/'collingwood'/'scene3-start-masked.png').is_file()
-          assert (base/'teams'/'collingwood'/'scene3-start-masked.png').stat().st_size > 100_000
+          for scene in ('scene1', 'scene3'):
+            masked = base/'teams'/'collingwood'/f'{scene}-start-masked.png'
+            assert masked.is_file() and masked.stat().st_size > 100_000
           for team in cfg['teamGuernseys']:
             for png in (base/'teams'/team).glob('scene*-start.png'):
               assert png.name in {f'scene{i}-start.png' for i in range(1, 4)}
@@ -53,7 +54,8 @@ jobs:
           assert 'teamArtworkReady' not in image+worker
           assert 'config["sharedPrompt"]' not in image
           assert 'team_master_keys' in image and 'Team master artwork incomplete' in image
-          assert 'scene3-start-masked.png' in image
+          assert 'scene_id + "-start-masked.png"' in image
+          assert 'scene_id in ("scene1", "scene3")' in image
           assert 'team_scene_master_key(job["team"], scene_id)' in worker
           assert 'sharedPrompt' not in cfg
           assert all('promptInstructions' not in scene and 'masterKey' not in scene
