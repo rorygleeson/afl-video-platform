@@ -1,4 +1,4 @@
-name: Deploy guarded S3 selfie upload recovery UI
+name: Deploy simplified video generation UI
 on:
   push:
     branches: [main]
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite verifies S3 retry success, exhaustion, and no duplicate job.
+          # Regression suite includes upload recovery and simplified video copy.
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
