@@ -78,6 +78,46 @@ const input = document.getElementById('selfie');
   const VIDEO_PROGRESS_STATUSES = new Set(['REQUESTED', 'QUEUED', 'SUBMITTING',
     'GENERATING', 'PROCESSING', 'POLLING', 'IN_PROGRESS']);
   let videoProgressTimer = null;
+  // Visual-only estimated stitching time, not provider-reported progress.
+  const ASSEMBLY_ESTIMATE_SECONDS = 10;
+  let assemblyProgressTimer = null;
+  let assemblyProgressJobId = null;
+  let assemblyProgressStartedAt = null;
+
+  function renderAssemblyProgress() {
+    const assembly = lastVideoSnapshot?.assembly || {};
+    const active = currentJobId && currentJobId === assemblyProgressJobId &&
+      !document.getElementById('assemblyPanel').hidden &&
+      ['READY', 'QUEUED', 'PROCESSING'].includes(assembly.status) &&
+      assemblyProgressStartedAt !== null;
+    const panel = document.getElementById('assemblyProgress');
+    panel.hidden = !active;
+    if (!active) return;
+    const elapsed = Math.max(0, (Date.now() - assemblyProgressStartedAt) / 1000);
+    const percent = Math.min(95, Math.floor(95 *
+      (1 - Math.exp(-1.9 * elapsed / ASSEMBLY_ESTIMATE_SECONDS))));
+    document.getElementById('assemblyPercent').textContent = percent + '%';
+    document.getElementById('assemblyProgressFill').style.width = percent + '%';
+    document.getElementById('assemblyProgressBar').setAttribute('aria-valuenow', String(percent));
+    document.getElementById('assemblyProgressNote').textContent =
+      (elapsed > ASSEMBLY_ESTIMATE_SECONDS * 1.5 ? 'Taking longer than usual · ' : '') +
+      Math.floor(elapsed) + 's elapsed · estimated from a 10s baseline';
+  }
+
+  function syncAssemblyProgress() {
+    const assembly = lastVideoSnapshot?.assembly || {};
+    const active = !document.hidden && currentJobId === assemblyProgressJobId &&
+      assemblyProgressStartedAt !== null &&
+      !document.getElementById('assemblyPanel').hidden &&
+      ['READY', 'QUEUED', 'PROCESSING'].includes(assembly.status);
+    if (active && assemblyProgressTimer === null) {
+      assemblyProgressTimer = setInterval(renderAssemblyProgress, 1000);
+    } else if (!active && assemblyProgressTimer !== null) {
+      clearInterval(assemblyProgressTimer);
+      assemblyProgressTimer = null;
+    }
+    renderAssemblyProgress();
+  }
 
   function renderVideoProgress() {
     const videos = lastVideoSnapshot?.videos || {};
@@ -166,6 +206,13 @@ const input = document.getElementById('selfie');
       clearInterval(videoProgressTimer);
       videoProgressTimer = null;
     }
+    if (assemblyProgressTimer !== null) {
+      clearInterval(assemblyProgressTimer);
+      assemblyProgressTimer = null;
+    }
+    assemblyProgressJobId = null;
+    assemblyProgressStartedAt = null;
+    document.getElementById('assemblyProgress').hidden = true;
     if (activeScenePreview) activeScenePreview.pause();
     activeScenePreview = null;
     videoRefreshRequested = false;
@@ -434,6 +481,13 @@ const input = document.getElementById('selfie');
       const finalPlayer = document.getElementById('assemblyPlayer');
       const finalDownload = document.getElementById('downloadFinal');
       assemblyPanel.hidden = !(readyForAssembly && assembly.enabled);
+      // Start the visual estimate once per job, never during a failed assembly.
+      // A refresh does not restart it; a browser reload starts from observation.
+      if (!assemblyPanel.hidden && ['READY', 'QUEUED', 'PROCESSING'].includes(assembly.status)
+          && assemblyProgressJobId !== jobId) {
+        assemblyProgressJobId = jobId;
+        assemblyProgressStartedAt = Date.now();
+      }
       // The former Stitch button gate is now the automatic assembly trigger.
       assembleButton.hidden = true;
       assembleButton.disabled = true;
@@ -448,6 +502,7 @@ const input = document.getElementById('selfie');
       assemblyStatus.textContent = display[assembly.status] || '';
       assemblyStatus.classList.toggle('generating',
         ['READY', 'QUEUED', 'PROCESSING'].includes(assembly.status));
+      syncAssemblyProgress();
       if (assembly.status === 'COMPLETED' && assembly.url) {
         if (!finalPlayer.querySelector('video')) {
           const movie = document.createElement('video');
@@ -541,6 +596,7 @@ const input = document.getElementById('selfie');
 
   document.addEventListener('visibilitychange', () => {
     syncVideoProgress();
+    syncAssemblyProgress();
     if (document.hidden && videoTimer !== null) {
       clearTimeout(videoTimer);
       videoTimer = null;
