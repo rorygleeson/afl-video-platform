@@ -99,6 +99,7 @@ const input = document.getElementById('selfie');
     document.getElementById('scene1PaidStatus').textContent = 'MP4 generation: locked (not charged)';
     for (const n of [1, 2, 3]) {
       document.getElementById('scene' + n + 'PaidStatus').textContent = 'MP4 generation: locked (not charged)';
+      document.getElementById('scene' + n + 'PaidStatus').classList.remove('generating');
     }
     for (const n of [1, 2, 3]) {
       document.getElementById('videoStatus' + n).textContent = 'Real video not generated.';
@@ -108,6 +109,7 @@ const input = document.getElementById('selfie');
     document.getElementById('assembleFinal').hidden = true;
     document.getElementById('assemblyPanel').hidden = true;
     document.getElementById('assemblyStatus').textContent = '';
+    document.getElementById('assemblyStatus').classList.remove('generating');
     document.getElementById('assemblyPlayer').replaceChildren();
     document.getElementById('downloadFinal').hidden = true;
   }
@@ -177,6 +179,7 @@ const input = document.getElementById('selfie');
         const real = data.videos?.[id] || {};
         const authorised = approvals[id] === true;
         const pendingAttempt = videoSubmissionLog.get(id);
+        const paidStatus = document.getElementById('scene' + n + 'PaidStatus');
         const retryButton = document.getElementById('retryVideoScene' + n);
         const mayRetry = real.retryAvailable === true && !videoRetryInFlight.has(id);
         retryButton.hidden = !mayRetry;
@@ -189,7 +192,7 @@ const input = document.getElementById('selfie');
         }
         document.getElementById('diagnoseScene' + n).hidden =
           real.status !== 'FAILED' && real.status !== 'REVIEW_REQUIRED';
-        document.getElementById('scene' + n + 'PaidStatus').textContent =
+        paidStatus.textContent =
           real.mode !== 'REAL' && pendingAttempt
             ? pendingAttempt.status
             : real.mode === 'REAL'
@@ -210,6 +213,9 @@ const input = document.getElementById('selfie');
                       '). See Developer Diagnostics.'
                     : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
             : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
+        paidStatus.classList.toggle('generating',
+          (real.mode === 'REAL' && ['REQUESTED', 'QUEUED', 'SUBMITTING', 'GENERATING', 'PROCESSING', 'POLLING', 'IN_PROGRESS'].includes(real.status)) ||
+          (real.mode !== 'REAL' && !!pendingAttempt && !videoSequenceAttemptUncertain));
         const lines = [
           'Job: ' + jobId,
           'Scene: ' + id,
@@ -298,6 +304,8 @@ const input = document.getElementById('selfie');
       const display = {QUEUED:'Assembly queued', PROCESSING:'Stitching the three scenes…',
         COMPLETED:'Final video ready', FAILED:'Assembly failed', REVIEW_REQUIRED:'Assembly needs review'};
       assemblyStatus.textContent = display[assembly.status] || '';
+      assemblyStatus.classList.toggle('generating',
+        ['QUEUED', 'PROCESSING'].includes(assembly.status));
       if (assembly.status === 'COMPLETED' && assembly.url) {
         if (!finalPlayer.querySelector('video')) {
           const movie = document.createElement('video');
@@ -772,6 +780,7 @@ const input = document.getElementById('selfie');
   async function submitFinalAssembly(jobId) {
     if (jobId !== currentJobId) return;
     document.getElementById('assemblyStatus').textContent = 'Requesting final video assembly…';
+    document.getElementById('assemblyStatus').classList.add('generating');
     try {
       await api('/jobs/' + jobId + '/assembly', {method:'POST'});
       if (jobId === currentJobId) void refreshVideos();
@@ -779,6 +788,7 @@ const input = document.getElementById('selfie');
       if (jobId === currentJobId) {
         document.getElementById('assemblyStatus').textContent =
           'Assembly request uncertain: ' + error.message + '. Checking existing job; no automatic retry.';
+        document.getElementById('assemblyStatus').classList.remove('generating');
         void refreshVideos();
       }
     }
