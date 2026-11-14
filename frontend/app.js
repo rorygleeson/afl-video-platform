@@ -266,21 +266,44 @@ const input = document.getElementById('selfie');
           // video every five seconds while another scene is generating.
           if (!player.querySelector('video')) {
             const video = document.createElement('video');
-            // Silent, looping, inline preview: no playback/volume/menu controls.
-            // Muting before setting the source allows mobile browsers to autoplay.
+            // A single silent, inline play action; no browser media controls.
+            // The finished final MP4 retains its normal sound and controls.
             video.controls = false;
             video.muted = true;
             video.defaultMuted = true;
             video.setAttribute('muted', '');
-            video.autoplay = true;
-            video.setAttribute('autoplay', '');
-            video.loop = true;
-            video.setAttribute('loop', '');
+            video.autoplay = false;
+            video.loop = false;
             video.playsInline = true;
             video.setAttribute('playsinline', '');
-            video.preload = 'auto';
+            video.preload = 'metadata';
             video.src = item.url;
-            player.replaceChildren(video);
+            const preview = document.createElement('div');
+            preview.className = 'scene-video-preview';
+            const playButton = document.createElement('button');
+            playButton.type = 'button';
+            playButton.className = 'scene-preview-play';
+            playButton.textContent = '▶';
+            playButton.setAttribute('aria-label', 'Play Scene ' + n + ' video silently');
+            playButton.addEventListener('click', async () => {
+              // Keep the preview silent, even when replaying.
+              video.muted = true;
+              playButton.hidden = true;
+              try {
+                await video.play();
+              } catch {
+                playButton.hidden = false;
+              }
+            });
+            video.addEventListener('ended', () => {
+              playButton.hidden = false; // User can replay once it finishes.
+            });
+            video.addEventListener('error', () => {
+              playButton.hidden = false;
+            });
+            preview.appendChild(video);
+            preview.appendChild(playButton);
+            player.replaceChildren(preview);
             player.dataset.url = item.url;
           }
 
