@@ -1,4 +1,4 @@
-name: Deploy image retry status UI fix
+name: Deploy guarded S3 selfie upload recovery UI
 on:
   push:
     branches: [main]
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite also covers retry-wait to generating transition.
+          # Regression suite verifies S3 retry success, exhaustion, and no duplicate job.
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
