@@ -33,13 +33,14 @@ class FakeS3:
 
 def exported_functions():
     tree = ast.parse(SOURCE)
-    names = ("team_master_keys", "validate_prompt_config", "build_image_prompt")
+    names = ("team_scene_master_key", "team_master_keys", "validate_prompt_config", "build_image_prompt")
     functions = [x for x in tree.body if isinstance(x, ast.FunctionDef) and x.name in names]
-    assert len(functions) == 3
+    assert len(functions) == 4
     def unused():
         pass
     scope = {"S3": None, "ASSET_BUCKET": "test-only",
-             "SCENARIO_PREFIX": PREFIX, "ClientError": MissingObject}
+             "SCENARIO_PREFIX": PREFIX, "ClientError": MissingObject,
+             "VALID_SCENES": ("scene1", "scene2", "scene3")}
     exec(compile(ast.Module(body=functions, type_ignores=[]), "<test-functions>", "exec"), scope)
     return scope
 
@@ -50,7 +51,8 @@ class TeamMasterTests(unittest.TestCase):
         self.scope["validate_prompt_config"](CONFIG)
 
     def keys(self, team):
-        return {PREFIX + f"teams/{team}/scene{i}-start.png" for i in (1, 2, 3)}
+        return {self.scope["team_scene_master_key"](team, f"scene{i}")
+                for i in (1, 2, 3)}
 
     def test_all_18_team_directories_without_selector_restrictions(self):
         self.assertEqual(len(CONFIG["teamGuernseys"]), 18)
@@ -63,6 +65,16 @@ class TeamMasterTests(unittest.TestCase):
         result = self.scope["team_master_keys"](CONFIG, "collingwood")
         self.assertEqual(set(result.values()), self.keys("collingwood"))
         self.assertEqual(set(fake.reads), self.keys("collingwood"))
+
+    def test_scene3_masked_collingwood_only(self):
+        for team in CONFIG["teamGuernseys"]:
+            path = self.scope["team_scene_master_key"](team, "scene3")
+            if team == "collingwood":
+                self.assertTrue(path.endswith("/scene3-start-masked.png"))
+            else:
+                self.assertTrue(path.endswith("/scene3-start.png"))
+        self.assertTrue(self.scope["team_scene_master_key"]("collingwood", "scene1").endswith("/scene1-start.png"))
+        self.assertTrue(self.scope["team_scene_master_key"]("collingwood", "scene2").endswith("/scene2-start.png"))
 
     def test_missing_team_png_fails_closed_instead_of_legacy_fallback(self):
         fake = FakeS3(self.keys("collingwood"))
