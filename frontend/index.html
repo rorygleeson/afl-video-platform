@@ -75,7 +75,8 @@
     </div>
     <div id="assemblyPanel" class="video-scene" hidden>
       <strong>Final video — all three scenes</strong>
-      <button id="assembleFinal" type="button" disabled hidden>Stitch Final Video</button>
+      <p class="poll-status">Stitching starts automatically when all three videos are complete.</p>
+      <button id="assembleFinal" type="button" disabled hidden style="display:none" aria-hidden="true" tabindex="-1">Automatic stitching</button>
       <p id="assemblyStatus" class="video-state" role="status" aria-live="polite"></p>
       <div id="assemblyPlayer"></div>
       <button id="downloadFinal" type="button" class="quiet-button" hidden>Download Final Video MP4</button>
