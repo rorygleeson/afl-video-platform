@@ -138,7 +138,10 @@ jobs:
           fi
 
           should_publish() {
-            [ "$GITHUB_EVENT_NAME" != "push" ] ||
+            # Always republish the current validated image config: an earlier
+            # failed workflow might have prevented its prior S3 upload.
+            [ "$1" = "config.json" ] ||
+              [ "$GITHUB_EVENT_NAME" != "push" ] ||
               grep -Fxq "$base/$1" "$tmp/changed"
           }
 
