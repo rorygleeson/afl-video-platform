@@ -291,13 +291,18 @@ def generate(worker, job_id, scene_id):
     scene = next(s for s in config["scenes"] if s["id"] == scene_id)
     stage = "MASTER_READ"
     try:
-        master_key = job.get("teamMasterKeys", {}).get(scene_id, scene["masterKey"])
-        master = s3_image(worker.S3, worker.ASSET_BUCKET, master_key)
+        masters = job.get("teamMasterKeys")
+        if not isinstance(masters, dict) or set(masters) != set(worker.VALID_SCENES):
+            raise RuntimeError("Team master images not locked by preflight")
+        expected_key = (worker.SCENARIO_PREFIX + "teams/" + job["team"] +
+                        "/" + scene_id + "-start.png")
+        if masters[scene_id] != expected_key:
+            raise RuntimeError("Team master image path mismatch")
+        master = s3_image(worker.S3, worker.ASSET_BUCKET, expected_key)
         stage = "SELFIE_READ"
         selfie = s3_image(worker.S3, worker.UPLOAD_BUCKET, job["uploadKey"])
         stage = "PROMPT"
-        prompt = worker.build_image_prompt(config, scene, job["team"],
-                                           bool(job.get("teamArtworkReady", False)))
+        prompt = worker.build_image_prompt(config, scene, job["team"])
         stage = "AUTH"
         token = access_token()
         stage = "REQUEST_FORMAT"
