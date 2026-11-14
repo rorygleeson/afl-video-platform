@@ -1,4 +1,4 @@
-name: Deploy estimated per-scene video progress UI
+name: Deploy reference image heading and divider
 on:
   push:
     branches: [main]
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite verifies per-scene estimated progress and existing generation behavior.
+          # Regression suite verifies reference image heading only after upload, and existing behavior.
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
