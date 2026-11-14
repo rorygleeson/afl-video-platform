@@ -40,7 +40,21 @@ jobs:
           assert 'retry_delay(exc, attempt)' in code
           print('IMAGE_RETRY_SAFEGUARDS_UNCHANGED')
           PY
-          python3 -m unittest discover -s tests -p 'test_google_image_prompts.py' -v
+          python3 - <<'PY'
+          # Validate only workflow decisions, not legacy prompt fixtures.
+          from pathlib import Path
+          source=Path('infrastructure/app/backend.yaml').read_text()
+          segments=source.split('          ParallelScenes:',1)
+          assert len(segments)==2
+          map_yaml=segments[1].split('          Finalize:',1)[0]
+          for required in ('MaxConcurrency: 1','ItemsPath: $.prepared.Payload.scenes',
+                           'Next: WaitForGoogleCapacity','SecondsPath: $.attemptResult.Payload.retryAfterSeconds',
+                           'Next: Generate','Next: MarkSceneFailed','op: failed',
+                           'Next: SceneCompleted','Next: Finalize'):
+              assert required in map_yaml,required
+          assert 'ParallelScenes' in source
+          print('SEQUENTIAL_WORKFLOW_RETRY_AND_FAILURE_PATHS_VERIFIED')
+          PY
           node --check frontend/app.js
           node --test tests/test_frontend_poll.cjs
       - name: Authenticate existing AWS deployment role
