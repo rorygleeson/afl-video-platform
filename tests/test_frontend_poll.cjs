@@ -60,6 +60,9 @@ function setup(options = {}) {
                       'videoStatus1','videoStatus2','videoStatus3',
                       'videoPlayer1','videoPlayer2','videoPlayer3',
                       'videoPanel1','videoPanel2','videoPanel3',
+                      'scene1Progress','scene1Percent','scene1ProgressFill','scene1ProgressBar','scene1ProgressNote',
+                      'scene2Progress','scene2Percent','scene2ProgressFill','scene2ProgressBar','scene2ProgressNote',
+                      'scene3Progress','scene3Percent','scene3ProgressFill','scene3ProgressBar','scene3ProgressNote',
                       'videoDebugDetails1','videoDebugDetails2','videoDebugDetails3',
                       'videoDebugText1','videoDebugText2','videoDebugText3',
                        'diagnoseScene1','diagnoseScene2','diagnoseScene3',
@@ -69,6 +72,7 @@ function setup(options = {}) {
     els[name] = el();
     // Keep the basic DOM simulation intact for the new reference image cards.
   }
+  for (const n of [1,2,3]) els['scene'+n+'Progress'].hidden = true;
   els.assembleFinal.disabled = true;
   els.assembleFinal.hidden = true; // Matches the HTML hidden attribute.
   els.generateAllVideos.hidden = true;
@@ -1113,4 +1117,60 @@ test('final video shows green generating cog until completed and prominent green
   assert.equal(h.els.assemblyStatus.classList.contains('generating'),false);
   assert.equal(h.els.downloadFinal.hidden,false);
   assert.equal(h.els.assemblyPlayer.querySelector('video').controls,true);
+});
+
+test('per-scene estimated progress follows AWS timestamps, never claims Google completion', async () => {
+  const started=new Date(Date.now()-32000).toISOString();
+  const opts={realVideos:{
+    scene1:{mode:'REAL',status:'PROCESSING',submissionStartedAt:started},
+    scene2:{mode:'REAL',status:'PROCESSING',submissionStartedAt:started},
+    scene3:{mode:'REAL',status:'PROCESSING',submissionStartedAt:started},
+  }};
+  const h=setup(opts);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  // Panels unlock sequentially; Scene 1 can show progress before video completion.
+  assert.equal(h.els.scene1Progress.hidden,false);
+  const first=Number(h.els.scene1Percent.textContent.replace('%',''));
+  assert.ok(first>0 && first<95);
+  assert.equal(h.els.scene1ProgressBar.getAttribute('aria-valuenow'),String(first));
+  assert.equal(h.els.scene2Progress.hidden,true);
+  assert.equal(h.els.scene3Progress.hidden,true);
+  assert.match(h.els.scene1ProgressNote.textContent,/elapsed · based on previous videos/);
+  assert.equal([...h.intervals.values()].filter(x=>x.delay===1000).length,1);
+  opts.realVideos.scene1={mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene1.mp4',
+    submissionStartedAt:started,completedAt:new Date().toISOString()};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.scene1Progress.hidden,true);
+  assert.equal(h.els.scene2Progress.hidden,false);
+  const second=Number(h.els.scene2Percent.textContent.replace('%',''));
+  assert.ok(second>0 && second<first,'8-second Scene 2 uses slower historical average');
+  opts.realVideos.scene2={mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene2.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.scene3Progress.hidden,false);
+  const third=Number(h.els.scene3Percent.textContent.replace('%',''));
+  assert.ok(third>second,'Scene 3 uses faster historical average');
+  opts.realVideos.scene3={mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene3.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.scene3Progress.hidden,true);
+  assert.equal([...h.intervals.values()].filter(x=>x.delay===1000).length,0);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/generate')).length,1);
+  assert.match(css,/\.scene-estimate-track/);
+});
+
+test('long-running progress caps at 95 percent; missing timestamp stays at zero', async () => {
+  const opts={realVideos:{scene1:{mode:'REAL',status:'PROCESSING',
+    submittedAt:new Date(Date.now()-3600000).toISOString()}}};
+  const h=setup(opts);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.scene1Percent.textContent,'95%');
+  assert.match(h.els.scene1ProgressNote.textContent,/Taking longer than usual/);
+  opts.realVideos.scene1={mode:'REAL',status:'REQUESTED'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.scene1Percent.textContent,'0%');
+  assert.match(h.els.scene1ProgressNote.textContent,/Waiting for generation/);
+  opts.realVideos.scene1={mode:'REAL',status:'REVIEW_REQUIRED'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.scene1Progress.hidden,true);
 });
