@@ -91,6 +91,31 @@ jobs:
           except Exception as e:
             print('LIVE_IAM_ERROR',type(e).__name__,str(e)[:350],flush=True)
           PY
+      - name: Compare deployed CloudFormation image-worker policy (read-only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3
+          c=boto3.client('cloudformation',region_name='ap-southeast-2')
+          try:
+            t=c.get_template(StackName='afl-app-dev-backend',TemplateStage='Original')['TemplateBody']
+            import yaml
+            if isinstance(t,str):
+              class L(yaml.SafeLoader): pass
+              def unknown(loader,tag,node):
+                if isinstance(node,yaml.ScalarNode):return loader.construct_scalar(node)
+                if isinstance(node,yaml.SequenceNode):return loader.construct_sequence(node)
+                return loader.construct_mapping(node)
+              L.add_multi_constructor('!',unknown)
+              t=yaml.load(t,Loader=L)
+            role=t['Resources']['ImageWorkerRole']
+            for policy in role['Properties']['Policies']:
+              for rule in policy['PolicyDocument']['Statement']:
+                if rule.get('Sid')=='ReadVersionedScenarioMastersAndConfig':
+                  print('DEPLOYED_IMAGE_ASSET_POLICY',str(rule),flush=True)
+          except Exception as e:
+            print('LIVE_TEMPLATE_ERROR',type(e).__name__,str(e)[:280],flush=True)
+          PY
       - name: Preserve sanitized inventory even on drift or read-access failure
         if: always()
         uses: actions/upload-artifact@v4
