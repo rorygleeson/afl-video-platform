@@ -1,0 +1,53 @@
+name: Deploy sequential reference image generation (guarded)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-sequential-images.yml']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify image workflow sequential and existing retry handling unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'pyyaml>=6,<7'
+          python3 -m py_compile scripts/deploy_sequential_images.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import yaml
+          src=Path('infrastructure/app/backend.yaml').read_text()
+          assert src.count('MaxConcurrency: 1')==1
+          assert 'MaxConcurrency: 3' not in src
+          assert 'WaitForGoogleCapacity' in src
+          assert 'retryAfterSeconds' in src
+          assert 'MarkSceneFailed' in src and 'RecoverJob' in src and 'Finalize' in src
+          code=Path('src/image_worker/google_direct.py').read_text()
+          assert 'MAX_ATTEMPTS = 8' in code
+          assert 'MAX_RETRY_WINDOW_SECONDS = 600' in code
+          assert 'RETRY_WAIT' in code
+          assert 'retry_delay(exc, attempt)' in code
+          print('IMAGE_RETRY_SAFEGUARDS_UNCHANGED')
+          PY
+          python3 -m unittest discover -s tests -p 'test_google_image_prompts.py' -v
+          node --check frontend/app.js
+          node --test tests/test_frontend_poll.cjs
+      - name: Authenticate existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Change only image state machine concurrency through guarded CloudFormation
+        shell: bash
+        run: python3 -u scripts/deploy_sequential_images.py
