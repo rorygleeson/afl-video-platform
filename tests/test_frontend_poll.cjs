@@ -35,10 +35,11 @@ function setup(options = {}) {
       appendChild(child) { this.children.push(child); },
       setAttribute(name, value) { (this.attributes ||= {})[name] = value; },
       getAttribute(name) { return this.attributes?.[name] ?? null; },
-      querySelector(tag) { return this.children.find(c => c.tagName === tag) || null; },
+      querySelector(tag) { return this.children.map(c => c.tagName === tag ? c : c.querySelector?.(tag)).find(Boolean) || null; },
       querySelectorAll(tag) { return this.children.filter(c => c.tagName === tag); },
       replaceChildren(...children) { this.children = [...children]; },
       addEventListener(name, fn) { this.listeners[name] = fn; },
+      play() { this.playCalls = (this.playCalls || 0) + 1; return Promise.resolve(); },
     };
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
@@ -790,19 +791,28 @@ test('final download fetches existing MP4 only and saves a timestamped filename'
   for (const n of [1, 2, 3]) {
     const player = h.els['videoPlayer' + n];
     assert.equal(player.children.length, 1, 'Only the scene player is shown');
-    const preview = player.children[0];
+    const wrapper = player.children[0];
+    const preview = wrapper.querySelector('video');
+    const button = wrapper.querySelector('button');
+    assert.ok(preview && button);
     assert.equal(preview.controls, false, 'Scene previews have no native controls');
     assert.equal(preview.muted, true, 'Scene previews must always be silent');
     assert.equal(preview.defaultMuted, true);
     assert.equal(preview.autoplay, true);
-    assert.equal(preview.loop, true);
+    assert.equal(preview.loop, false, 'No continuous looping');
     assert.equal(preview.playsInline, true);
     assert.equal(preview.getAttribute('muted'), '');
     assert.equal(preview.getAttribute('autoplay'), '');
-    assert.equal(preview.getAttribute('loop'), '');
+    assert.equal(preview.getAttribute('loop'), null);
     assert.equal(preview.getAttribute('playsinline'), '');
     assert.equal(preview.getAttribute('controls'), null);
-    assert.equal(preview.getAttribute('controlsList'), null);
+    assert.equal(preview.playCalls, 1, 'Autoplays exactly once on first completion');
+    assert.equal(button.hidden, true, 'Replay button stays hidden during initial playback');
+    preview.listeners.ended();
+    assert.equal(button.hidden, false, 'Single Play button appears after clip ends');
+    await button.listeners.click();
+    assert.equal(preview.muted, true);
+    assert.equal(preview.playCalls, 2, 'Replay is user initiated');
   }
 });
 
