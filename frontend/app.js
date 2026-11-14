@@ -40,6 +40,8 @@ const input = document.getElementById('selfie');
   let preflightCheckedJobId = null;
   // Never auto-submit a paid sequence twice for the same job in this page.
   const autoSequenceAttemptedJobs = new Set();
+  // Assembly starts at most once per job in this page; never retry an uncertain POST.
+  const autoAssemblyAttemptedJobs = new Set();
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
 
   function clearPollTimer() {
@@ -285,8 +287,14 @@ const input = document.getElementById('selfie');
       const finalPlayer = document.getElementById('assemblyPlayer');
       const finalDownload = document.getElementById('downloadFinal');
       assemblyPanel.hidden = !(readyForAssembly && assembly.enabled);
-      assembleButton.hidden = assembly.status !== 'READY' || !readyForAssembly;
-      assembleButton.disabled = assembly.status !== 'READY';
+      // The former Stitch button gate is now the automatic assembly trigger.
+      assembleButton.hidden = true;
+      assembleButton.disabled = true;
+      if (readyForAssembly && assembly.enabled && assembly.status === 'READY' &&
+          !autoAssemblyAttemptedJobs.has(jobId)) {
+        autoAssemblyAttemptedJobs.add(jobId);
+        void submitFinalAssembly(jobId);
+      }
       const display = {QUEUED:'Assembly queued', PROCESSING:'Stitching the three scenes…',
         COMPLETED:'Final video ready', FAILED:'Assembly failed', REVIEW_REQUIRED:'Assembly needs review'};
       assemblyStatus.textContent = display[assembly.status] || '';
@@ -761,12 +769,8 @@ const input = document.getElementById('selfie');
     });
   }
 
-  document.getElementById('assembleFinal').addEventListener('click', async () => {
-    const button = document.getElementById('assembleFinal');
-    if (!currentJobId || button.hidden || button.disabled) return;
-    const jobId = currentJobId;
-    button.disabled = true;
-    button.hidden = true;
+  async function submitFinalAssembly(jobId) {
+    if (jobId !== currentJobId) return;
     document.getElementById('assemblyStatus').textContent = 'Requesting final video assembly…';
     try {
       await api('/jobs/' + jobId + '/assembly', {method:'POST'});
@@ -778,7 +782,7 @@ const input = document.getElementById('selfie');
         void refreshVideos();
       }
     }
-  });
+  }
 
   document.getElementById('downloadFinal').addEventListener('click', async () => {
     const button = document.getElementById('downloadFinal');
