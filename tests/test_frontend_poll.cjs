@@ -1087,3 +1087,30 @@ test('retry countdown tracks backend nextRetryAt every second without more Googl
   assert.equal(progress().textContent,'Generating…');
   assert.equal(h.intervals.size,0,'Countdown timer cleared after retry starts');
 });
+
+test('final video shows green generating cog until completed and prominent green download', async () => {
+  assert.doesNotMatch(html, /Stitching starts automatically when all three videos are complete/);
+  assert.match(html, /id="downloadFinal"[^>]*class="download-final-button"[^>]*>↓ Download Now<\/button>/);
+  assert.match(css, /#downloadFinal\.download-final-button\{[^}]*background:#16733b/);
+  const opts = {
+    realVideos: Object.fromEntries([1,2,3].map(n=>['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'QUEUED'}
+  };
+  const h=setup(opts);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.assemblyStatus.textContent, 'Generating final video…');
+  assert.equal(h.els.assemblyStatus.classList.contains('generating'), true);
+  assert.equal(h.els.downloadFinal.hidden,true);
+  opts.assembly={enabled:true,status:'PROCESSING'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.assemblyStatus.textContent,'Generating final video…');
+  assert.equal(h.els.assemblyStatus.classList.contains('generating'),true);
+  opts.assembly={enabled:true,status:'COMPLETED',url:'https://s3.example.com/final.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.assemblyStatus.textContent,'Your final video is ready!');
+  assert.equal(h.els.assemblyStatus.classList.contains('generating'),false);
+  assert.equal(h.els.downloadFinal.hidden,false);
+  assert.equal(h.els.assemblyPlayer.querySelector('video').controls,true);
+});
