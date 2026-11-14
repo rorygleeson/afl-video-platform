@@ -141,6 +141,7 @@ jobs:
             # Always republish the current validated image config: an earlier
             # failed workflow might have prevented its prior S3 upload.
             [ "$1" = "config.json" ] ||
+              [ "$1" = "teams/collingwood/scene3-start-masked.png" ] ||
               [ "$GITHUB_EVENT_NAME" != "push" ] ||
               grep -Fxq "$base/$1" "$tmp/changed"
           }
@@ -168,12 +169,16 @@ jobs:
             upload_and_verify "video/${name}-video.txt" "text/plain"
           done
 
+          # The Collingwood masked experimental master was committed before
+          # this workflow supported its filename. Publish and verify it now.
+          upload_and_verify "teams/collingwood/scene3-start-masked.png" "image/png"
+
           # Publish only changed team master PNGs, preserving already uploaded
           # artwork in unrelated team folders. Do not upload README placeholders.
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             while IFS= read -r file; do
               case "$file" in
-                "$base"/teams/*/scene[123]-start.png|"$base"/teams/collingwood/scene3-start-masked.png)
+                "$base"/teams/*/scene[123]-start.png)
                   rel="${file#"$base"/}"
                   if [ -f "$file" ]; then
                     upload_and_verify "$rel" "image/png"
