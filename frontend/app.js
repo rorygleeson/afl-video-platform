@@ -37,6 +37,33 @@ const input = document.getElementById('selfie');
   let lastVideoSnapshot = null;
   const videoSubmissionLog = new Map();
   let lastImageScenes = {};
+  let imageRetryCountdownTimer = null;
+  function updateImageRetryCountdowns() {
+    const now = Math.floor(Date.now() / 1000);
+    for (const n of [1, 2, 3]) {
+      const scene = lastImageScenes['scene' + n] || {};
+      if (scene.status !== 'RETRY_WAIT') continue;
+      const element = document.getElementById('imageState' + n);
+      if (!element) continue;
+      const remaining = Number(scene.nextRetryAt) - now;
+      const count = Number(scene.retryCount || 1);
+      const maximum = Number(scene.maxRetries || 7);
+      element.textContent = Number.isFinite(remaining) && Number(scene.nextRetryAt) > 0
+        ? (remaining > 0 ? 'Retrying in ' + remaining + ' seconds (' + count + '/' + maximum + ')'
+          : 'Retrying shortly… (' + count + '/' + maximum + ')')
+        : 'Google busy — retrying automatically (' + count + '/' + maximum + ')';
+    }
+  }
+  function syncImageRetryCountdown() {
+    const waiting = Object.values(lastImageScenes).some(scene => scene?.status === 'RETRY_WAIT');
+    if (waiting && imageRetryCountdownTimer === null) {
+      imageRetryCountdownTimer = setInterval(updateImageRetryCountdowns, 1000);
+    } else if (!waiting && imageRetryCountdownTimer !== null) {
+      clearInterval(imageRetryCountdownTimer);
+      imageRetryCountdownTimer = null;
+    }
+    updateImageRetryCountdowns();
+  }
   let preflightCheckedJobId = null;
   // Never auto-submit a paid sequence twice for the same job in this page.
   const autoSequenceAttemptedJobs = new Set();
@@ -112,6 +139,7 @@ const input = document.getElementById('selfie');
     videoSubmissionLog.clear();
     preflightCheckedJobId = null;
     lastImageScenes = {};
+    syncImageRetryCountdown();
     videoTestSection.hidden = true;
     videoTestMessage.textContent = '';
     document.getElementById('scene1PreflightStatus').textContent = 'Scene 1 check runs automatically when reference images are ready.';
@@ -660,6 +688,7 @@ const input = document.getElementById('selfie');
           card.appendChild(img);
         }
       }
+      syncImageRetryCountdown();
       if (referenceImagesReady) {
         void refreshVideos();
         // Run once per visible job. A manual recheck remains available if inputs change.
