@@ -808,7 +808,7 @@ test('final download fetches existing MP4 only and saves a timestamped filename'
     assert.equal(preview.getAttribute('playsinline'), '');
     assert.equal(preview.getAttribute('controls'), null);
     assert.equal(preview.playCalls, 1, 'Autoplays exactly once on first completion');
-    assert.equal(button.hidden, true, 'Replay button stays hidden during initial playback');
+    assert.equal(button.hidden, n === 3, 'Only the latest scene remains playing; previous scenes show Replay');
     preview.listeners.ended();
     assert.equal(button.hidden, false, 'Single Play button appears after clip ends');
     await button.listeners.click();
