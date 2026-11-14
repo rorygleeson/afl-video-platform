@@ -1,0 +1,101 @@
+name: Analyze scene video generation durations (read-only)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-video-generation-durations-readonly.yml']
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Read scene timings only, print aggregate results
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3,json,math,statistics,re
+          from datetime import datetime,timezone
+          from botocore.exceptions import ClientError
+          session=boto3.Session(region_name='ap-southeast-2')
+          assert session.client('sts').get_caller_identity()['Account']=='134387458447'
+          scenes=('scene1','scene2','scene3')
+          def aggregate(v):
+            v=sorted(v)
+            return {'count':len(v)} if not v else {
+              'count':len(v),'mean_seconds':round(statistics.mean(v),1),
+              'median_seconds':round(statistics.median(v),1),
+              'p90_seconds':round(v[math.ceil(.9*len(v))-1],1),
+              'min_seconds':round(v[0],1),'max_seconds':round(v[-1],1)}
+          def parse(t):return datetime.fromisoformat(t.replace('Z','+00:00')).astimezone(timezone.utc)
+          durations={x:[] for x in scenes}
+          totals={x:[] for x in scenes}
+          counts={'jobs_scanned':0,'completed_records':0,'missing_timestamps':0,'invalid_timestamps':0}
+          try:
+            ddb=session.client('dynamodb')
+            cursor=None
+            for page in range(100):
+              kwargs={'TableName':'afl-app-dev-jobs','ProjectionExpression':'realVideos','Limit':100}
+              if cursor:kwargs['ExclusiveStartKey']=cursor
+              result=ddb.scan(**kwargs)
+              counts['jobs_scanned']+=len(result.get('Items',[]))
+              for item in result.get('Items',[]):
+                videos=item.get('realVideos',{}).get('M',{})
+                for scene in scenes:
+                  record=videos.get(scene,{}).get('M',{})
+                  def field(key):return record.get(key,{}).get('S')
+                  if field('status')!='COMPLETED':continue
+                  counts['completed_records']+=1
+                  submitted,completed=field('submittedAt'),field('completedAt')
+                  if not submitted or not completed:
+                    counts['missing_timestamps']+=1;continue
+                  try:
+                    n=(parse(completed)-parse(submitted)).total_seconds()
+                    if not (0<=n<=7200):raise ValueError('out of range')
+                    durations[scene].append(n)
+                    started=field('submissionStartedAt')
+                    if started:
+                      t=(parse(completed)-parse(started)).total_seconds()
+                      if 0<=t<=7200:totals[scene].append(t)
+                  except Exception:counts['invalid_timestamps']+=1
+              cursor=result.get('LastEvaluatedKey')
+              if not cursor:break
+            print('DYNAMODB_SCENE_TIMES='+json.dumps({'counts':counts,
+              'google_submitted_to_s3_completed':{s:aggregate(v) for s,v in durations.items()},
+              'aws_submission_started_to_s3_completed':{s:aggregate(v) for s,v in totals.items()}},sort_keys=True))
+          except ClientError as exc:
+            print('DYNAMODB_READ_UNAVAILABLE='+exc.response.get('Error',{}).get('Code','unknown'))
+          arn='arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-google-omni'
+          regexp=re.compile(r'^real-[0-9a-f]{32}-(scene[123])(?:-r[0-9]+)?$')
+          funcs={s:[] for s in scenes}
+          count={'listed':0,'matched':0,'succeeded':0,'not_succeeded':0}
+          try:
+            sfn=session.client('stepfunctions')
+            token=None
+            for page in range(10):
+              kw={'stateMachineArn':arn,'maxResults':100}
+              if token:kw['nextToken']=token
+              result=sfn.list_executions(**kw)
+              for x in result.get('executions',[]):
+                count['listed']+=1
+                m=regexp.fullmatch(x.get('name',''))
+                if not m:continue
+                count['matched']+=1
+                if x.get('status')=='SUCCEEDED' and x.get('stopDate'):
+                  count['succeeded']+=1
+                  n=(x['stopDate']-x['startDate']).total_seconds()
+                  if 0<=n<=7200:funcs[m.group(1)].append(n)
+                else:count['not_succeeded']+=1
+              token=result.get('nextToken')
+              if not token:break
+            print('STEP_FUNCTIONS_SCENE_TIMES='+json.dumps({'counts':count,
+              'workflow_elapsed':{s:aggregate(v) for s,v in funcs.items()}},sort_keys=True))
+          except ClientError as exc:
+            print('STEP_FUNCTIONS_READ_UNAVAILABLE='+exc.response.get('Error',{}).get('Code','unknown'))
+          PY
