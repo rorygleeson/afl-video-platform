@@ -1,0 +1,79 @@
+name: Deploy automatic video-start frontend only
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-auto-video-start-ui.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  frontend-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate frontend JavaScript and regression tests
+        run: |
+          set -euo pipefail
+          node --check frontend/app.js
+          node --test tests/test_frontend_poll.cjs
+          grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
+          grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
+          grep -q 'confirmPaidSequence: true' frontend/app.js
+          grep -q 'retryVideoScene1' frontend/index.html
+          grep -q 'retryVideoScene2' frontend/index.html
+          grep -q 'retryVideoScene3' frontend/index.html
+      - name: Authenticate existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Publish and verify only the two existing frontend files
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 - <<'PY'
+          import boto3, hashlib, os
+          from pathlib import Path
+          region='ap-southeast-2'
+          account='134387458447'
+          sess=boto3.Session(region_name=region)
+          identity=sess.client('sts').get_caller_identity()
+          assert identity['Account']==account
+          assert ':assumed-role/afl-video-github-deploy-role/' in identity['Arn']
+          cf=sess.client('cloudformation')
+          stack=cf.describe_stacks(StackName='afl-app-dev-frontend')['Stacks'][0]
+          assert stack['StackStatus'] in ('CREATE_COMPLETE','UPDATE_COMPLETE')
+          outputs={o['OutputKey']:o['OutputValue'] for o in stack['Outputs']}
+          bucket=outputs['FrontendBucketName']
+          distribution=outputs['DistributionId']
+          assert bucket==f'afl-app-dev-frontend-{account}-{region}'
+          s3=sess.client('s3')
+          for key,source,ctype in (
+              ('app.js','frontend/app.js','application/javascript; charset=utf-8'),
+              ('index.html','frontend/index.html','text/html; charset=utf-8'),
+          ):
+              payload=Path(source).read_bytes()
+              s3.put_object(Bucket=bucket,Key=key,Body=payload,ContentType=ctype,
+                            CacheControl='max-age=60, must-revalidate')
+              readback=s3.get_object(Bucket=bucket,Key=key)['Body'].read()
+              assert readback==payload
+              print('FRONTEND_VERIFIED',key,hashlib.sha256(payload).hexdigest(),flush=True)
+          cfclient=sess.client('cloudfront')
+          result=cfclient.create_invalidation(
+              DistributionId=distribution,
+              InvalidationBatch={
+                  'Paths':{'Quantity':2,'Items':['/app.js','/index.html']},
+                  'CallerReference':'auto-video-start-'+os.environ['GITHUB_RUN_ID'],
+              })
+          print('CLOUDFRONT_INVALIDATION_SUBMITTED',result['Invalidation']['Id'],flush=True)
+          print('FRONTEND_ONLY_RELEASE_COMPLETE',flush=True)
+          PY
