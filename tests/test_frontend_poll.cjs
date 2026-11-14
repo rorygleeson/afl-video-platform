@@ -982,3 +982,12 @@ test('observed S3 HTTP error is not automatically retried', async () => {
   assert.equal(h.calls.filter(c=>c.url.endsWith('/jobs') && c.opts.method==='POST').length,0);
   assert.equal(h.els.status.classList.contains('upload-retrying'),false);
 });
+
+
+test('video section uses simple user-friendly generation heading without AWS explanation', () => {
+  assert.match(html, /<h2 style="margin-bottom:6px">Generating Video<\/h2>/);
+  assert.doesNotMatch(html, /id="realVideoGate"/);
+  assert.doesNotMatch(script, /AWS is generating scenes in sequence/);
+  assert.doesNotMatch(script, /Video status updated — see each scene above/);
+  assert.match(script, /videoTestMessage\.textContent = 'Video status unavailable:/);
+});
