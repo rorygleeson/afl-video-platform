@@ -38,6 +38,8 @@ const input = document.getElementById('selfie');
   const videoSubmissionLog = new Map();
   let lastImageScenes = {};
   let preflightCheckedJobId = null;
+  // Never auto-submit a paid sequence twice for the same job in this page.
+  const autoSequenceAttemptedJobs = new Set();
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
 
   function clearPollTimer() {
@@ -143,20 +145,22 @@ const input = document.getElementById('selfie');
         return prior.mode === 'REAL' && prior.status === 'COMPLETED' &&
           !!prior.url && !prior.mock;
       });
-      // When consent was durably recorded but a scene was never reserved
-      // (for example an API timeout just before Step Functions handoff),
-      // offer a deliberate recovery click. The API atomically checks that
-      // the scene has NOT been reserved; it never reissues a paid attempt.
-      const resumeApproved = data.sequence?.status === 'APPROVED';
-      const canStart = !!priorReady && !videoSequenceAttemptUncertain && !videoBatchSubmitting;
-      generateAllVideos.hidden = !canStart;
-      generateAllVideos.disabled = !canStart;
-      generateAllVideos.textContent = resumeApproved
-        ? 'Resume approved AWS sequence (paid)'
-        : availablePaidScenes.length === 3
-          ? 'Generate All 3 Videos (paid, sequential)'
-          : 'Generate ' + availablePaidScenes.length + ' Remaining Video' +
-            (availablePaidScenes.length === 1 ? '' : 's') + ' (paid, sequential)';
+      // A fresh job automatically starts its first paid sequence once all
+      // three reference images and the backend's paid-scene approvals exist.
+      // Do not auto-resubmit approved, failed, or uncertain sequences.
+      generateAllVideos.hidden = true;
+      generateAllVideos.disabled = true;
+      const sequenceNotStarted = !data.sequence?.status ||
+        data.sequence.status === 'NOT_REQUESTED';
+      const noRealAttempts = [1, 2, 3].every(n =>
+        data.videos?.['scene' + n]?.mode !== 'REAL');
+      if (availablePaidScenes.length === 3 && sequenceNotStarted &&
+          noRealAttempts && !videoBatchSubmitting &&
+          !videoSequenceAttemptUncertain &&
+          !autoSequenceAttemptedJobs.has(jobId)) {
+        autoSequenceAttemptedJobs.add(jobId);
+        void submitVideoSequence(jobId);
+      }
       for (const n of [1, 2, 3]) {
         // Render only the current stage and already completed stages.
         // A failed stage remains visible for diagnostics/manual retry.
@@ -622,30 +626,20 @@ const input = document.getElementById('selfie');
   });
 
 
-  generateAllVideos.addEventListener('click', async () => {
-    if (!currentJobId || videoTestSection.hidden || generateAllVideos.hidden ||
-        generateAllVideos.disabled || videoBatchSubmitting || videoSequenceAttemptUncertain) return;
-    const jobId = currentJobId;
+  async function submitVideoSequence(jobId) {
+    if (jobId !== currentJobId || videoTestSection.hidden ||
+        videoBatchSubmitting || videoSequenceAttemptUncertain) return;
     const count = availablePaidScenes.length;
     if (!count || !lastVideoSnapshot) return;
-    const previouslyApproved = lastVideoSnapshot.sequence?.status === 'APPROVED';
-    const message = previouslyApproved
-      ? 'Resume the already-approved AWS video sequence? This only starts the ' +
-        'next scene if there is NO existing paid request for it. Each new scene ' +
-        'is billed separately. Failed scenes still require manual retry.'
-      : 'Approve ' + count + ' paid Google video' +
-        (count === 1 ? '' : 's') + ' in sequence? AWS will start each next scene ' +
-        'ONLY after the previous scene completes, even when you switch apps. ' +
-        'Each scene is billed separately. Failed scenes require manual retry.';
-    if (!window.confirm(message)) return;
-    // One explicit approval per job. An uncertain HTTP response is NOT retried.
+    // The user requested automatic generation after reference-image success.
+    // Preserve the existing single paid API submission and error handling.
     videoBatchSubmitting = true;
     videoSequenceAttemptUncertain = true;
     generateAllVideos.hidden = true;
     generateAllVideos.disabled = true;
     const submission = {
       status: 'Submitting one paid sequence approval to AWS…',
-      events: ['User confirmed three-scene AWS sequence: ' + new Date().toLocaleTimeString(),
+      events: ['Automatic three-scene AWS sequence: ' + new Date().toLocaleTimeString(),
                'POST /jobs/' + jobId + '/real-videos/sequence started']
     };
     videoSubmissionLog.set('scene1', submission);
@@ -655,7 +649,7 @@ const input = document.getElementById('selfie');
         method: 'POST',
         headers: {'Idempotency-Key': crypto.randomUUID()},
         body: JSON.stringify({confirmPaidSequence: true}),
-      });
+      }
       submission.status = 'AWS sequential generation approved. Checking Scene 1…';
       submission.events.push('API response: ' + (result.status || 'ACCEPTED') +
                              ' at ' + new Date().toLocaleTimeString());
