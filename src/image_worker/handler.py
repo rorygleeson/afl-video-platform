@@ -69,15 +69,51 @@ def validate_prompt_config(config):
     shared = config.get("sharedPrompt")
     if not isinstance(shared, str) or not 100 <= len(shared) <= 8000:
         raise RuntimeError("Invalid or missing shared image prompt in S3 configuration")
+    identity_only = config.get("identityOnlyPrompt")
+    if not isinstance(identity_only, str) or not 100 <= len(identity_only) <= 8000:
+        raise RuntimeError("Invalid team identity-only prompt")
     for scene in config["scenes"]:
+        identity_instructions = scene.get("identityOnlyInstructions")
+        if not isinstance(identity_instructions, str) or not 100 <= len(identity_instructions) <= 5000:
+            raise RuntimeError("Invalid team identity-only scene instructions: " + scene["id"])
         instructions = scene.get("promptInstructions")
         if not isinstance(instructions, str) or not 100 <= len(instructions) <= 5000:
             raise RuntimeError("Invalid or missing image scene instructions: " + scene["id"])
 
 
-def build_image_prompt(config, scene, team):
-    # All authored prompt wording lives in S3; only safe dynamic composition lives here.
+def team_master_keys(config, team):
+    """Use a complete, pre-coloured team master set or the legacy three masters.
+
+    Never mix teams or fall back for only one scene: partial uploads must not
+    produce inconsistent team clothing across the three output images.
+    """
+    if team not in config["teamGuernseys"]:
+        raise RuntimeError("Unsupported team")
+    prefix = SCENARIO_PREFIX + "teams/" + team + "/"
+    keys = {scene["id"]: prefix + scene["id"] + "-start.png"
+            for scene in config["scenes"]}
+    present = 0
+    for key in keys.values():
+        try:
+            S3.head_object(Bucket=ASSET_BUCKET, Key=key)
+            present += 1
+        except ClientError as error:
+            code = str(error.response.get("Error", {}).get("Code", ""))
+            status = error.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if code not in ("404", "NoSuchKey", "NotFound") and status != 404:
+                raise
+    if present == len(keys):
+        return keys, True
+    # A partially uploaded team must never be used; preserve existing app.
+    return {scene["id"]: scene["masterKey"] for scene in config["scenes"]}, False
+
+
+def build_image_prompt(config, scene, team, team_artwork=False):
+    # Team-specific images contain the final jersey and shorts. Only change
+    # identity in those images; never instruct Google to recolour their clothes.
     validate_prompt_config(config)
+    if team_artwork:
+        return config["identityOnlyPrompt"] + " " + scene["identityOnlyInstructions"]
     guernsey = config["teamGuernseys"][team]
     return (config["sharedPrompt"] + " Selected playing guernsey style: " +
             guernsey + ". " + scene["promptInstructions"])
@@ -92,16 +128,19 @@ def prepare(job_id):
         raise RuntimeError("Unsupported team")
     S3.head_object(Bucket=UPLOAD_BUCKET, Key=item["uploadKey"])
     # Fail before any billable call if any source asset is missing.
-    for scene in config["scenes"]:
-        S3.head_object(Bucket=ASSET_BUCKET, Key=scene["masterKey"])
+    masters, team_artwork = team_master_keys(config, item["team"])
+    for key in masters.values():
+        S3.head_object(Bucket=ASSET_BUCKET, Key=key)
     scenes = {scene["id"]: {"status": "PENDING"} for scene in config["scenes"]}
     update_job(
         job_id,
         "SET #status = :generating, scenes = :scenes, sceneCount = :three, "
-        "completedScenes = :zero, failedScenes = :zero, generationStartedAt = :now",
+        "completedScenes = :zero, failedScenes = :zero, generationStartedAt = :now, "
+        "teamMasterKeys = :masterkeys, teamArtworkReady = :teamartwork",
         {":generating": "GENERATING_IMAGES",
          ":waiting": "AWAITING_IMAGE_PIPELINE",
-         ":scenes": scenes, ":three": 3, ":zero": 0, ":now": int(time.time())},
+         ":scenes": scenes, ":three": 3, ":zero": 0, ":now": int(time.time()),
+         ":masterkeys": masters, ":teamartwork": team_artwork},
         {"#status": "status"},
         "#status = :waiting",
     )
