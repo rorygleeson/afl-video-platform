@@ -26,6 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile src/image_worker/handler.py src/image_worker/google_direct.py scripts/deploy_team_master_lookup.py
+          python3 -m unittest discover -s tests -p 'test_team_master_identity_only.py' -v
           python3 - <<'PY'
           import json
           from pathlib import Path
