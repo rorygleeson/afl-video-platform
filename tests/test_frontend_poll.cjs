@@ -39,7 +39,8 @@ function setup(options = {}) {
       querySelectorAll(tag) { return this.children.filter(c => c.tagName === tag); },
       replaceChildren(...children) { this.children = [...children]; },
       addEventListener(name, fn) { this.listeners[name] = fn; },
-      play() { this.playCalls = (this.playCalls || 0) + 1; return Promise.resolve(); },
+      play() { this.playCalls = (this.playCalls || 0) + 1; this.paused = false; return Promise.resolve(); },
+      pause() { this.pauseCalls = (this.pauseCalls || 0) + 1; this.paused = true; this.listeners.pause?.(); },
     };
   }
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
@@ -798,11 +799,11 @@ test('final download fetches existing MP4 only and saves a timestamped filename'
     assert.equal(preview.controls, false, 'Scene previews have no native controls');
     assert.equal(preview.muted, true, 'Scene previews must always be silent');
     assert.equal(preview.defaultMuted, true);
-    assert.equal(preview.autoplay, true);
+    assert.equal(preview.autoplay, false, 'Explicit autoplay runs only on first completion');
     assert.equal(preview.loop, false, 'No continuous looping');
     assert.equal(preview.playsInline, true);
     assert.equal(preview.getAttribute('muted'), '');
-    assert.equal(preview.getAttribute('autoplay'), '');
+    assert.equal(preview.getAttribute('autoplay'), null);
     assert.equal(preview.getAttribute('loop'), null);
     assert.equal(preview.getAttribute('playsinline'), '');
     assert.equal(preview.getAttribute('controls'), null);
@@ -812,6 +813,7 @@ test('final download fetches existing MP4 only and saves a timestamped filename'
     assert.equal(button.hidden, false, 'Single Play button appears after clip ends');
     await button.listeners.click();
     assert.equal(preview.muted, true);
+    await h.flush();
     assert.equal(preview.playCalls, 2, 'Replay is user initiated');
   }
 });
@@ -1028,4 +1030,33 @@ test('final stitched player retains native sound and playback controls', async (
   assert.equal(final.controls,true);
   assert.notEqual(final.muted,true);
   assert.notEqual(final.loop,true);
+});
+
+test('only one of three scene previews plays; new autoplay pauses previous preview', async () => {
+  const opts={realVideos:{scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene1.mp4'}}};
+  const h=setup(opts);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  const one=h.els.videoPlayer1.querySelector('video');
+  const onePlay=h.els.videoPlayer1.querySelector('button');
+  assert.equal(one.playCalls,1);
+  opts.realVideos.scene2={mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene2.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  const two=h.els.videoPlayer2.querySelector('video');
+  assert.equal(two.playCalls,1);
+  assert.equal(one.pauseCalls,1);
+  assert.equal(onePlay.hidden,false);
+  opts.realVideos.scene3={mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene3.mp4'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  const three=h.els.videoPlayer3.querySelector('video');
+  assert.equal(three.playCalls,1);
+  assert.equal(two.pauseCalls,1);
+  assert.equal(one.playCalls,1,'Polling must never restart Scene 1');
+  await onePlay.listeners.click();
+  await h.flush();
+  assert.equal(three.pauseCalls,1,'Manual replay pauses Scene 3');
+  assert.equal(one.playCalls,2);
+  assert.equal(one.muted,true);
+  assert.equal(one.controls,false);
+  assert.match(css,/\.scene-preview-play/);
 });
