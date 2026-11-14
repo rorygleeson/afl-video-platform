@@ -14,6 +14,8 @@ import zipfile
 
 import boto3
 from botocore.exceptions import ClientError
+from validate_change_set import validate
+from preview_release_change_set import verify_reconcile_permission
 
 REGION = "ap-southeast-2"
 ACCOUNT = "134387458447"
@@ -27,8 +29,8 @@ SOURCES = {
 
 def main():
     session = boto3.session.Session(region_name=REGION)
-    sts, cf, s3, sf, lam = (session.client(k) for k in (
-        "sts", "cloudformation", "s3", "stepfunctions", "lambda"))
+    sts, cf, s3, sf, lam, events = (session.client(k) for k in (
+        "sts", "cloudformation", "s3", "stepfunctions", "lambda", "events"))
     caller = sts.get_caller_identity()
     assert caller["Account"] == ACCOUNT
     assert ":assumed-role/afl-video-github-deploy-role/" in caller["Arn"]
@@ -95,13 +97,13 @@ def main():
     changes=[x["ResourceChange"] for x in plan["Changes"]]
     assert changes, "No change"
     names={c["LogicalResourceId"] for c in changes}
-    assert "ImageWorkerLambda" in names and names <= {"ImageWorkerLambda"}, names
-    assert all(c["Action"]=="Modify" and c.get("Replacement") in ("False",False)
-               for c in changes), "Unexpected replacement"
-    properties = {d.get("Target",{}).get("Name") for c in changes
-                  for d in c.get("Details", [])
-                  if d.get("Target",{}).get("Attribute") == "Properties"}
-    assert properties <= {"Code"}, properties
+    print("PROPOSED_IMAGE_WORKER_CHANGESET", [(c["LogicalResourceId"],
+          c.get("Action"), c.get("Replacement"), c.get("Details")) for c in changes],flush=True)
+    verified=verify_reconcile_permission(cf, lam, events, STACK, plan["Changes"])
+    issues=validate(plan, {"ImageWorkerLambda"},
+                    verified_reconcile_permission=verified)
+    assert not issues, "Unsafe CloudFormation changes: " + repr(issues)
+    assert "ImageWorkerLambda" in names, names
     assert not sf.list_executions(stateMachineArn=MACHINE,statusFilter="RUNNING",maxResults=100)["executions"]
     print("TEAM_MASTER_LOOKUP_CHANGESET_APPROVED", sorted(names), flush=True)
     cf.execute_change_set(StackName=STACK,ChangeSetName=name)
