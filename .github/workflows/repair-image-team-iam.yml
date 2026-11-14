@@ -22,7 +22,7 @@ jobs:
           python-version: '3.13'
       - name: Offline guard and compile
         run: |
-          python3 -m py_compile scripts/deploy_image_asset_permissions.py
+          python3 -m py_compile scripts/deploy_image_asset_permissions.py scripts/validate_change_set.py scripts/preview_release_change_set.py
           python3 - <<'PY'
           from pathlib import Path
           t=Path('infrastructure/app/backend.yaml').read_text()
