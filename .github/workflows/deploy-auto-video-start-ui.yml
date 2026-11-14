@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite covers automatic single-flight video and assembly starts.
+          # Regression suite covers video, assembly and shared green spinner behavior.
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
