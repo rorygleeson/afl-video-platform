@@ -1,0 +1,43 @@
+name: Repair image worker team master S3 permissions only
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-image-team-iam.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  repair:
+    if: ${{ contains(github.event.head_commit.message, '[repair-image-team-iam]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Offline guard and compile
+        run: |
+          python3 -m py_compile scripts/deploy_image_asset_permissions.py
+          python3 - <<'PY'
+          from pathlib import Path
+          t=Path('infrastructure/app/backend.yaml').read_text()
+          assert t.count('Sid: ReadTeamArtworkExplicit')==1
+          assert t.count('Sid: ListScenarioTeamArtworkForPreflight')==1
+          assert "Sid: ReadVersionedScenarioMastersAndConfig" in t
+          assert 's3:ListBucket' in t
+          assert 'Sid: ReadSourceSelfies' in t
+          print('IMAGE_TEAM_IAM_TEMPLATE_CHECK_OK')
+          PY
+      - run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-image-team-permission-repair
+      - name: Deploy only guarded image-worker IAM policy update
+        run: python3 -u scripts/deploy_image_asset_permissions.py
