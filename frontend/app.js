@@ -266,9 +266,19 @@ const input = document.getElementById('selfie');
           // video every five seconds while another scene is generating.
           if (!player.querySelector('video')) {
             const video = document.createElement('video');
-            video.controls = true;
-            video.setAttribute('controlsList', 'nodownload');
-            video.preload = 'metadata';
+            // Silent, looping, inline preview: no playback/volume/menu controls.
+            // Muting before setting the source allows mobile browsers to autoplay.
+            video.controls = false;
+            video.muted = true;
+            video.defaultMuted = true;
+            video.setAttribute('muted', '');
+            video.autoplay = true;
+            video.setAttribute('autoplay', '');
+            video.loop = true;
+            video.setAttribute('loop', '');
+            video.playsInline = true;
+            video.setAttribute('playsinline', '');
+            video.preload = 'auto';
             video.src = item.url;
             player.replaceChildren(video);
             player.dataset.url = item.url;
