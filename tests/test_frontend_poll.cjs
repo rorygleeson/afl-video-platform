@@ -761,7 +761,8 @@ test('four requested cosmetic changes keep progress and scene headings consisten
   }
   assert.doesNotMatch(html, /Download Scene [123] MP4/);
   assert.doesNotMatch(html, /scene-download/);
-  assert.match(script, /controlsList', 'nodownload'/);
+  assert.match(script, /video\.muted = true/);
+  assert.doesNotMatch(script, /controlsList', 'nodownload'/);
   assert.match(html, /id="downloadFinal"/);
 });
 
@@ -789,8 +790,19 @@ test('final download fetches existing MP4 only and saves a timestamped filename'
   for (const n of [1, 2, 3]) {
     const player = h.els['videoPlayer' + n];
     assert.equal(player.children.length, 1, 'Only the scene player is shown');
-    assert.equal(player.children[0].controls, true);
-    assert.equal(player.children[0].getAttribute?.('controlsList'), 'nodownload');
+    const preview = player.children[0];
+    assert.equal(preview.controls, false, 'Scene previews have no native controls');
+    assert.equal(preview.muted, true, 'Scene previews must always be silent');
+    assert.equal(preview.defaultMuted, true);
+    assert.equal(preview.autoplay, true);
+    assert.equal(preview.loop, true);
+    assert.equal(preview.playsInline, true);
+    assert.equal(preview.getAttribute('muted'), '');
+    assert.equal(preview.getAttribute('autoplay'), '');
+    assert.equal(preview.getAttribute('loop'), '');
+    assert.equal(preview.getAttribute('playsinline'), '');
+    assert.equal(preview.getAttribute('controls'), null);
+    assert.equal(preview.getAttribute('controlsList'), null);
   }
 });
 
@@ -990,4 +1002,20 @@ test('video section uses simple user-friendly generation heading without AWS exp
   assert.doesNotMatch(script, /AWS is generating scenes in sequence/);
   assert.doesNotMatch(script, /Video status updated — see each scene above/);
   assert.match(script, /videoTestMessage\.textContent = 'Video status unavailable:/);
+});
+
+
+test('final stitched player retains native sound and playback controls', async () => {
+  const h=setup({
+    realVideos:Object.fromEntries([1,2,3].map(n=>['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'COMPLETED',url:'https://s3.example.com/final.mp4'}
+  });
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  const final=h.els.assemblyPlayer.querySelector('video');
+  assert.ok(final);
+  assert.equal(final.controls,true);
+  assert.notEqual(final.muted,true);
+  assert.notEqual(final.loop,true);
 });
