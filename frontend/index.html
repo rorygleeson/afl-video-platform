@@ -10,8 +10,8 @@
 <body>
 <main>
   <h1>AFL Video Lab</h1>
-  <p>Test your connections, upload a selfie, create three reference images, then preview prompts and generate each MP4 separately.</p>
-  <p class="poll-status">Each paid generation requires your confirmation. Nothing starts automatically.</p>
+  <p>Upload a selfie to create three reference images. Video 1 starts automatically when all three are ready, followed by videos 2 and 3.</p>
+  <p class="poll-status">Video generation starts automatically when all three reference images are ready. Video retries remain manual.</p>
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off" aria-describedby="apiConnectionStatus">
   <p id="apiConnectionStatus" class="poll-status" role="status" aria-live="polite">API access is checked automatically before uploading.</p>
@@ -45,8 +45,8 @@
   </section>
   <section id="videoTestSection" hidden>
     <h2 style="margin-bottom:6px">Create your videos</h2>
-    <p class="poll-status" id="realVideoGate">Once approved, AWS generates each MP4 in sequence, even if you switch to another app or lock your phone. Scene 2 appears after Scene 1 completes, then Scene 3 appears after Scene 2 completes. Failed scenes retain their individual retry controls.</p>
-    <button id="generateAllVideos" type="button" hidden disabled>Generate All 3 Videos (paid)</button>
+    <p class="poll-status" id="realVideoGate">Once all reference images are ready, AWS generates each MP4 in sequence, even if you switch to another app or lock your phone. Scene 2 appears after Scene 1 completes, then Scene 3 appears after Scene 2 completes. Failed scenes retain their individual retry controls.</p>
+    <button id="generateAllVideos" type="button" hidden disabled style="display:none" aria-hidden="true" tabindex="-1">Video generation automatic</button>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 4 seconds</strong>
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>
