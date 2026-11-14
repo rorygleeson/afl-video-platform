@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import boto3
 from validate_change_set import validate
+from preview_release_change_set import verify_reconcile_permission
 
 REGION="ap-southeast-2"
 ACCOUNT="134387458447"
@@ -20,6 +21,8 @@ def main():
     sts=session.client("sts")
     cf=session.client("cloudformation")
     sf=session.client("stepfunctions")
+    lam=session.client("lambda")
+    events=session.client("events")
     who=sts.get_caller_identity()
     assert who["Account"]==ACCOUNT
     assert ":assumed-role/afl-video-github-deploy-role/" in who["Arn"]
@@ -59,14 +62,32 @@ def main():
     changes=[x["ResourceChange"] for x in plan["Changes"]]
     print("PROPOSED_CHANGESET",[(x.get("LogicalResourceId"),x.get("Action"),
           x.get("Replacement"),x.get("Details")) for x in changes],flush=True)
-    assert len(changes)==1 and changes[0]["LogicalResourceId"]=="ImageWorkerRole", \
-        "Refusing any other resource changes"
-    assert changes[0]["Action"]=="Modify" and changes[0]["Replacement"] in ("False",False)
-    issues=validate(plan,{"ImageWorkerRole"})
+    changes_by_name={c["LogicalResourceId"]:c for c in changes}
+    expected_names={"ImageWorkerRole","ImageWorkerLambda","ImageReconcileInvokePermission",
+                    "ImageReconcileSchedule","ImageStateMachineRole","ImageStateMachine"}
+    assert "ImageWorkerRole" in changes_by_name
+    assert set(changes_by_name) <= expected_names, "Unexpected resource in change set"
+    role=changes_by_name["ImageWorkerRole"]
+    assert role["Action"]=="Modify" and role["Replacement"] in ("False",False)
+    assert role.get("Details") and all(
+        d.get("Evaluation")=="Static"
+        and d.get("ChangeSource")=="DirectModification"
+        and d.get("Target",{}).get("Name")=="Policies"
+        and d.get("Target",{}).get("RequiresRecreation")=="Never"
+        for d in role["Details"]), "Unexpected IAM role edit"
+    if "ImageWorkerLambda" in changes_by_name:
+        function=changes_by_name["ImageWorkerLambda"]
+        assert function["Action"]=="Modify" and function["Replacement"] in ("False",False)
+        assert function.get("Details") and all(
+            d.get("Evaluation")=="Dynamic" and d.get("ChangeSource")=="ResourceAttribute"
+            and d.get("CausingEntity")=="ImageWorkerRole.Arn"
+            and d.get("Target",{}).get("Name")=="Role"
+            and d.get("Target",{}).get("RequiresRecreation")=="Never"
+            for d in function["Details"]), "Unexpected Lambda modification"
+    verified=verify_reconcile_permission(cf,lam,events,STACK,plan["Changes"])
+    issues=validate(plan,{"ImageWorkerRole","ImageWorkerLambda"},
+                    verified_reconcile_permission=verified)
     assert not issues,issues
-    assert all(d.get("Target",{}).get("Name")=="Policies" and
-               d.get("Target",{}).get("RequiresRecreation")=="Never"
-               for d in changes[0].get("Details",[]))
     assert not sf.list_executions(stateMachineArn=machine,statusFilter="RUNNING",maxResults=100)["executions"]
     cf.execute_change_set(StackName=STACK,ChangeSetName=name)
     cf.get_waiter("stack_update_complete").wait(
