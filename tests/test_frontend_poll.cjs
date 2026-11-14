@@ -811,7 +811,7 @@ test('reference image cards show clean status, green completion and animated gen
   await h.nextTimer();
   assert.equal(progressFor(3).textContent, 'Completed');
   assert.equal(progressFor(3).className, 'reference-progress completed');
-  assert.match(css, /reference-progress\.generating::before\{content:"⚙"/);
+  assert.match(css, /reference-progress\.generating::before,\.video-state\.generating::before\{content:"⚙"/);
   assert.match(css, /@keyframes reference-gear-spin/);
   assert.match(css, /prefers-reduced-motion:reduce/);
 });
