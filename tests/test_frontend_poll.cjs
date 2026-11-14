@@ -25,6 +25,11 @@ function setup(options = {}) {
     return {
       hidden: false, disabled: false, value: '', textContent: '', dataset: {}, style: {},
       listeners: {},
+      classList: { values: new Set(), add(name) { this.values.add(name); },
+        remove(name) { this.values.delete(name); },
+        toggle(name, force) { const enabled = force === undefined ? !this.values.has(name) : !!force;
+          if (enabled) this.values.add(name); else this.values.delete(name); return enabled; },
+        contains(name) { return this.values.has(name); } },
       children: [],
       appendChild(child) { this.children.push(child); },
       setAttribute(name, value) { (this.attributes ||= {})[name] = value; },
@@ -903,4 +908,13 @@ test('two independent failures show separate retry controls and explain a blocke
   assert.equal(h.els.retryVideoScene2.hidden, false);
   assert.equal(h.els.retryVideoScene3.hidden, true);
   assert.match(h.els.scene3PaidStatus.textContent, /needs review/i);
+});
+
+
+test('image, video and stitching spinner styles use the same green rotating cog', () => {
+  assert.match(css, /\.reference-progress\.generating::before,\.video-state\.generating::before\{/);
+  assert.match(css, /color:#16733b;animation:reference-gear-spin/);
+  assert.match(script, /paidStatus\.classList\.toggle\('generating'/);
+  assert.match(script, /assemblyStatus\.classList\.toggle\('generating'/);
+  assert.match(script, /assemblyStatus'\)\.classList\.add\('generating'\)/);
 });
