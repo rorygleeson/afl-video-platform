@@ -52,9 +52,11 @@ jobs:
           assert video_config["model"] == "gemini-omni-1.2-flash"
           assert video_config["requireExplicitPaidAction"] is True
           assert video_config["maxPaidScenesPerRequest"] == 1
-          assert isinstance(image_config["sharedPrompt"], str) and 100 <= len(image_config["sharedPrompt"]) <= 8000
           assert len(image_config["teamGuernseys"]) == 18
           assert 100 <= len(image_config["identityOnlyPrompt"]) <= 8000
+          assert "sharedPrompt" not in image_config
+          assert "promptInstructions" not in str(image_config["scenes"])
+          assert "masterKey" not in str(image_config["scenes"])
           assert set(image_config["teamGuernseys"]) == set(p.name for p in (base / "teams").iterdir() if p.is_dir())
 
           image_scenes = image_config["scenes"]
@@ -64,8 +66,6 @@ jobs:
           for scene in image_scenes:
               assert scene["enabled"] is True
               assert scene["model"] == "gemini-3-pro-image"
-              assert scene["masterKey"] == f"scenarios/afl-grand-final-winning-kick/v1/{scene['id']}-start.png"
-              assert 100 <= len(scene["promptInstructions"]) <= 5000
               assert 100 <= len(scene["identityOnlyInstructions"]) <= 5000
 
           expected_durations = {"scene1": 4, "scene2": 8, "scene3": 5}
@@ -94,11 +94,8 @@ jobs:
           from pathlib import Path
 
           base = Path("scenarios/afl-grand-final-winning-kick/v1")
-          for name in ("scene1-start.png", "scene2-start.png", "scene3-start.png"):
-              path = base / name
-              if not path.exists():
-                  print(f"{name}: not in GitHub; leaving existing S3 image unchanged")
-                  continue
+          for path in sorted((base / "teams").glob("*/scene*-start.png")):
+              name = str(path.relative_to(base))
               payload_size = path.stat().st_size
               assert 100_000 <= payload_size <= 15_000_000, f"{name}: invalid file size"
               with path.open("rb") as stream:
@@ -166,17 +163,6 @@ jobs:
           upload_and_verify "video/config.json" "application/json"
           for name in scene1 scene2 scene3; do
             upload_and_verify "video/${name}-video.txt" "text/plain"
-          done
-
-          # PNGs are optional: when committed to the same GitHub folder,
-          # publish them; otherwise do NOT overwrite existing S3 templates.
-          for scene in scene1 scene2 scene3; do
-            rel="${scene}-start.png"
-            if [ -f "$base/$rel" ]; then
-              upload_and_verify "$rel" "image/png"
-            else
-              echo "Skipped $rel (not stored in GitHub); S3 original retained"
-            fi
           done
 
           # Publish only changed team master PNGs, preserving already uploaded
