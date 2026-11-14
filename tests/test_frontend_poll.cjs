@@ -57,6 +57,7 @@ function setup(options = {}) {
                       'scene1Preflight', 'scene1PreflightStatus', 'scene1PaidStatus', 'generateAllVideos',
                       'scene2PaidStatus', 'scene3PaidStatus',
                       'videoTestSection','videoTestMessage','assembleFinal','assemblyPanel','assemblyStatus','assemblyPlayer','downloadFinal','nextStageMessage',
+                      'assemblyProgress','assemblyPercent','assemblyProgressBar','assemblyProgressFill','assemblyProgressNote',
                       'generateVideo1','generateVideo2','generateVideo3',
                       'videoStatus1','videoStatus2','videoStatus3',
                       'videoPlayer1','videoPlayer2','videoPlayer3',
@@ -74,6 +75,7 @@ function setup(options = {}) {
     // Keep the basic DOM simulation intact for the new reference image cards.
   }
   for (const n of [1,2,3]) els['scene'+n+'Progress'].hidden = true;
+  els.assemblyProgress.hidden = true;
   els.assembleFinal.disabled = true;
   els.assembleFinal.hidden = true; // Matches the HTML hidden attribute.
   els.generateAllVideos.hidden = true;
@@ -1196,4 +1198,47 @@ test('failed selfie upload never shows the reference image heading', async () =>
   await h.els.generate.listeners.click();
   await h.flush();
   assert.equal(h.els.referenceImagesHeading.hidden,true);
+});
+
+test('assembly estimate shows while stitching, uses one timer and clears on completion', async () => {
+  assert.match(html, /id="assemblyProgress"[^>]*hidden/);
+  const opts = {
+    realVideos:Object.fromEntries([1,2,3].map(n=>['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'QUEUED'}
+  };
+  const h=setup(opts);
+  await h.els.generate.listeners.click();await h.flush();await h.nextTimer();await h.nextTimer();await h.flush();
+  assert.equal(h.els.assemblyProgress.hidden,false);
+  assert.equal(h.els.assemblyStatus.classList.contains('generating'),true);
+  assert.match(h.els.assemblyProgressNote.textContent,/10s baseline/);
+  assert.equal(h.els.assemblyPercent.textContent,'0%');
+  assert.equal([...h.intervals.values()].filter(t=>t.delay===1000).length,1);
+  // Status polling does not reset the original start time.
+  await h.els.refresh.listeners.click();await h.flush();
+  assert.equal([...h.intervals.values()].filter(t=>t.delay===1000).length,1);
+  opts.assembly={enabled:true,status:'COMPLETED',url:'https://s3.example.com/final.mp4'};
+  await h.els.refresh.listeners.click();await h.flush();
+  assert.equal(h.els.assemblyProgress.hidden,true);
+  assert.equal([...h.intervals.values()].filter(t=>t.delay===1000).length,0);
+  assert.equal(h.els.downloadFinal.hidden,false);
+  assert.equal(h.els.assemblyStatus.textContent,'Your final video is ready!');
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,0);
+});
+
+test('assembly estimate hides on review and reset, without influencing AWS submission', async () => {
+  const opts = {
+    realVideos:Object.fromEntries([1,2,3].map(n=>['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'PROCESSING'}
+  };
+  const h=setup(opts);
+  await h.els.generate.listeners.click();await h.flush();await h.nextTimer();await h.nextTimer();await h.flush();
+  assert.equal(h.els.assemblyProgress.hidden,false);
+  opts.assembly={enabled:true,status:'REVIEW_REQUIRED',errorCode:'TEST_FAILURE'};
+  await h.els.refresh.listeners.click();await h.flush();
+  assert.equal(h.els.assemblyProgress.hidden,true);
+  assert.equal([...h.intervals.values()].filter(t=>t.delay===1000).length,0);
+  h.els.team.listeners.change();
+  assert.equal(h.els.assemblyProgress.hidden,true);
 });
