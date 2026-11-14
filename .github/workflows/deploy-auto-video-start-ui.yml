@@ -1,4 +1,4 @@
-name: Deploy one-at-a-time silent scene previews
+name: Deploy image retry countdown UI
 on:
   push:
     branches: [main]
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite verifies one-at-a-time silent autoplay and manual replay.
+          # Regression suite verifies image retry countdown and existing video playback.
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
