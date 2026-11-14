@@ -1,0 +1,46 @@
+name: Restore original single-image Omni video worker
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/restore-omni-single-image.yml'
+      - 'scripts/deploy_omni_single_image_revert.py'
+      - 'src/google_video_worker/handler.py'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[restore-omni-single-image]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate original image-to-video request and compile release
+        run: |
+          set -euo pipefail
+          python3 -m py_compile src/google_video_worker/handler.py scripts/deploy_omni_single_image_revert.py
+          python3 -m unittest discover -s tests -p 'test_omni_selfie_reference_payload.py' -v
+          python3 - <<'PY'
+          from pathlib import Path
+          code=Path("src/google_video_worker/handler.py").read_text()
+          yaml=Path("infrastructure/app/google-video.yaml").read_text()
+          assert "OMNI_SELFIE_REFERENCE_ENABLED" not in code + yaml
+          assert "OriginalSelfieReadOnly" not in yaml
+          assert yaml.count('"requestId.$":"$$.Execution.Name"')==4
+          print("SINGLE_START_FRAME_CONTRACT_VERIFIED")
+          PY
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Restore Omni worker via validated CloudFormation change set
+        run: python3 -u scripts/deploy_omni_single_image_revert.py
