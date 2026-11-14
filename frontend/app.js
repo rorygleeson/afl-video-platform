@@ -649,7 +649,7 @@ const input = document.getElementById('selfie');
         method: 'POST',
         headers: {'Idempotency-Key': crypto.randomUUID()},
         body: JSON.stringify({confirmPaidSequence: true}),
-      }
+      });
       submission.status = 'AWS sequential generation approved. Checking Scene 1…';
       submission.events.push('API response: ' + (result.status || 'ACCEPTED') +
                              ' at ' + new Date().toLocaleTimeString());
@@ -668,7 +668,7 @@ const input = document.getElementById('selfie');
         void refreshVideos();
       }
     }
-  });
+  }
 
   // A retry is explicitly confirmed, charged separately and applies to only
   // one terminal failed video. Existing reference images and successful MP4s stay.
