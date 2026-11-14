@@ -71,6 +71,59 @@ const input = document.getElementById('selfie');
   const autoAssemblyAttemptedJobs = new Set();
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
   let activeScenePreview = null;
+  // Historical successful run averages measured in DynamoDB (seconds).
+  // Submission-start-to-S3-complete, measured separately for each scene.
+  const VIDEO_AVERAGE_SECONDS = {scene1: 64.4, scene2: 72.2, scene3: 57.8};
+  const VIDEO_GOOGLE_AVERAGE_SECONDS = {scene1: 59.4, scene2: 67.1, scene3: 52.9};
+  const VIDEO_PROGRESS_STATUSES = new Set(['REQUESTED', 'QUEUED', 'SUBMITTING',
+    'GENERATING', 'PROCESSING', 'POLLING', 'IN_PROGRESS']);
+  let videoProgressTimer = null;
+
+  function renderVideoProgress() {
+    const videos = lastVideoSnapshot?.videos || {};
+    for (const n of [1, 2, 3]) {
+      const sceneId = 'scene' + n;
+      const video = videos[sceneId] || {};
+      const panel = document.getElementById('scene' + n + 'Progress');
+      const active = currentJobId && !document.getElementById('videoPanel' + n).hidden &&
+        video.mode === 'REAL' && VIDEO_PROGRESS_STATUSES.has(video.status);
+      panel.hidden = !active;
+      if (!active) continue;
+      const start = Date.parse(video.submissionStartedAt || video.submittedAt || '');
+      const hasStart = Number.isFinite(start);
+      const elapsed = hasStart ? Math.max(0, (Date.now() - start) / 1000) : 0;
+      const average = video.submissionStartedAt
+        ? VIDEO_AVERAGE_SECONDS[sceneId] : VIDEO_GOOGLE_AVERAGE_SECONDS[sceneId];
+      // Estimate, never real Google progress. Slow asymptotically towards 95%.
+      // Google completion is authoritative; an in-flight scene never shows 100%.
+      const percent = hasStart
+        ? Math.min(95, Math.max(0, Math.floor(95 * (1 - Math.exp(-1.9 * elapsed / average)))))
+        : 0;
+      document.getElementById('scene' + n + 'Percent').textContent = percent + '%';
+      document.getElementById('scene' + n + 'ProgressFill').style.width = percent + '%';
+      document.getElementById('scene' + n + 'ProgressBar').setAttribute('aria-valuenow', String(percent));
+      document.getElementById('scene' + n + 'ProgressNote').textContent = !hasStart
+        ? 'Waiting for generation to start…'
+        : elapsed > average * 1.5
+          ? 'Taking longer than usual · ' + Math.floor(elapsed) + 's elapsed'
+          : Math.floor(elapsed) + 's elapsed · based on previous videos';
+    }
+  }
+
+  function syncVideoProgress() {
+    const active = !document.hidden && currentJobId && [1, 2, 3].some(n => {
+      const video = lastVideoSnapshot?.videos?.['scene' + n];
+      return video?.mode === 'REAL' && VIDEO_PROGRESS_STATUSES.has(video.status) &&
+        !document.getElementById('videoPanel' + n).hidden;
+    });
+    if (active && videoProgressTimer === null) {
+      videoProgressTimer = setInterval(renderVideoProgress, 1000);
+    } else if (!active && videoProgressTimer !== null) {
+      clearInterval(videoProgressTimer);
+      videoProgressTimer = null;
+    }
+    renderVideoProgress();
+  }
 
   async function playScenePreview(video, playButton, replay = false) {
     if (activeScenePreview && activeScenePreview !== video) {
@@ -109,6 +162,10 @@ const input = document.getElementById('selfie');
 
   function resetVideoUi() {
     stopVideoPoll();
+    if (videoProgressTimer !== null) {
+      clearInterval(videoProgressTimer);
+      videoProgressTimer = null;
+    }
     if (activeScenePreview) activeScenePreview.pause();
     activeScenePreview = null;
     videoRefreshRequested = false;
@@ -124,6 +181,7 @@ const input = document.getElementById('selfie');
     availablePaidScenes = [];
     videoSequenceAttemptUncertain = false;
     lastVideoSnapshot = null;
+    for (const n of [1, 2, 3]) document.getElementById('scene' + n + 'Progress').hidden = true;
     generateAllVideos.hidden = true;
     generateAllVideos.disabled = true;
     generateAllVideos.textContent = 'Generate All 3 Videos (paid, sequential)';
@@ -365,6 +423,7 @@ const input = document.getElementById('selfie');
           delete player.dataset.url;
         }
       }
+      syncVideoProgress();
       const realStates = [1, 2, 3].map(n => data.videos?.['scene' + n] || {});
       const assembly = data.assembly || {};
       const readyForAssembly = realStates.every(st =>
@@ -481,6 +540,7 @@ const input = document.getElementById('selfie');
   }
 
   document.addEventListener('visibilitychange', () => {
+    syncVideoProgress();
     if (document.hidden && videoTimer !== null) {
       clearTimeout(videoTimer);
       videoTimer = null;
