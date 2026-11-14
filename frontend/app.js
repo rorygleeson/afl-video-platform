@@ -906,19 +906,40 @@ const input = document.getElementById('selfie');
       apiConnectionStatus.textContent = 'Checking API access…';
       await api('/scenarios');
       apiConnectionStatus.textContent = 'API connected.';
-      setPhase('Requesting upload form from API Gateway');
-      const signed = await api('/uploads', {
-        method: 'POST',
-        body: JSON.stringify({contentType: file.type, sizeBytes: file.size}),
-      });
-      const form = new FormData();
-      for (const [field, value] of Object.entries(signed.upload.fields)) {
-        form.append(field, value);
+      // Retry ONLY a browser-level network failure during the S3 POST.
+      // Each attempt gets a fresh presigned form and uses a new FormData;
+      // a job is not created until S3 explicitly returns success.
+      // Do not retry HTTP errors, job creation, or paid generation.
+      let signed;
+      for (let attempt = 0; attempt <= 2; attempt++) {
+        setPhase('Requesting upload form from API Gateway');
+        signed = await api('/uploads', {
+          method: 'POST',
+          body: JSON.stringify({contentType: file.type, sizeBytes: file.size}),
+        });
+        const form = new FormData();
+        for (const [field, value] of Object.entries(signed.upload.fields)) {
+          form.append(field, value);
+        }
+        form.append('file', file);
+        setPhase('Uploading selfie directly to private S3');
+        if (attempt > 0) showStatus('Uploading selfie — retry ' + attempt + '/2…');
+        try {
+          const uploaded = await fetch(signed.upload.url, {method: 'POST', body: form});
+          if (!uploaded.ok) throw new Error('S3 upload failed: ' + uploaded.status);
+          break;
+        } catch (error) {
+          // An HTTP 4xx/5xx response is observable and not automatically retried.
+          // Browser TypeError may mean network loss, CORS or a transient redirect.
+          if (!(error instanceof TypeError) || attempt === 2) throw error;
+          status.classList.add('upload-retrying');
+          showStatus('Upload interrupted — retrying (' + (attempt + 1) + '/2)…');
+          await new Promise(resolve => setTimeout(resolve, 700 * (attempt + 1)));
+        } finally {
+          if (attempt === 2) status.classList.remove('upload-retrying');
+        }
       }
-      form.append('file', file);
-      setPhase('Uploading selfie directly to private S3');
-      const uploaded = await fetch(signed.upload.url, {method: 'POST', body: form});
-      if (!uploaded.ok) throw new Error('S3 upload failed: ' + uploaded.status);
+      status.classList.remove('upload-retrying');
       setPhase('Creating DynamoDB job through API Gateway');
       jobCreateRequestSent = true;
       const created = await api('/jobs', {
@@ -963,6 +984,7 @@ const input = document.getElementById('selfie');
       // Existing three scene cards, status polling, images and video gate.
       startPolling();
     } catch (error) {
+      status.classList.remove('upload-retrying');
       uploadSubmissionUncertain = jobCreateRequestSent;
       apiConnectionStatus.textContent = /API Gateway refused access/.test(error.message)
         ? 'API access denied. Check x-api-key — no paid request was made.'
