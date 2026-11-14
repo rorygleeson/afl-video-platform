@@ -294,8 +294,7 @@ def generate(worker, job_id, scene_id):
         masters = job.get("teamMasterKeys")
         if not isinstance(masters, dict) or set(masters) != set(worker.VALID_SCENES):
             raise RuntimeError("Team master images not locked by preflight")
-        expected_key = (worker.SCENARIO_PREFIX + "teams/" + job["team"] +
-                        "/" + scene_id + "-start.png")
+        expected_key = worker.team_scene_master_key(job["team"], scene_id)
         if masters[scene_id] != expected_key:
             raise RuntimeError("Team master image path mismatch")
         master = s3_image(worker.S3, worker.ASSET_BUCKET, expected_key)
