@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/publish-scenario-assets.yml'
       - 'scenarios/afl-grand-final-winning-kick/v1/config.json'
+      - 'scenarios/afl-grand-final-winning-kick/v1/teams/**/*.png'
       - 'scenarios/afl-grand-final-winning-kick/v1/scene1-start.png'
       - 'scenarios/afl-grand-final-winning-kick/v1/scene2-start.png'
       - 'scenarios/afl-grand-final-winning-kick/v1/scene3-start.png'
@@ -53,6 +54,8 @@ jobs:
           assert video_config["maxPaidScenesPerRequest"] == 1
           assert isinstance(image_config["sharedPrompt"], str) and 100 <= len(image_config["sharedPrompt"]) <= 8000
           assert len(image_config["teamGuernseys"]) == 18
+          assert 100 <= len(image_config["identityOnlyPrompt"]) <= 8000
+          assert set(image_config["teamGuernseys"]) == set(p.name for p in (base / "teams").iterdir() if p.is_dir())
 
           image_scenes = image_config["scenes"]
           video_scenes = video_config["scenes"]
@@ -63,6 +66,7 @@ jobs:
               assert scene["model"] == "gemini-3-pro-image"
               assert scene["masterKey"] == f"scenarios/afl-grand-final-winning-kick/v1/{scene['id']}-start.png"
               assert 100 <= len(scene["promptInstructions"]) <= 5000
+              assert 100 <= len(scene["identityOnlyInstructions"]) <= 5000
 
           expected_durations = {"scene1": 4, "scene2": 8, "scene3": 5}
           values = {
@@ -174,5 +178,20 @@ jobs:
               echo "Skipped $rel (not stored in GitHub); S3 original retained"
             fi
           done
+
+          # Publish only changed team master PNGs, preserving already uploaded
+          # artwork in unrelated team folders. Do not upload README placeholders.
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            while IFS= read -r file; do
+              case "$file" in
+                "$base"/teams/*/scene[123]-start.png)
+                  rel="${file#"$base"/}"
+                  if [ -f "$file" ]; then
+                    upload_and_verify "$rel" "image/png"
+                  fi
+                  ;;
+              esac
+            done < "$tmp/changed"
+          fi
 
           echo "Scenario files published and byte-verified. No application code or infrastructure deployed."
