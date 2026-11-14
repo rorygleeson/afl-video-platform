@@ -74,6 +74,16 @@ def validate_prompt_config(config):
             raise RuntimeError("Invalid team identity-only scene instructions: " + scene["id"])
 
 
+def team_scene_master_key(team, scene_id):
+    """Scene 3 Collingwood uses the approved experimental masked master only."""
+    if scene_id not in VALID_SCENES:
+        raise RuntimeError("Unsupported scene")
+    filename = ("scene3-start-masked.png"
+                if team == "collingwood" and scene_id == "scene3"
+                else scene_id + "-start.png")
+    return SCENARIO_PREFIX + "teams/" + team + "/" + filename
+
+
 def team_master_keys(config, team):
     """Require a complete set of finished masters for the selected team.
 
@@ -82,8 +92,7 @@ def team_master_keys(config, team):
     """
     if team not in config["teamGuernseys"]:
         raise RuntimeError("Unsupported team")
-    prefix = SCENARIO_PREFIX + "teams/" + team + "/"
-    keys = {scene["id"]: prefix + scene["id"] + "-start.png"
+    keys = {scene["id"]: team_scene_master_key(team, scene["id"])
             for scene in config["scenes"]}
     for key in keys.values():
         try:
