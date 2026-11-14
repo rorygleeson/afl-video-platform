@@ -216,6 +216,7 @@ function setup(options = {}) {
             scene1: {status: 'COMPLETED'},
             scene2: {status: statusPolls >= 2 ? 'COMPLETED' : 'GENERATING'},
             scene3: {status: statusPolls >= 3 ? 'COMPLETED' : 'GENERATING'},
+            ...(options.imageScenes || {}),
           }},
       }; }};
     }
@@ -917,4 +918,22 @@ test('image, video and stitching spinner styles use the same green rotating cog'
   assert.match(script, /paidStatus\.classList\.toggle\('generating'/);
   assert.match(script, /assemblyStatus\.classList\.toggle\('generating'/);
   assert.match(script, /assemblyStatus'\)\.classList\.add\('generating'\)/);
+});
+
+test('image retry waiting switches to green-cog Generating when attempt resumes', async () => {
+  const imageScenes = {scene1: {status: 'RETRY_WAIT', retryCount: 1, maxRetries: 7}};
+  const h = setup({imageScenes});
+  await h.els.generate.listeners.click();
+  await h.flush();
+  const progress = () => h.els.results.children.find(c => c.id === 'imageCard1').querySelector('p');
+  assert.match(progress().textContent, /Google busy — retrying automatically \(1\/7\)/);
+  assert.equal(progress().className, 'reference-progress generating');
+  imageScenes.scene1.status = 'GENERATING';
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(progress().textContent, 'Generating…');
+  assert.equal(progress().className, 'reference-progress generating');
+  imageScenes.scene1.status = 'COMPLETED';
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(progress().textContent, 'Completed');
+  assert.equal(progress().className, 'reference-progress completed');
 });
