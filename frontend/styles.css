@@ -21,6 +21,12 @@
     .scene-video-preview .scene-preview-play[hidden]{display:none!important}
 
     .video-state{font-size:.9rem;color:#465569;white-space:pre-wrap}
+    .scene-estimate{margin:10px 0 14px}
+    .scene-estimate-header{display:flex;justify-content:space-between;gap:10px;font-size:.85rem;font-weight:650;color:#276044}
+    .scene-estimate-track{height:11px;margin-top:8px;background:#e0e8e3;border-radius:999px;overflow:hidden}
+    .scene-estimate-fill{height:100%;width:0;background:#16733b;border-radius:999px;transition:width .8s linear}
+    .scene-estimate-note{margin:6px 0 0;font-size:.77rem;color:#526174}
+
     .diagnostic-result{margin:6px 0 0;font-weight:700}
     .diagnostic-result.success{color:#16733b}
     .diagnostic-result.failure{color:#b42318}
