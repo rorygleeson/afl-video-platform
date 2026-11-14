@@ -507,32 +507,24 @@ test('Scene 1 free readiness automatically runs once for a finished job', async 
                'Readiness never submits a paid MP4');
 });
 
-test('one batch button stays hidden until real videos are approved', async () => {
-  const h = setup();
+test('automatic video start waits for backend approvals', async () => {
+  const h=setup({paidScenes:{scene1:false,scene2:false,scene3:false}});
   await h.els.generate.listeners.click();
-  await h.flush(); await h.nextTimer(); await h.nextTimer();
-  assert.equal(h.els.generateAllVideos.hidden, true);
-  assert.ok(h.els.generateAllVideos.listeners.click);
-  assert.doesNotMatch(html, /id="generateRealScene[123]"/);
-  assert.equal(h.calls.filter(c => c.url.includes('/real-videos/scene')).length, 0);
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
 });
-
-test('one paid approval lets AWS own progression; browser only reveals completed scene screens', async () => {
+test('three completed images automatically submit one AWS sequence; panels reveal in order', async () => {
   const options={paidScenes:{scene1:true,scene2:true,scene3:true},realVideos:{}};
   const h=setup(options);
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  const first=h.els.generateAllVideos.listeners.click();
-  const second=h.els.generateAllVideos.listeners.click();
-  await Promise.all([first,second]); await h.flush();
   const approvals=()=>h.calls.filter(c=>c.url.endsWith('/real-videos/sequence') && c.opts.method==='POST');
   assert.equal(approvals().length,1);
   assert.deepEqual(JSON.parse(approvals()[0].opts.body),{confirmPaidSequence:true});
   assert.ok(approvals()[0].opts.headers['Idempotency-Key']);
-  const browserScenePost=()=>h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST');
-  assert.equal(browserScenePost().length,0,'All paid scene progression must happen in AWS');
+  assert.equal(h.els.generateAllVideos.hidden,true);
   assert.equal(h.els.videoPanel2.hidden,true);
-  assert.equal(h.els.videoPanel3.hidden,true);
   options.realVideos.scene1={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
   await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(h.els.videoPanel2.hidden,false);
@@ -545,10 +537,8 @@ test('one paid approval lets AWS own progression; browser only reveals completed
   await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(h.els.assembleFinal.hidden,false);
   assert.equal(approvals().length,1);
-  assert.equal(browserScenePost().length,0);
+  assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,0);
 });
-
-
 test('Scene 2 and Scene 3 video panels unlock only after previous MP4 completion', async () => {
   const options = {paidScenes:{scene1:true,scene2:true,scene3:true},realVideos:{}};
   const h = setup(options);
@@ -582,7 +572,7 @@ test('failed Scene 2 blocks Scene 3 while keeping manual retry and successful vi
   const h=setup(options);
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  await h.els.generateAllVideos.listeners.click(); await h.flush();
+  await h.flush(); // sequence auto-started when all reference images completed
   options.realVideos.scene1={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
   options.realVideos.scene2={mode:'REAL',status:'FAILED',retryAvailable:true,
     providerFinalStatus:'failed',providerErrorCode:'too_many_requests'};
@@ -609,7 +599,7 @@ test('background app pauses read-only polling but AWS completion becomes visible
   const h=setup(options);
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  await h.els.generateAllVideos.listeners.click(); await h.flush();
+  await h.flush(); // sequence auto-started when all reference images completed
   h.doc.hidden=true;
   h.doc.listeners.visibilitychange();
   options.realVideos.scene1={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
@@ -628,55 +618,37 @@ test('background app pauses read-only polling but AWS completion becomes visible
 });
 
 
-test('approved sequence with unreserved scene offers safe manual resume', async () => {
-  const options={paidScenes:{scene1:false,scene2:true,scene3:true},
+test('already approved sequence never triggers automatic paid resubmission', async () => {
+  const h=setup({paidScenes:{scene1:false,scene2:true,scene3:true},
     sequence:{status:'APPROVED',mode:'AWS_EVENT_DRIVEN'},
-    realVideos:{scene1:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'}}};
-  const h=setup(options);
+    realVideos:{scene1:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'}}});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  assert.equal(h.els.generateAllVideos.hidden,false,
-    'Existing approval without reserved Scene 2 must be recoverable');
-  assert.match(h.els.generateAllVideos.textContent,/Resume approved AWS sequence/);
-  await h.els.generateAllVideos.listeners.click(); await h.flush();
-  const approvals=h.calls.filter(c=>c.url.endsWith('/real-videos/sequence') && c.opts.method==='POST');
-  assert.equal(approvals.length,1);
-  assert.deepEqual(JSON.parse(approvals[0].opts.body),{confirmPaidSequence:true});
-  assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,0,
-    'Browser must not start any individual paid scene');
+  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
 });
-
-test('ambiguous batch approval cannot duplicate paid requests', async () => {
-  const options={paidScenes:{scene1:true,scene2:true,scene3:true},
-                 realVideos:{},deferPaidVideoResponses:true};
-  const h=setup(options);
+test('uncertain automatic approval does not duplicate paid requests', async () => {
+  const h=setup({paidScenes:{scene1:true,scene2:true,scene3:true},
+    realVideos:{},deferPaidVideoResponses:true});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  const first=h.els.generateAllVideos.listeners.click();
   assert.equal(h.pendingVideoPosts.size,1);
   assert.ok(h.pendingVideoPosts.has('sequence'));
-  await h.els.generateAllVideos.listeners.click();
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,1);
   h.pendingVideoPosts.get('sequence')({ok:false,status:503,async json(){return {error:'Unknown submission status'};}});
-  await first; await h.flush();
-  await h.els.refresh.listeners.click(); await h.flush();
-  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,1);
-  assert.equal(h.els.generateAllVideos.hidden,true,'Unknown submission is not submitted again');
-  assert.match(h.els.videoDebugText1.textContent,/NOT be retried/);
-});
-
-
-test('paid batch outcome survives stale read-only status polling', async () => {
-  const h = setup({paidScenes:{scene1:true,scene2:true,scene3:true}});
-  await h.els.generate.listeners.click();
-  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  await h.els.generateAllVideos.listeners.click();
   await h.flush();
   await h.els.refresh.listeners.click(); await h.flush();
-  assert.match(h.els.videoDebugText1.textContent,/API response: SEQUENCE_APPROVED/);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,1);
+  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.match(h.els.videoDebugText1.textContent,/NOT be retried/);
+});
+test('automatic sequence approval survives stale read-only polling', async () => {
+  const h=setup({paidScenes:{scene1:true,scene2:true,scene3:true}});
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,1);
 });
-
 test('read-only workflow review does not unlock another paid attempt', async () => {
   const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
     realVideos:{scene1:{mode:'REAL',status:'REVIEW_REQUIRED',errorCode:'WORKFLOW_FAILED'}}});
@@ -687,19 +659,14 @@ test('read-only workflow review does not unlock another paid attempt', async () 
   assert.equal(h.calls.filter(c=>c.url.includes('/real-videos/scene')).length,0);
 });
 
-test('batch only submits remaining eligible scenes, not completed MP4', async () => {
-  const h = setup({paidScenes:{scene1:false,scene2:true,scene3:true},
+test('completed MP4 does not trigger fresh automatic sequence approval', async () => {
+  const h=setup({paidScenes:{scene1:false,scene2:true,scene3:true},
     realVideos:{scene1:{mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'}}});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  assert.equal(h.els.generateAllVideos.hidden,false);
-  assert.match(h.els.generateAllVideos.textContent,/2 Remaining Videos/);
-  await h.els.generateAllVideos.listeners.click();
-  const submitted=h.calls.filter(c=>c.url.endsWith('/real-videos/sequence'));
-  assert.equal(submitted.length,1,'One explicit AWS sequence approval for remaining scenes');
-  assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,0);
+  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
 });
-
 test('uncertain scene stays read-only and is never automatically resubmitted', async () => {
   const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
     realVideos:{scene1:{mode:'REAL',status:'SUBMISSION_UNKNOWN'}}});
