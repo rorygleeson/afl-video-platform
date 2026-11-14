@@ -1,0 +1,45 @@
+name: Disable Omni selfie second frame (CloudFormation)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/disable-omni-second-image.yml'
+      - 'scripts/disable_omni_second_image.py'
+      - 'infrastructure/app/google-video.yaml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[disable-omni-selfie]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Verify single-image configuration and validate deployment script
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/disable_omni_second_image.py
+          python3 - <<'PY'
+          from pathlib import Path
+          template=Path("infrastructure/app/google-video.yaml").read_text()
+          assert "OMNI_SELFIE_REFERENCE_ENABLED: 'false'" in template
+          assert template.count('"requestId.$":"$$.Execution.Name"') == 4
+          source=Path("src/google_video_worker/handler.py").read_text()
+          assert 'if OMNI_SELFIE_REFERENCE_ENABLED:' in source
+          print("OFFLINE_SINGLE_IMAGE_CONFIG_OK")
+          PY
+      - name: Install AWS SDK
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Deploy single-image Omni configuration through CloudFormation
+        run: python3 -u scripts/disable_omni_second_image.py
