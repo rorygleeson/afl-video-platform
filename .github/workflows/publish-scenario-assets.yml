@@ -94,7 +94,7 @@ jobs:
           from pathlib import Path
 
           base = Path("scenarios/afl-grand-final-winning-kick/v1")
-          for path in sorted((base / "teams").glob("*/scene*-start.png")):
+          for path in sorted((base / "teams").glob("*/scene*-start*.png")):
               name = str(path.relative_to(base))
               payload_size = path.stat().st_size
               assert 100_000 <= payload_size <= 15_000_000, f"{name}: invalid file size"
@@ -173,7 +173,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             while IFS= read -r file; do
               case "$file" in
-                "$base"/teams/*/scene[123]-start.png)
+                "$base"/teams/*/scene[123]-start.png|"$base"/teams/collingwood/scene3-start-masked.png)
                   rel="${file#"$base"/}"
                   if [ -f "$file" ]; then
                     upload_and_verify "$rel" "image/png"
