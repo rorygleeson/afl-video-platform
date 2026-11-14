@@ -47,6 +47,7 @@ function setup(options = {}) {
   for (const name of ['selfie', 'preview', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
+                      'referenceImagesHeading',
                       'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
                       'videoPromptStatus1','videoPromptStatus2','videoPromptStatus3',
@@ -79,6 +80,7 @@ function setup(options = {}) {
   for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
   for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
   for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
+  els.referenceImagesHeading.hidden = true;
   els.jobIdPanel.hidden = true;
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
@@ -1173,4 +1175,25 @@ test('long-running progress caps at 95 percent; missing timestamp stays at zero'
   opts.realVideos.scene1={mode:'REAL',status:'REVIEW_REQUIRED'};
   await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(h.els.scene1Progress.hidden,true);
+});
+
+test('reference image divider and heading only appear after confirmed upload and job', async () => {
+  assert.match(html, /id="referenceImagesHeading"[^>]*hidden/);
+  assert.match(html, /Generating 3 Reference Images/);
+  assert.match(css, /\.reference-images-heading\{border-top:1px solid/);
+  const h=setup();
+  assert.equal(h.els.referenceImagesHeading.hidden,true);
+  await h.els.generate.listeners.click();
+  await h.flush();
+  assert.equal(h.els.referenceImagesHeading.hidden,false);
+  h.els.team.value='carlton';
+  h.els.team.listeners.change();
+  assert.equal(h.els.referenceImagesHeading.hidden,true);
+});
+
+test('failed selfie upload never shows the reference image heading', async () => {
+  const h=setup({failSelfieUpload:true});
+  await h.els.generate.listeners.click();
+  await h.flush();
+  assert.equal(h.els.referenceImagesHeading.hidden,true);
 });
