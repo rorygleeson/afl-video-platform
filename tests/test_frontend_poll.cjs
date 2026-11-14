@@ -20,6 +20,7 @@ function setup(options = {}) {
   const downloads = [];
   const pendingVideoPosts = new Map();
   const timers = new Map();
+  const intervals = new Map();
   let timerId = 0;
   const els = {};
   function el() {
@@ -245,6 +246,8 @@ function setup(options = {}) {
       const id = ++timerId; timers.set(id, {fn, delay}); return id;
     },
     clearTimeout(id) { timers.delete(id); },
+    setInterval(fn, delay) { const id = ++timerId; intervals.set(id, {fn, delay}); return id; },
+    clearInterval(id) { intervals.delete(id); },
   };
   vm.runInNewContext(script, ctx);
   async function flush() {
@@ -259,7 +262,7 @@ function setup(options = {}) {
     await flush();
     return scheduled.delay;
   }
-  return {els, doc, calls, downloads, timers, pendingVideoPosts, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses, getS3Attempts: () => s3UploadAttempts};
+  return {els, doc, calls, downloads, timers, intervals, pendingVideoPosts, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses, getS3Attempts: () => s3UploadAttempts};
 }
 
 test('auto polls every 5 seconds, adds each image once and stops when complete', async () => {
@@ -1059,4 +1062,28 @@ test('only one of three scene previews plays; new autoplay pauses previous previ
   assert.equal(one.muted,true);
   assert.equal(one.controls,false);
   assert.match(css,/\.scene-preview-play/);
+});
+
+test('retry countdown tracks backend nextRetryAt every second without more Google calls', async () => {
+  const now = Math.floor(Date.now()/1000);
+  const scene = {status:'RETRY_WAIT',retryCount:2,maxRetries:7,nextRetryAt:now+22};
+  const h=setup({imageScenes:{scene1:scene}});
+  await h.els.generate.listeners.click();
+  await h.flush();
+  const progress=()=>h.els.results.children.find(c=>c.id==='imageCard1').querySelector('p');
+  assert.match(progress().textContent,/Retrying in 2[123] seconds \(2\/7\)/);
+  assert.equal(progress().className,'reference-progress generating');
+  assert.equal(h.intervals.size,1);
+  assert.equal([...h.intervals.values()][0].delay,1000);
+  scene.nextRetryAt=now+5;
+  [...h.intervals.values()][0].fn();
+  assert.match(progress().textContent,/Retrying in [456] seconds \(2\/7\)/);
+  scene.nextRetryAt=now-1;
+  [...h.intervals.values()][0].fn();
+  assert.equal(progress().textContent,'Retrying shortly… (2/7)');
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/generate')).length,1);
+  scene.status='GENERATING';
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(progress().textContent,'Generating…');
+  assert.equal(h.intervals.size,0,'Countdown timer cleared after retry starts');
 });
