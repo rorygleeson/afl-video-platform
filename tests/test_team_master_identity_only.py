@@ -66,15 +66,14 @@ class TeamMasterTests(unittest.TestCase):
         self.assertEqual(set(result.values()), self.keys("collingwood"))
         self.assertEqual(set(fake.reads), self.keys("collingwood"))
 
-    def test_scene3_masked_collingwood_only(self):
+    def test_only_collingwood_scenes_1_and_3_use_masked_masters(self):
         for team in CONFIG["teamGuernseys"]:
-            path = self.scope["team_scene_master_key"](team, "scene3")
-            if team == "collingwood":
-                self.assertTrue(path.endswith("/scene3-start-masked.png"))
-            else:
-                self.assertTrue(path.endswith("/scene3-start.png"))
-        self.assertTrue(self.scope["team_scene_master_key"]("collingwood", "scene1").endswith("/scene1-start.png"))
-        self.assertTrue(self.scope["team_scene_master_key"]("collingwood", "scene2").endswith("/scene2-start.png"))
+            for scene in ("scene1", "scene2", "scene3"):
+                path = self.scope["team_scene_master_key"](team, scene)
+                suffix = (f"{scene}-start-masked.png"
+                          if team == "collingwood" and scene in ("scene1", "scene3")
+                          else f"{scene}-start.png")
+                self.assertTrue(path.endswith("/" + team + "/" + suffix), path)
 
     def test_missing_team_png_fails_closed_instead_of_legacy_fallback(self):
         fake = FakeS3(self.keys("collingwood"))
