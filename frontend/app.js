@@ -335,10 +335,8 @@ const input = document.getElementById('selfie');
           void refreshVideos();
         }, POLL_INTERVAL_MS);
       }
-      if (realStates.some(st => st.mode === 'REAL' &&
-          ['COMPLETED', 'FAILED', 'REVIEW_REQUIRED'].includes(st.status))) {
-        videoTestMessage.textContent = 'Video status updated — see each scene above.';
-      }
+      // Individual scene cards already display progress and errors.
+      // Do not repeat a generic status line below them.
     } catch (error) {
       if (jobId === currentJobId) {
         videoTestMessage.textContent = 'Video status unavailable: ' + error.message +
@@ -671,7 +669,7 @@ const input = document.getElementById('selfie');
       submission.status = 'AWS sequential generation approved. Checking Scene 1…';
       submission.events.push('API response: ' + (result.status || 'ACCEPTED') +
                              ' at ' + new Date().toLocaleTimeString());
-      videoTestMessage.textContent = 'AWS is generating scenes in sequence. You can switch apps.';
+      videoTestMessage.textContent = '';
     } catch (error) {
       submission.status = 'Sequence approval needs review: ' + error.message +
         '. Check status before submitting another paid request.';
