@@ -535,7 +535,11 @@ test('three completed images automatically submit one AWS sequence; panels revea
   options.realVideos.scene3={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene3.mp4'};
   options.assembly={enabled:true,status:'READY'};
   await h.els.refresh.listeners.click(); await h.flush();
-  assert.equal(h.els.assembleFinal.hidden,false);
+  assert.equal(h.els.assembleFinal.hidden,true);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,1,
+    'Three completed real MP4s automatically start stitching exactly once');
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,1);
   assert.equal(approvals().length,1);
   assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,0);
 });
