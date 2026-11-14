@@ -383,11 +383,12 @@ const input = document.getElementById('selfie');
         autoAssemblyAttemptedJobs.add(jobId);
         void submitFinalAssembly(jobId);
       }
-      const display = {QUEUED:'Assembly queued', PROCESSING:'Stitching the three scenes…',
-        COMPLETED:'Final video ready', FAILED:'Assembly failed', REVIEW_REQUIRED:'Assembly needs review'};
+      const display = {READY:'Generating final video…', QUEUED:'Generating final video…',
+        PROCESSING:'Generating final video…', COMPLETED:'Your final video is ready!',
+        FAILED:'Final video generation failed', REVIEW_REQUIRED:'Final video needs review'};
       assemblyStatus.textContent = display[assembly.status] || '';
       assemblyStatus.classList.toggle('generating',
-        ['QUEUED', 'PROCESSING'].includes(assembly.status));
+        ['READY', 'QUEUED', 'PROCESSING'].includes(assembly.status));
       if (assembly.status === 'COMPLETED' && assembly.url) {
         if (!finalPlayer.querySelector('video')) {
           const movie = document.createElement('video');
@@ -862,7 +863,7 @@ const input = document.getElementById('selfie');
 
   async function submitFinalAssembly(jobId) {
     if (jobId !== currentJobId) return;
-    document.getElementById('assemblyStatus').textContent = 'Requesting final video assembly…';
+    document.getElementById('assemblyStatus').textContent = 'Generating final video…';
     document.getElementById('assemblyStatus').classList.add('generating');
     try {
       await api('/jobs/' + jobId + '/assembly', {method:'POST'});
