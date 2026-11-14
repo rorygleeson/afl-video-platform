@@ -77,6 +77,20 @@ jobs:
           except Exception as e:
             print('LOG_READ_ERROR',type(e).__name__,str(e)[:260],flush=True)
           PY
+      - name: Verify live image-worker IAM object permissions (read-only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3
+          iam=boto3.client('iam',region_name='ap-southeast-2')
+          try:
+            p=iam.get_role_policy(RoleName='afl-app-dev-image-worker-role',PolicyName='PilotImageWorker')['PolicyDocument']
+            for stmt in p.get('Statement',[]):
+              if stmt.get('Sid')=='ReadVersionedScenarioMastersAndConfig':
+                print('LIVE_IMAGE_IAM',str(stmt),flush=True)
+          except Exception as e:
+            print('LIVE_IAM_ERROR',type(e).__name__,str(e)[:350],flush=True)
+          PY
       - name: Preserve sanitized inventory even on drift or read-access failure
         if: always()
         uses: actions/upload-artifact@v4
