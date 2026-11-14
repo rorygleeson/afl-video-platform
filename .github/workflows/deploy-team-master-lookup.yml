@@ -34,13 +34,24 @@ jobs:
           assert set(cfg['teamGuernseys']) == {p.name for p in (base/'teams').iterdir() if p.is_dir()}
           assert len(cfg['teamGuernseys']) == 18
           assert all((base/'teams'/team/'README.md').is_file() for team in cfg['teamGuernseys'])
-          assert not list((base/'teams').glob('*/scene*-start.png')), 'No final team PNGs yet; do not use placeholders'
+          collingwood = sorted((base/'teams'/'collingwood').glob('scene*-start.png'))
+          assert [p.name for p in collingwood] == [f'scene{i}-start.png' for i in range(1, 4)]
+          assert not any((base/'teams'/team/f'scene{i}-start.png').exists()
+                         for team in cfg['teamGuernseys'] if team != 'collingwood'
+                         for i in range(1, 4))
           assert all(100 <= len(s['identityOnlyInstructions']) <= 5000 for s in cfg['scenes'])
           image=Path('src/image_worker/handler.py').read_text()
           worker=Path('src/image_worker/google_direct.py').read_text()
           assert 'team_master_keys(config, item["team"])' in image
-          assert 'teamArtworkReady' in image and 'teamMasterKeys' in worker
-          assert 'if team_artwork:' in image and 'identityOnlyPrompt' in image
+          assert 'teamMasterKeys' in image and 'teamMasterKeys' in worker
+          assert 'identityOnlyPrompt' in image and 'identityOnlyInstructions' in image
+          assert 'scene["masterKey"]' not in worker
+          assert 'teamArtworkReady' not in image+worker
+          assert 'config["sharedPrompt"]' not in image
+          assert 'team_master_keys' in image and 'Team master artwork incomplete' in image
+          assert 'sharedPrompt' not in cfg
+          assert all('promptInstructions' not in scene and 'masterKey' not in scene
+                     for scene in cfg['scenes'])
           print('TEAM_LOOKUP_OFFLINE_CHECKS_PASS')
           PY
       - name: Install AWS SDK
