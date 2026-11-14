@@ -7,7 +7,7 @@
       "operation": "image_edit",
       "model": "gemini-3-pro-image",
       "enabled": true,
-      "identityOnlyInstructions": "SCENE 1 — FOREGROUND RUN-UP. Edit ONLY the main ball-carrier's visible head/face/hair and necessary matching exposed skin. Keep his exact forward-facing head angle, naturally focused closed-mouth expression and original head size. Preserve the ENTIRE existing running action, ball in both hands, body position and defender to the LEFT with reaching arm. Do not move, replace or alter the defender, ball, arms, legs, uniform, shorts, stadium or background. Never add goalposts. Everything outside the permitted head and necessary skin adjustment remains exactly as Image 1."
+      "identityOnlyInstructions": "SCENE 1 — FOREGROUND RUN-UP. If Image 1 has a white, grey or blank head-shaped mask, treat it as an edit placeholder. Completely replace that area with the customer selfie person's recognisable face, true hairline, hair and head, without leaving placeholder pixels; preserve the original head placement, neck boundary and all surrounding pixels. Edit ONLY the main ball-carrier's visible head/face/hair and necessary matching exposed skin. Keep his exact forward-facing head angle, naturally focused closed-mouth expression and original head size. Preserve the ENTIRE existing running action, ball in both hands, body position and defender to the LEFT with reaching arm. Do not move, replace or alter the defender, ball, arms, legs, uniform, shorts, stadium or background. Never add goalposts. Everything outside the permitted head and necessary skin adjustment remains exactly as Image 1."
     },
     {
       "id": "scene2",
