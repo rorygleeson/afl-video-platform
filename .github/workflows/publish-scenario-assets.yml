@@ -119,7 +119,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bucket="afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+          # Publish to the exact scenario-assets bucket configured on the LIVE
+          # image worker, not a hard-coded bootstrap artifact bucket.
+          bucket="$(aws cloudformation describe-stacks \
+            --stack-name afl-app-dev-backend --region ap-southeast-2 \
+            --query "Stacks[0].Parameters[?ParameterKey=='ScenarioAssetsBucket'].ParameterValue | [0]" \
+            --output text)"
+          [ -n "$bucket" ] && [ "$bucket" != "None" ] || { echo "::error::Live scenario-assets bucket unavailable"; exit 1; }
+          echo "Publishing to live image-worker ScenarioAssetsBucket: $bucket"
           base="scenarios/afl-grand-final-winning-kick/v1"
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
@@ -141,7 +148,10 @@ jobs:
             # Always republish the current validated image config: an earlier
             # failed workflow might have prevented its prior S3 upload.
             [ "$1" = "config.json" ] ||
-              [ "$1" = "teams/collingwood/scene3-start-masked.png" ] ||
+              [ "$1" = "teams/collingwood/scene1-start.png" ] ||
+              [ "$1" = "teams/collingwood/scene2-start.png" ] ||
+              [ "$1" = "teams/collingwood/scene3-start.png" ] ||
+            [ "$1" = "teams/collingwood/scene3-start-masked.png" ] ||
               [ "$GITHUB_EVENT_NAME" != "push" ] ||
               grep -Fxq "$base/$1" "$tmp/changed"
           }
@@ -171,6 +181,11 @@ jobs:
 
           # The Collingwood masked experimental master was committed before
           # this workflow supported its filename. Publish and verify it now.
+          # One-time repair: ensure the complete Collingwood set is present in
+          # the live worker bucket. Unrelated teams/images are untouched.
+          for scene in scene1 scene2 scene3; do
+            upload_and_verify "teams/collingwood/${scene}-start.png" "image/png"
+          done
           upload_and_verify "teams/collingwood/scene3-start-masked.png" "image/png"
 
           # Publish only changed team master PNGs, preserving already uploaded
