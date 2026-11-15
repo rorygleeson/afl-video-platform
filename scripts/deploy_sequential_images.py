@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Safely switch image Step Functions Map from parallel to sequential.
+"""Safely restore image Step Functions Map from sequential to 3 concurrent scenes.
 
-Only change MaxConcurrency 3->1 in the *deployed* backend CloudFormation
+Only change MaxConcurrency 1->3 in the *deployed* backend CloudFormation
 template. Keep worker, prompts, retries, failure transitions and front end.
 Refuse active executions, resource changes other than ImageStateMachine, or
 unrelated live definition differences. No Google/image/video requests.
@@ -19,13 +19,13 @@ STACK = "afl-app-dev-backend"
 EXEC_ROLE = f"arn:aws:iam::{ACCOUNT}:role/afl-video-cfn-execution-role"
 
 
-def sequential_definition(before):
+def concurrent_definition(before):
     updated = json.loads(json.dumps(before))
     states = updated["States"]
     assert states["Prepare"]["Next"] == "ParallelScenes", "Unexpected image entry"
     image_map = states["ParallelScenes"]
     assert image_map["Type"] == "Map"
-    assert image_map["MaxConcurrency"] == 3, "Already sequential or unexpected concurrency"
+    assert image_map["MaxConcurrency"] == 1, "Already concurrent or unexpected concurrency"
     assert image_map["ItemsPath"] == "$.prepared.Payload.scenes"
     assert image_map["Next"] == "Finalize"
     inner = image_map["ItemProcessor"]["States"]
@@ -34,7 +34,7 @@ def sequential_definition(before):
     assert inner["WaitForGoogleCapacity"]["Next"] == "Generate"
     assert inner["Generate"]["Catch"][0]["Next"] == "MarkSceneFailed"
     assert inner["MarkSceneFailed"]["Type"] == "Task"
-    image_map["MaxConcurrency"] = 1
+    image_map["MaxConcurrency"] = 3
     return updated
 
 
@@ -57,10 +57,10 @@ def main():
     live = sf.describe_state_machine(stateMachineArn=machine_arn)
     assert live["status"] == "ACTIVE"
     before = json.loads(live["definition"])
-    if before["States"]["ParallelScenes"]["MaxConcurrency"] == 1:
-        print("ALREADY_SEQUENTIAL: image workflow already has MaxConcurrency 1", flush=True)
+    if before["States"]["ParallelScenes"]["MaxConcurrency"] == 3:
+        print("ALREADY_CONCURRENT: image workflow already has MaxConcurrency 3", flush=True)
         return
-    expected = sequential_definition(before)
+    expected = concurrent_definition(before)
     running = sf.list_executions(
         stateMachineArn=machine_arn, statusFilter="RUNNING", maxResults=100
     )["executions"]
@@ -69,17 +69,17 @@ def main():
 
     original = cf.get_template(StackName=STACK, TemplateStage="Original")["TemplateBody"]
     assert isinstance(original, str), "Unexpected deployed template format"
-    matches = list(re.finditer(r"(?m)^(\s*)MaxConcurrency:\s*3\s*$", original))
+    matches = list(re.finditer(r"(?m)^(\s*)MaxConcurrency:\s*1\s*$", original))
     assert len(matches) == 1, "Expected exactly one image concurrency setting"
     updated = original[:matches[0].start()] + matches[0].group(1) + (
-        "MaxConcurrency: 1"
+        "MaxConcurrency: 3"
     ) + original[matches[0].end():]
-    assert updated.replace("MaxConcurrency: 1", "MaxConcurrency: 3", 1) == original
+    assert updated.replace("MaxConcurrency: 3", "MaxConcurrency: 1", 1) == original
     repo = open("infrastructure/app/backend.yaml", encoding="utf-8").read()
-    assert "MaxConcurrency: 1" in repo and "MaxConcurrency: 3" not in repo
-    print("SINGLE_TEMPLATE_SETTING_CHANGED: MaxConcurrency 3 -> 1", flush=True)
+    assert "MaxConcurrency: 3" in repo and "MaxConcurrency: 1" not in repo
+    print("SINGLE_TEMPLATE_SETTING_CHANGED: MaxConcurrency 1 -> 3", flush=True)
 
-    change_name = "sequential-images-" + os.environ["GITHUB_RUN_ID"]
+    change_name = "parallel-images-" + os.environ["GITHUB_RUN_ID"]
     created = False
     executed = False
     try:
@@ -89,7 +89,7 @@ def main():
             Parameters=[{"ParameterKey": p["ParameterKey"], "UsePreviousValue": True}
                         for p in stack["Parameters"]],
             Capabilities=["CAPABILITY_NAMED_IAM"],
-            Description="Only image generation map concurrency 3 -> 1; preserve retries",
+            Description="Only image generation map concurrency 1 -> 3; preserve retries",
         )
         created = True
         cf.get_waiter("change_set_create_complete").wait(
@@ -122,7 +122,7 @@ def main():
         )["executions"], "New image execution running; abort deployment"
         cf.execute_change_set(StackName=STACK, ChangeSetName=change_name)
         executed = True
-        print("CFN_SEQUENTIAL_IMAGES_UPDATE_SUBMITTED",flush=True)
+        print("CFN_CONCURRENT_IMAGES_UPDATE_SUBMITTED",flush=True)
         cf.get_waiter("stack_update_complete").wait(
             StackName=STACK, WaiterConfig={"Delay":10,"MaxAttempts":90}
         )
@@ -138,7 +138,7 @@ def main():
         )
         assert after["roleArn"] == live["roleArn"]
         assert after["status"] == "ACTIVE"
-        print("SEQUENTIAL_IMAGE_DEPLOYMENT_VERIFIED: concurrency=1; retries unchanged",
+        print("CONCURRENT_IMAGE_DEPLOYMENT_VERIFIED: concurrency=3; retries unchanged",
               flush=True)
         print("NO_GOOGLE_REQUESTS_MADE",flush=True)
     finally:
