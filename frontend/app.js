@@ -6,6 +6,8 @@ const input = document.getElementById('selfie');
   const apiConnectionStatus = document.getElementById('apiConnectionStatus');
   const testGoogle = document.getElementById('testGoogle');
   const googleStatus = document.getElementById('googleStatus');
+  const overallJobStatus = document.getElementById('overallJobStatus');
+  const developerDiagnostics = document.getElementById('developerDiagnostics');
   const refresh = document.getElementById('refresh');
   const status = document.getElementById('status');
   const results = document.getElementById('results');
@@ -19,12 +21,15 @@ const input = document.getElementById('selfie');
   let uploadSubmissionUncertain = false;
   const POLL_INTERVAL_MS = 5000;
   const POLL_ERROR_BACKOFF_MS = 15000;
+  const OVERALL_STATUS_POLL_MS = 2000;
   const TERMINAL_STATUSES = new Set(['COMPLETED', 'PARTIAL_SUCCESS', 'FAILED']);
   let pollTimer = null;
   let pollGeneration = 0;
   let refreshInFlight = false;
   let pollingEnabled = false;
   let pollErrors = 0;
+  let overallStatusTimer = null;
+  let overallStatusInFlight = false;
   let videoTimer = null;
   let videoBusy = false;
   let videoRefreshRequested = false;
@@ -193,6 +198,61 @@ const input = document.getElementById('selfie');
     pollStatus.textContent = message;
   }
 
+  // Developer-only overall status polling. This GET only reads the existing
+  // DynamoDB-backed progress projection; it must never initiate generation.
+  function stopOverallStatusPoll() {
+    if (overallStatusTimer !== null) {
+      clearTimeout(overallStatusTimer);
+      overallStatusTimer = null;
+    }
+  }
+
+  function scheduleOverallStatusPoll(delay = OVERALL_STATUS_POLL_MS) {
+    stopOverallStatusPoll();
+    if (!currentJobId || !developerDiagnostics.open || document.hidden) return;
+    overallStatusTimer = setTimeout(() => {
+      overallStatusTimer = null;
+      void refreshOverallStatus();
+    }, delay);
+  }
+
+  async function refreshOverallStatus() {
+    if (!currentJobId || !developerDiagnostics.open || document.hidden ||
+        overallStatusInFlight) return;
+    const jobId = currentJobId;
+    overallStatusInFlight = true;
+    try {
+      const response = await api('/jobs/' + jobId);
+      if (jobId !== currentJobId || !developerDiagnostics.open || document.hidden) return;
+      const progress = response.job?.progress;
+      if (progress?.currentStage && progress?.stageStatus) {
+        overallJobStatus.textContent = 'Overall job: ' + progress.currentStage +
+          ' — ' + progress.stageStatus +
+          ' | Images ' + progress.imagesCompleted + '/' + progress.imagesTotal +
+          ' | Videos ' + progress.videosCompleted + '/' + progress.videosTotal;
+      } else {
+        overallJobStatus.textContent = 'Overall job: Status not available from API yet.';
+      }
+    } catch (error) {
+      if (jobId === currentJobId && developerDiagnostics.open && !document.hidden) {
+        overallJobStatus.textContent = 'Overall job: Status check unavailable (' +
+          error.message + ').';
+      }
+    } finally {
+      overallStatusInFlight = false;
+      if (jobId === currentJobId) scheduleOverallStatusPoll();
+    }
+  }
+
+  developerDiagnostics.addEventListener('toggle', () => {
+    stopOverallStatusPoll();
+    if (developerDiagnostics.open) {
+      overallJobStatus.textContent = currentJobId
+        ? 'Overall job: Checking…' : 'Overall job: No job started.';
+      void refreshOverallStatus();
+    }
+  });
+
   function stopVideoPoll() {
     if (videoTimer !== null) {
       clearTimeout(videoTimer);
@@ -201,6 +261,8 @@ const input = document.getElementById('selfie');
   }
 
   function resetVideoUi() {
+    stopOverallStatusPoll();
+    overallJobStatus.textContent = 'Overall job: No job started.';
     stopVideoPoll();
     if (videoProgressTimer !== null) {
       clearInterval(videoProgressTimer);
@@ -596,6 +658,8 @@ const input = document.getElementById('selfie');
   }
 
   document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopOverallStatusPoll();
+    else if (developerDiagnostics.open) void refreshOverallStatus();
     syncVideoProgress();
     syncAssemblyProgress();
     if (document.hidden && videoTimer !== null) {
@@ -1189,6 +1253,7 @@ const input = document.getElementById('selfie');
       stopPolling();
       resetVideoUi();
       currentJobId = created.job.jobId;
+      if (developerDiagnostics.open) void refreshOverallStatus();
       results.replaceChildren();
       document.getElementById('referenceImagesHeading').hidden = false;
       generate.hidden = true;
