@@ -48,6 +48,10 @@
 
 **Important:** API source still emits `parallelScenes: true` in `GET /scenarios`, despite source image workflow Map concurrency one. `start_images` also has obsolete parallel/Replicate wording. These are documentation/API accuracy defects, not proof of the deployed path.
 
+## Post-baseline change (15 November 2026)
+
+The original snapshot above accurately records the earlier source state at capture time. **Later main commit `572942a2` changed the image Map to `MaxConcurrency: 3`; commit `5ec4cb8f` records the guarded three-branch deployment.** The current source (`infrastructure/app/backend.yaml`) uses `MaxConcurrency: 3`. `GET /scenarios` returning `parallelScenes:true` is now aligned with this later source configuration. The earlier snapshot's `MaxConcurrency:1` and parallel-mismatch observations are historical, **not current**. Google image retry transitions remain independent per scene. Live resource comparison remains unverified.
+
 ## Additional checks required to complete Task 1.1
 
 - [ ] Obtain a **fresh, non-deploying** OIDC-authorised release baseline capture, with workflow result, commit SHA, collection time and restricted artifact reference. Do not publish raw credentials, customer data or potentially sensitive CloudFormation parameters.
