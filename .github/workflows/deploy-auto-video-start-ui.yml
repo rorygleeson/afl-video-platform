@@ -1,5 +1,5 @@
 name: Deploy video Preparing status text (frontend only)
-# Frontend-only release: Update selfie replacement and lock after job start; no backend changes.
+# Frontend-only release: renew signed S3 URL on scene replay; no backend or paid calls.
 # Includes refresh/reopen and no-duplicate-submission regression tests.
 # Regression fixture covers selfie reselect and AWS-owned video/stitching UI progression.
 # Validate cleared image src and publish only the three UI files.
@@ -32,6 +32,7 @@ jobs:
           grep -q '#personalMessage{display:block;box-sizing:border-box;width:100%' frontend/styles.css
           grep -q 'afl-video-active-job-v1' frontend/app.js
           grep -q 'id="startNewJob"' frontend/index.html
+          grep -q 'replaySceneWithFreshUrl' frontend/app.js
           node --test tests/test_frontend_poll.cjs
           # Job creation still records consent, but video/stitching POSTs are AWS-owned.
           grep -q 'confirmPaidSequence: true' frontend/app.js
