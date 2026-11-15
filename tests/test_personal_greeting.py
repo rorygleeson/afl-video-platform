@@ -39,35 +39,40 @@ class GreetingTests(unittest.TestCase):
         self.assertIn('message = item.get("personalMessage", "")', source)
         self.assertIn('if message:', source)
         self.assertIn('stop_duration=2', source)
-        self.assertIn('textfile=', source)
+        self.assertIn('from PIL import Image, ImageDraw, ImageFont', source)
         self.assertIn('set_status(job_id, "PROCESSING", "COMPLETED"', source)
         self.assertIn('"-c", "copy"', source)
         self.assertNotIn('generativelanguage.googleapis.com', source)
 
-    def test_worker_escapes_untrusted_greeting_as_separate_textfile(self):
+    def test_worker_renders_png_overlay_without_ffmpeg_text_injection(self):
         class AssemblyError(Exception):
             pass
         calls = []
         with tempfile.TemporaryDirectory() as directory:
-            font = Path(directory) / "font.ttf"
-            font.write_bytes(b"test font")
+            font = Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+            self.assertTrue(font.exists())
             globals_ = {
                 "Path": Path, "textwrap": textwrap, "AssemblyError": AssemblyError,
                 "GREETING_FONT": str(font), "FFMPEG": "ffmpeg",
                 "run": lambda *args, **kwargs: calls.append(args)
             }
             render = isolated_function(WORKER, "render_personal_message", globals_)
-            message = "Thanks, Dad: it's your day! 100%\\Happy Birthday"
+            message = "Happy Birthday Dad, from Mary"
             render(Path(directory)/"original.mp4",Path(directory)/"output.mp4",
                    message, 17.0,Path(directory))
             args = calls[0]
-            self.assertEqual(args[args.index("-vf")+1].count("tpad="),1)
-            self.assertIn("stop_duration=2",args[args.index("-vf")+1])
-            self.assertNotIn(message,args[args.index("-vf")+1])
-            self.assertEqual( " ".join((Path(directory)/"greeting.txt").read_text().splitlines()),
-                             message)
+            vf = args[args.index("-filter_complex") + 1]
+            self.assertIn("stop_duration=2", vf)
+            self.assertIn("overlay=0:0", vf)
+            self.assertNotIn(message, vf)
+            self.assertTrue((Path(directory)/"greeting.png").is_file())
+            from PIL import Image
+            with Image.open(Path(directory)/"greeting.png") as card:
+                self.assertEqual(card.size, (720,1280))
+                self.assertGreater(card.getpixel((30,1100))[3], 0)
             with self.assertRaises(AssemblyError):
                 render("a","b","x"*81,3,Path(directory))
+
 
     def test_optional_frontend_field(self):
         html=HTML.read_text()
