@@ -180,5 +180,42 @@ class ProgressTests(unittest.TestCase):
         self.check(job, "VIDEO_1", "REVIEW_REQUIRED", 3, 0)
 
 
+class SelfieReadOnlyTests(unittest.TestCase):
+    def test_selfie_url_uses_existing_job_upload_key_and_short_expiry(self):
+        fn = next(node for node in source.body
+                  if isinstance(node, ast.FunctionDef) and node.name == "selfie_for_job")
+        class FakeS3:
+            def __init__(self):
+                self.calls = []
+            def generate_presigned_url(self, op, **kwargs):
+                self.calls.append((op, kwargs))
+                return "https://example.invalid/temporary-selfie"
+        s3 = FakeS3()
+        responses = []
+        def respond(status, payload):
+            responses.append((status, payload))
+            return status, payload
+        scope = {"UPLOAD_KEY_RE": __import__("re").compile(
+            r"^uploads/[0-9a-f]{32}\\.(jpg|png|webp)$"),
+            "UPLOAD_BUCKET": "private-uploads",
+            "S3": s3,
+            "response": respond}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(SOURCE), "exec"), scope)
+        job = {"jobId": "a"*32, "uploadKey": "uploads/"+"b"*32+".jpg"}
+        before = repr(job)
+        code, result = scope["selfie_for_job"](job)
+        self.assertEqual(code, 200)
+        self.assertEqual(result["jobId"], job["jobId"])
+        self.assertEqual(result["expiresInSeconds"], 300)
+        self.assertEqual(s3.calls[0][0], "get_object")
+        self.assertEqual(s3.calls[0][1]["ExpiresIn"], 300)
+        self.assertEqual(s3.calls[0][1]["Params"]["Key"], job["uploadKey"])
+        self.assertEqual(repr(job), before)
+        code, result = scope["selfie_for_job"]({"jobId": "a"*32,
+                                                  "uploadKey": "videos/private.mp4"})
+        self.assertEqual(code, 404)
+        self.assertEqual(len(s3.calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
