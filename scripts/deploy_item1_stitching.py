@@ -120,7 +120,10 @@ def validate(changes, allowed, required, kind):
                 if detail.get("Evaluation") == "Static":
                     assert target.get("Name") in ("DefinitionString", "Definition")
                 else:
-                    assert detail.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
+                    if detail.get("ChangeSource") == "DirectModification":
+                        assert target.get("Name") in ("DefinitionString", "Definition")
+                    else:
+                        assert detail.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
             if detail.get("Evaluation") == "Static" and c["LogicalResourceId"] in required:
                 if kind in ("api", "assembly-worker"):
                     assert target.get("Name") == "Code", f"{kind} non-code setting change"
