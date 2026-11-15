@@ -64,7 +64,7 @@ class GreetingTests(unittest.TestCase):
             self.assertEqual(args[args.index("-vf")+1].count("tpad="),1)
             self.assertIn("stop_duration=2",args[args.index("-vf")+1])
             self.assertNotIn(message,args[args.index("-vf")+1])
-            self.assertEqual((Path(directory)/"greeting.txt").read_text().replace("\\n",""),
+            self.assertEqual( " ".join((Path(directory)/"greeting.txt").read_text().splitlines()),
                              message)
             with self.assertRaises(AssemblyError):
                 render("a","b","x"*81,3,Path(directory))
