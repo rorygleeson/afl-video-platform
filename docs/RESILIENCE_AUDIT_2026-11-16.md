@@ -50,3 +50,13 @@ On branch `resilience/assembly-handoff-recovery`, API code checks whether a `QUE
 ### R1 test evidence — GitHub Actions run 43772268421
 
 The six new offline behavioural tests in `tests/test_assembly_handoff_behaviour.py` **all passed** in CI. They cover existing execution, missing execution, AccessDenied/unknown DescribeExecution, ExecutionAlreadyExists race, already-completed assembly, and missing source scene. The broader `Validate infrastructure` workflow nevertheless **FAILED**: pre-existing/stale tests expect removed `sharedPrompt`/`promptInstructions` configuration fields, and `test_assembly_worker.py` expects obsolete frontend text (`Download Final Video MP4`). This is not a clean suite, and a baseline-versus-branch comparison is still needed. Evidence: https://github.com/rorygleeson/afl-video-platform/actions/runs/43772268421. **No AWS deployment**; do not mark R1 completed.
+
+### R1 additional staged implementation — 2026-11-16 (still NOT deployed)
+
+- `infrastructure/app/assembly.yaml`: after failed first Stitch task, wait 15 seconds and allow **one** additional invocation marked `retry:true`. No Google calls. On second failure, Step Functions fails explicitly with `ASSEMBLY_NEEDS_REVIEW`.
+- `src/assembly_worker/handler.py`: only a worker-persisted **FAILED** record with `retryCount=0` can transition conditionally to `PROCESSING` for that extra attempt; then persist `retryCount=1`. If the first invocation timed out while still PROCESSING, retry is refused and flagged for review, avoiding concurrent writers and final.mp4 overwrites.
+- `src/handoff_watchdog/handler.py` + internal API: after two minutes in assembly QUEUED, the existing per-job watchdog asks the API to reconcile the stable `final-{jobId}` Step Functions execution. It does not start Google requests, does not write DynamoDB, and stops at the existing two-hour cap. A missing initial watchdog event remains an **Item 2** gap.
+- `src/api/handler.py`: terminal FAILED/TIMED_OUT/ABORTED final executions report `ASSEMBLY_WORKFLOW_NEEDS_REVIEW`; no new Step Functions name is launched in that state.
+- New tests cover the safe handoff cases, watchdog QUEUED waiting/reconciliation and bounded FFmpeg-only retry policy. **Full CI and live integration still not validated; this is a staged change only.**
+
+Residual: unknown Lambda timeout stays review-required rather than automatically retried. True operator-guided recovery for a confirmed dead timed-out attempt may require a separate, token-fenced execution and distinct attempt output key; it must not be rushed into the current single-name system. Also verify all existing/source regression tests, IAM configuration, and exact live stacks before deploying.
