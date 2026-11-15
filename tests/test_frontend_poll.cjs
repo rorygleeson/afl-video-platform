@@ -176,6 +176,17 @@ function setup(options = {}) {
     if (url === 'https://s3.example.com/final.mp4') return {
       ok: true, async blob() { return new Blob(['MP4 fixture'], {type: 'video/mp4'}); },
     };
+    if (/\/jobs\/[a-f0-9]{32}\/videos\/scene[123]$/.test(url) && !opts.method) {
+      const scene = url.match(/scene[123]$/)[0];
+      const old = options.realVideos?.[scene] || {};
+      const response = options.failReplayFetch
+        ? {ok:false,status:503,async json(){return {error:'Temporary status error'};}}
+        : {ok:true,async json(){return {video:{
+            ...old,
+            url: 'https://s3.example.com/fresh-' + scene + '.mp4'
+          }};}};
+      return response;
+    }
     if (url.endsWith('/videos')) return {
       ok: true, async json() { return {
         videoGenerationMode: 'MOCK_ONLY',
@@ -1107,6 +1118,9 @@ test('only one of three scene previews plays; new autoplay pauses previous previ
   await h.flush();
   assert.equal(three.pauseCalls,1,'Manual replay pauses Scene 3');
   assert.equal(one.playCalls,2);
+  assert.equal(one.src,'https://s3.example.com/fresh-scene1.mp4');
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/videos/scene1') && !c.opts.method).length,1);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST' && c.url.includes('/videos/scene1')).length,0);
   assert.equal(one.muted,true);
   assert.equal(one.controls,false);
   assert.match(css,/\.scene-preview-play/);
@@ -1417,4 +1431,42 @@ test('restoring legacy job without greeting keeps field blank rather than placeh
   await h.flush();
   assert.equal(h.els.personalMessage.value, '');
   assert.equal(h.els.personalMessageCount.textContent, '0');
+});
+
+test('expired preview replay obtains a fresh GET URL and does not reset other playing clips via polling', async () => {
+  const h=setup({realVideos:{
+    scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/expired.mp4'},
+    scene2:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene2.mp4'}
+  }});
+  await h.els.generate.listeners.click();await h.flush();
+  await h.nextTimer();await h.nextTimer();await h.flush();
+  const player=h.els.videoPlayer1;
+  const video=player.querySelector('video');
+  const btn=player.querySelector('button');
+  const initialCount=video.playCalls;
+  await btn.listeners.click(); await h.flush();
+  assert.equal(video.src,'https://s3.example.com/fresh-scene1.mp4');
+  assert.equal(video.playCalls,initialCount+1);
+  assert.equal(player.dataset.url,video.src);
+  await h.els.refresh.listeners.click();await h.flush();
+  assert.equal(player.querySelector('video'),video,'status polling must not replace active media');
+  assert.equal(video.src,'https://s3.example.com/fresh-scene1.mp4');
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST' &&
+    /real-videos|\/generate$/.test(c.url)).length,1,
+    'only the originally requested image generation may be submitted');
+});
+test('failed playback refresh leaves replay visible without any paid retry', async () => {
+  const h=setup({failReplayFetch:true,realVideos:{
+    scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/expired.mp4'}
+  }});
+  await h.els.generate.listeners.click();await h.flush();
+  await h.nextTimer();await h.nextTimer();await h.flush();
+  const btn=h.els.videoPlayer1.querySelector('button');
+  btn.hidden=false;
+  const before=h.calls.filter(c=>c.opts.method==='POST').length;
+  await btn.listeners.click();await h.flush();
+  assert.equal(btn.hidden,false);
+  assert.equal(btn.disabled,false);
+  assert.match(h.els.videoTestMessage.textContent,/Tap Play to try again/);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,before);
 });
