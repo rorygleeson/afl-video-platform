@@ -348,7 +348,7 @@ def main():
     js=Path("frontend/app.js").read_bytes()
     html=Path("frontend/index.html").read_bytes()
     assert b"confirmPaidSequence" in js and b"submitNextSequentialScene" not in js
-    assert b"in sequence" in html.lower() and b"retryVideoScene1" in html
+    assert b'id="generateAllVideos"' in html and b"retryVideoScene1" in html
     assert b"def video_sequence_event(" in Path("src/api/handler.py").read_bytes()
     assert all((f"retryVideoScene{n}".encode() in html) for n in (1,2,3))
     for key,data,ctype in (
