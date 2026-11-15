@@ -81,3 +81,38 @@ jobs:
               print("RECENT_LOG_ERRORS",group,len(events),json.dumps(events[-18:]),flush=True)
             except Exception as e:print("LOG_READ_ERROR",group,type(e).__name__,str(e)[:220],flush=True)
           PY
+
+      - name: Inspect recent image Step Functions failure types without customer data (read only)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3,datetime,json
+          from botocore.exceptions import ClientError
+          sf=boto3.client('stepfunctions',region_name='ap-southeast-2')
+          arn='arn:aws:states:ap-southeast-2:134387458447:stateMachine:afl-app-dev-scene1-pilot'
+          for status in ('FAILED','SUCCEEDED','RUNNING'):
+            try:
+              xs=sf.list_executions(stateMachineArn=arn,statusFilter=status,maxResults=10)['executions']
+              print('RECENT_EXECUTIONS',status,[(x['name'],x['startDate'].isoformat(),x.get('stopDate') and x['stopDate'].isoformat()) for x in xs[:6]],flush=True)
+              for x in xs[:3]:
+                try:
+                  events=sf.get_execution_history(executionArn=x['executionArn'],maxResults=1000,reverseOrder=True,includeExecutionData=False)['events']
+                  types=[]
+                  for e in events[:40]:
+                    info={'type':e['type']}
+                    for detailkey in ('taskFailedEventDetails','lambdaFunctionFailedEventDetails','executionFailedEventDetails','mapIterationFailedEventDetails','taskTimedOutEventDetails','executionTimedOutEventDetails','stateEnteredEventDetails'):
+                      d=e.get(detailkey)
+                      if d:
+                        info['state']=d.get('name')
+                        info['error']=str(d.get('error',''))[:110]
+                        cause=str(d.get('cause',''))
+                        if cause:
+                          info['causeCategory']=('AccessDenied' if 'AccessDenied' in cause else 'RuntimeError' if 'RuntimeError' in cause else 'LambdaException' if 'Lambda' in cause else 'Other')
+                        break
+                    types.append(info)
+                  print('EXECUTION_EVENTS',x['name'],json.dumps(types[:28]),flush=True)
+                except ClientError as ex:
+                  print('EXECUTION_HISTORY_ACCESS_ERROR',x['name'],ex.response['Error']['Code'],flush=True)
+            except ClientError as ex:
+              print('EXECUTION_LIST_ACCESS_ERROR',status,ex.response['Error']['Code'],flush=True)
+          PY
