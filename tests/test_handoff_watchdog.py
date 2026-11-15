@@ -147,6 +147,27 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(result["status"],"SKIP_UNAUTHORISED")
         self.ddb.scan.assert_not_called()
 
+    def test_queued_assembly_reconciliation_uses_existing_api_only(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"QUEUED",
+                              "createdAt":(NOW-timedelta(minutes=4)).isoformat()}
+        self.api.invoke.return_value={"Payload":io.BytesIO(b'{"statusCode":202,"body":"{}"}')}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result["status"],"ASSEMBLY_RECONCILED")
+        self.assertTrue(result["continue"])
+        payload=self.api.invoke.call_args.kwargs["Payload"]
+        self.assertEqual(__import__("json").loads(payload)["op"],"reconcile_assembly")
+        self.assertEqual(__import__("json").loads(payload)["jobId"],ID)
+        self.states.start_execution.assert_not_called()
+        self.ddb.update_item.assert_not_called()
+
+    def test_recent_queued_assembly_is_not_restarted(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"QUEUED","createdAt":NOW.isoformat()}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result["status"],"WAIT_ASSEMBLY_SETTLEMENT")
+        self.api.invoke.assert_not_called()
+
     def test_ambiguous_video_check_stops_without_retry(self):
         self.ddb.get_item.return_value={"Item":self.job}
         self.job["realVideos"]={"scene1":{"status":"SUBMISSION_UNKNOWN"}}
