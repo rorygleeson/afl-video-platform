@@ -976,7 +976,8 @@ def video_sequence_event(event):
         return {"status": "IGNORED"}
     job_id, scene_id = match.groups()
     job = get_job(job_id)
-    if not job or job.get("videoSequence", {}).get("status") != "APPROVED" or job.get("assembly"):
+    if (not job or job.get("videoSequence", {}).get("status") != "APPROVED"
+            or (scene_id != "scene3" and job.get("assembly"))):
         return {"status": "IGNORED_NO_SEQUENCE"}
     approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
     if approval.get("executionName") != name:
