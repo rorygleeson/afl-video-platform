@@ -72,6 +72,9 @@
 
 ## Change log
 
+- 2026-11-15 — Updated [ARCHITECTURE.md](ARCHITECTURE.md) to current sequential image Map, direct Google model, server-side per-scene video orchestration, frontend-triggered assembly, detailed state/data flow (commit `e0829cd7`). Task 1.2 source documentation drafted; live comparison pending.
+- 2026-11-15 — Created [INFRASTRUCTURE.md](INFRASTRUCTURE.md) with CloudFormation stacks, five Lambda configurations and env variable names, state diagrams, DDB record fields, S3 lifecycle, API Gateway, CloudFront, EventBridge and release/monitoring gaps (commit `139d6ec5`). Task 1.6 source documentation drafted; live and legacy mock stack verification pending.
+
 - 2026-11-15 — Replaced [API_ENDPOINTS.md](API_ENDPOINTS.md) with source-verified 19-route inventory, request/response samples, auth, integrations, async and idempotency notes (commit `dcbe8d5d`). Step 1.3 documentation drafted; live/API contract tests remain.
 - 2026-11-15 — Created [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md) with per-stage source-configured timeouts, retry/backoff, AWS worker and SFN matrix, failure handling and unexecuted test list (commit `e98748f6`). Step 1.5 drafted; published Google guidance and live cross-check remain.
 
