@@ -20,6 +20,115 @@ const input = document.getElementById('selfie');
   let previewUrl, currentJobId, currentPhase = 'Initialising';
   let uploadInProgress = false;
   let uploadSubmissionUncertain = false;
+  // Keep only the non-secret job reference across browser restarts.
+  const SAVED_JOB_KEY = 'afl-video-active-job-v1';
+  const SESSION_API_KEY = 'afl-video-dev-key-v1';
+  const newJobButton = document.getElementById('startNewJob');
+  const resumeNotice = document.getElementById('resumeNotice');
+  const JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
+  function savedJobId() {
+    try {
+      const id = window.localStorage.getItem(SAVED_JOB_KEY);
+      return JOB_ID_PATTERN.test(id || '') ? id : null;
+    } catch { return null; }
+  }
+  function rememberJob(id) {
+    try { window.localStorage.setItem(SAVED_JOB_KEY, id); } catch { /* private mode */ }
+  }
+  function forgetJob() {
+    try { window.localStorage.removeItem(SAVED_JOB_KEY); } catch { /* private mode */ }
+  }
+  function rememberSessionKey() {
+    try { window.sessionStorage.setItem(SESSION_API_KEY,
+      document.getElementById('key').value.trim()); } catch { /* disabled storage */ }
+  }
+  function lockJobFields(locked) {
+    for (const id of ['scenario','team','firstName','lastName','personalMessage','selfie']) {
+      document.getElementById(id).disabled = locked;
+    }
+    removeSelfie.disabled = locked;
+  }
+  function selectExistingJob(id, job = {}) {
+    stopPolling();
+    resetVideoUi();
+    currentJobId = id;
+    rememberJob(id);
+    lockJobFields(true);
+    if (job.scenarioId) document.getElementById('scenario').value = job.scenarioId;
+    if (job.team) document.getElementById('team').value = job.team;
+    if (job.firstName) document.getElementById('firstName').value = job.firstName;
+    if (job.lastName) document.getElementById('lastName').value = job.lastName;
+    // The greeting remains in the existing AWS job, never duplicated locally.
+    document.getElementById('personalMessage').value = '';
+    document.getElementById('personalMessageCount').textContent = '0';
+    input.value = '';
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = undefined;
+    preview.removeAttribute('src');
+    preview.hidden = true;
+    removeSelfie.hidden = true;
+    results.replaceChildren();
+    document.getElementById('referenceImagesHeading').hidden = false;
+    generate.hidden = true;
+    generate.disabled = true;
+    refresh.hidden = true;
+    newJobButton.hidden = false;
+    videoTestSection.hidden = true;
+  }
+  async function restoreJob() {
+    const id = savedJobId();
+    if (!id || currentJobId || uploadInProgress) return;
+    if (!document.getElementById('key').value.trim()) {
+      resumeNotice.hidden = false;
+      resumeNotice.textContent = 'Previous video found. Enter your developer API key to resume it.';
+      generate.disabled = true;
+      return;
+    }
+    resumeNotice.hidden = false;
+    resumeNotice.textContent = 'Reconnecting to your existing video…';
+    generate.disabled = true;
+    try {
+      // GET-only recovery; no billable generation or backend writes.
+      const record = await api('/jobs/' + id);
+      if (!record.job || record.job.jobId !== id) throw new Error('Job record did not match.');
+      if (currentJobId || savedJobId() !== id) return;
+      selectExistingJob(id, record.job);
+      resumeNotice.textContent = 'Resumed your previous video. Progress is saved in AWS.';
+      rememberSessionKey();
+      startPolling();
+      void refreshVideos();
+      if (developerDiagnostics.open) void refreshOverallStatus();
+    } catch (error) {
+      if (currentJobId || savedJobId() !== id) return;
+      resumeNotice.textContent = 'Could not reconnect: ' + error.message +
+        '. Check your API key or connection. Your job has not been restarted.';
+      newJobButton.hidden = false;
+      generate.disabled = true;
+    }
+  }
+  newJobButton.addEventListener('click', () => {
+    if (uploadInProgress) return;
+    stopPolling();
+    resetVideoUi();
+    currentJobId = null;
+    forgetJob();
+    lockJobFields(false);
+    newJobButton.hidden = true;
+    resumeNotice.hidden = true;
+    generate.hidden = false;
+    generate.disabled = !apiBaseUrl;
+    document.getElementById('referenceImagesHeading').hidden = true;
+    results.replaceChildren();
+    videoTestSection.hidden = true;
+    input.value = '';
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = undefined;
+    preview.removeAttribute('src');
+    preview.hidden = true;
+    removeSelfie.hidden = true;
+    showStatus('Ready to start a new video. Your previous job remains in AWS.');
+  });
+
   const POLL_INTERVAL_MS = 5000;
   const POLL_ERROR_BACKOFF_MS = 15000;
   const OVERALL_STATUS_POLL_MS = 2000;
@@ -688,6 +797,9 @@ const input = document.getElementById('selfie');
     }
     if (currentJobId) {
       stopPolling();
+      forgetJob();
+      newJobButton.hidden = true;
+      resumeNotice.hidden = true;
       currentJobId = null;
       generate.hidden = false;
       generate.disabled = !apiBaseUrl;
@@ -785,7 +897,16 @@ const input = document.getElementById('selfie');
   // before making any changes to an existing job or uploading the selfie.
   document.getElementById('key').addEventListener('input', () => {
     apiConnectionStatus.textContent = 'API access will be checked when you upload.';
+    if (savedJobId() && !currentJobId) void restoreJob();
   });
+  try {
+    const key = window.sessionStorage.getItem(SESSION_API_KEY);
+    if (key && !document.getElementById('key').value) document.getElementById('key').value = key;
+  } catch { /* Enter the key manually when session storage is unavailable. */ }
+  if (savedJobId()) {
+    generate.disabled = true;
+    void restoreJob();
+  }
 
   testApi.addEventListener('click', async () => {
     testApi.disabled = true;
@@ -1193,6 +1314,10 @@ const input = document.getElementById('selfie');
       stopPolling();
       resetVideoUi();
       currentJobId = created.job.jobId;
+      rememberJob(currentJobId);
+      rememberSessionKey();
+      newJobButton.hidden = false;
+      lockJobFields(true);
       if (developerDiagnostics.open) void refreshOverallStatus();
       results.replaceChildren();
       document.getElementById('referenceImagesHeading').hidden = false;
@@ -1228,8 +1353,10 @@ const input = document.getElementById('selfie');
           : '\nReference image generation was not started.'));
     } finally {
       uploadInProgress = false;
-      for (const field of formFields) field.disabled = false;
-      removeSelfie.disabled = false;
+      if (!currentJobId) {
+        for (const field of formFields) field.disabled = false;
+        removeSelfie.disabled = false;
+      }
       generate.disabled = !apiBaseUrl || jobCreated || !!currentJobId || uploadSubmissionUncertain;
     }
   });
