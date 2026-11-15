@@ -40,7 +40,7 @@ class AssemblyContractTests(unittest.TestCase):
         self.assertIn("readyForAssembly = realStates.every", front_js)
         self.assertIn("st.mode === 'REAL' && st.status === 'COMPLETED'", front_js)
         self.assertIn("POST", front_js)
-        self.assertIn("Download Final Video MP4", front)
+        self.assertIn('id="downloadFinal"', front)
 
     def test_queued_handoff_reconciles_named_execution_without_google(self):
         api = API.read_text(encoding="utf-8")
