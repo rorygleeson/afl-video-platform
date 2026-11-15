@@ -181,10 +181,61 @@ def request_body(prompt, master, selfie):
 
 
 class GoogleOutputError(ValueError):
-    """An allowlisted output error that is safe to persist without raw content."""
-    def __init__(self, code):
+    """Safe code and finite allowlisted Google metadata; never store raw response."""
+    def __init__(self, code, diagnostic=None):
         self.code = code
+        self.diagnostic = diagnostic or {}
         super().__init__(code)
+
+
+# Treat arbitrary provider strings as untrusted. Only these finite values are
+# allowed in DynamoDB and status APIs (never store free-text block messages).
+FINISH_REASONS = frozenset({
+    "STOP", "MAX_TOKENS", "SAFETY", "RECITATION", "OTHER",
+    "BLOCKLIST", "PROHIBITED_CONTENT", "SPII", "MALFORMED_FUNCTION_CALL",
+    "IMAGE_SAFETY", "IMAGE_PROHIBITED_CONTENT", "IMAGE_OTHER",
+    "NO_IMAGE", "FINISH_REASON_UNSPECIFIED",
+})
+BLOCK_REASONS = frozenset({
+    "SAFETY", "OTHER", "BLOCKLIST", "PROHIBITED_CONTENT", "IMAGE_SAFETY",
+    "BLOCK_REASON_UNSPECIFIED",
+})
+SAFETY_CATEGORIES = frozenset({
+    "HARM_CATEGORY_HARASSMENT", "HARM_CATEGORY_HATE_SPEECH",
+    "HARM_CATEGORY_SEXUALLY_EXPLICIT", "HARM_CATEGORY_DANGEROUS_CONTENT",
+    "HARM_CATEGORY_CIVIC_INTEGRITY", "HARM_CATEGORY_UNSPECIFIED",
+})
+
+
+def allowed_enum(value, choices):
+    return value if isinstance(value, str) and value in choices else "UNKNOWN"
+
+
+def image_response_diagnostic(result):
+    """Summarise response shape, not its user content, text or base64 images."""
+    feedback = result.get("promptFeedback") if isinstance(result, dict) else None
+    feedback = feedback if isinstance(feedback, dict) else {}
+    candidates = result.get("candidates") if isinstance(result, dict) else None
+    candidates = candidates if isinstance(candidates, list) else []
+    candidate = next((c for c in candidates if isinstance(c, dict)), {})
+    finish = allowed_enum(candidate.get("finishReason"), FINISH_REASONS)
+    block = allowed_enum(feedback.get("blockReason"), BLOCK_REASONS)
+    ratings = candidate.get("safetyRatings")
+    if not isinstance(ratings, list):
+        ratings = []
+    blocked_categories = sorted({
+        allowed_enum(r.get("category"), SAFETY_CATEGORIES)
+        for r in ratings if isinstance(r, dict) and r.get("blocked") is True
+    })[:5]
+    # Avoid showing "UNKNOWN" as a specific explanation.
+    return {
+        "providerFinishReason": finish,
+        "providerBlockReason": block,
+        "providerBlockedCategories": blocked_categories,
+        "providerCandidateCount": min(10, len(candidates)),
+        "providerImageParts": 0,
+        "providerTextOnly": False,
+    }
 
 
 def normalise_image_png(data, declared_mime):
@@ -234,22 +285,37 @@ def normalise_image_png(data, declared_mime):
 
 
 def extract_png(result):
+    # Preserve successful image selection and normalisation exactly.
     candidates = result.get("candidates") if isinstance(result, dict) else None
+    diagnostic = image_response_diagnostic(result)
     if not isinstance(candidates, list) or not candidates:
-        raise GoogleOutputError("GOOGLE_NO_CANDIDATES")
+        code = ("GOOGLE_PROMPT_BLOCKED" if diagnostic["providerBlockReason"]
+                not in ("UNKNOWN", "BLOCK_REASON_UNSPECIFIED")
+                else "GOOGLE_NO_CANDIDATES")
+        raise GoogleOutputError(code, diagnostic)
     for candidate in candidates:
         if not isinstance(candidate, dict):
             continue
-        for part in (candidate.get("content") or {}).get("parts", []):
+        content = candidate.get("content") or {}
+        parts = content.get("parts", []) if isinstance(content, dict) else []
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
             data = part.get("inlineData") if isinstance(part, dict) else None
             if not isinstance(data, dict) or not data.get("data"):
                 continue
             return normalise_image_png(data["data"], data.get("mimeType"))
-    # Distinguish an image-less completion from invalid bytes or S3 failures.
-    if any(c.get("finishReason") in ("SAFETY", "PROHIBITED_CONTENT", "IMAGE_SAFETY")
-           for c in candidates if isinstance(c, dict)):
-        raise GoogleOutputError("GOOGLE_IMAGE_SAFETY_BLOCK")
-    raise GoogleOutputError("GOOGLE_NO_IMAGE_CONTENT")
+    # Provider returned no usable image. Preserve only allowlisted metadata.
+    block = diagnostic["providerBlockReason"]
+    reason = diagnostic["providerFinishReason"]
+    if block not in ("UNKNOWN", "BLOCK_REASON_UNSPECIFIED"):
+        code = "GOOGLE_PROMPT_BLOCKED"
+    elif reason in ("SAFETY", "PROHIBITED_CONTENT", "IMAGE_SAFETY",
+                    "IMAGE_PROHIBITED_CONTENT", "BLOCKLIST", "SPII") or diagnostic["providerBlockedCategories"]:
+        code = "GOOGLE_IMAGE_SAFETY_BLOCK"
+    else:
+        code = "GOOGLE_NO_IMAGE_CONTENT"
+    raise GoogleOutputError(code, diagnostic)
 
 
 # An explicit HTTP 429 rejection is the ONLY provider response that permits a
@@ -361,7 +427,7 @@ def generate(worker, job_id, scene_id):
         image = extract_png(result)
     except GoogleOutputError as exc:
         worker.scene_update(job_id, scene_id, "GENERATING",
-                            {"errorCode": exc.code}, expected="GENERATING")
+                            {"errorCode": exc.code, **exc.diagnostic}, expected="GENERATING")
         raise
     except Exception:
         worker.scene_update(job_id, scene_id, "GENERATING",
