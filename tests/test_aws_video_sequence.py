@@ -22,6 +22,7 @@ class AwsVideoSequenceTests(unittest.TestCase):
             "FRONTEND_ORIGIN": "https://example.test",
             "IMAGE_STATE_MACHINE_ARN": "arn:aws:states:ap-southeast-2:123456789012:stateMachine:images",
             "GOOGLE_STATE_MACHINE_ARN": STATE_ARN,
+            "ASSEMBLY_STATE_MACHINE_ARN": "arn:aws:states:ap-southeast-2:123456789012:stateMachine:afl-app-dev-assembly",
             "REAL_VIDEO_MODE": "ENABLED",
             "AWS_REGION": "ap-southeast-2",
         }
@@ -232,6 +233,57 @@ class AwsVideoSequenceTests(unittest.TestCase):
         self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
                          f"real-{self.id}-scene3")
         self.assertGreaterEqual(self.s3.head_object.call_count, 3)
+
+    def test_scene3_success_starts_one_ffmpeg_assembly_from_existing_clips(self):
+        self.approve()
+        for scene in ("scene1", "scene2", "scene3"):
+            self.mark_complete(scene)
+        result = self.api.lambda_handler(self.completion("scene3"), None)
+        self.assertEqual(result["status"], "ASSEMBLY_REQUESTED")
+        self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
+                         "final-" + self.id)
+        self.assertEqual(self.states.start_execution.call_args.kwargs["stateMachineArn"],
+                         self.api.ASSEMBLY_STATE_MACHINE_ARN)
+        self.assertEqual(self.s3.head_object.call_count, 4)
+        self.assertTrue(any(c.kwargs.get("ConditionExpression") ==
+                            "attribute_exists(jobId) AND attribute_not_exists(assembly)"
+                            for c in self.ddb.update_item.call_args_list))
+
+    def test_scene3_duplicate_event_never_starts_another_assembly(self):
+        self.approve()
+        for scene in ("scene1", "scene2", "scene3"):
+            self.mark_complete(scene)
+        self.assertEqual(self.api.lambda_handler(self.completion("scene3"), None)["status"],
+                         "ASSEMBLY_REQUESTED")
+        self.job["assembly"] = {"status": "QUEUED"}
+        self.assertEqual(self.api.lambda_handler(self.completion("scene3"), None)["status"],
+                         "ASSEMBLY_ALREADY_REQUESTED")
+        self.states.start_execution.assert_called_once()
+
+    def test_scene3_unverified_or_failed_does_not_assemble(self):
+        self.approve()
+        for scene in ("scene1", "scene2", "scene3"):
+            self.mark_complete(scene)
+        self.job["realVideos"]["scene3"]["status"] = "FAILED"
+        self.assertEqual(self.api.lambda_handler(self.completion("scene3"), None)["status"],
+                         "WAITING_FOR_MANUAL_RETRY_OR_REVIEW")
+        self.states.start_execution.assert_not_called()
+        self.job["realVideos"]["scene3"]["status"] = "COMPLETED"
+        self.job["realVideos"]["scene2"]["status"] = "FAILED"
+        with self.assertRaisesRegex(RuntimeError, "preflight not ready"):
+            self.api.lambda_handler(self.completion("scene3"), None)
+        self.states.start_execution.assert_not_called()
+
+    def test_scene3_old_attempt_and_missing_sequence_cannot_assemble(self):
+        for scene in ("scene1", "scene2", "scene3"):
+            self.mark_complete(scene)
+        self.assertEqual(self.api.lambda_handler(self.completion("scene3"), None)["status"],
+                         "IGNORED_NO_SEQUENCE")
+        self.approve()
+        self.job["paidVideoApprovals"]["scene3"]["executionName"] =             f"real-{self.id}-scene3-r2"
+        self.assertEqual(self.api.lambda_handler(self.completion("scene3"), None)["status"],
+                         "IGNORED_SUPERSEDED_ATTEMPT")
+        self.states.start_execution.assert_not_called()
 
     def test_failed_scene_never_advances_or_paid_retries(self):
         self.approve()
