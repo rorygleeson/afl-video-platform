@@ -102,6 +102,14 @@ def reconcile(job, now):
 
     if sequence.get("status") != "APPROVED":
         return "REVIEW_SEQUENCE_NOT_APPROVED"
+    if not approved and not videos:
+        # The image handoff may have atomically approved the sequence and lost
+        # its acknowledgement BEFORE reserving Video 1. The existing API
+        # safely resumes an APPROVED sequence with no paid attempt; it never
+        # overwrites an existing reservation.
+        if execution_succeeded(IMAGE_ARN, job_id, now):
+            return replay(IMAGE_ARN, job_id)
+        return "WAIT_IMAGE_EXECUTION"
 
     for index, scene in enumerate(SCENES):
         record = videos.get(scene) or {}
