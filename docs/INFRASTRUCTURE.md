@@ -1,6 +1,6 @@
 # AFL Video Platform — AWS Infrastructure Inventory
 
-**Source audit:** 15 November 2026. **Classification:** SOURCE VERIFIED; live AWS deployment versions, actual environment parameter values, and drift **NOT VERIFIED**. This file inventories deployed-intent CloudFormation and current handler code, not the contents of a live AWS console.
+**Source audit:** 15 November 2026, post backend-orchestration releases. **Classification:** SOURCE VERIFIED; guarded CloudFormation API/EventBridge deployments and frontend S3 publication verified in GitHub Actions. Full live AWS environment parameters, runtime settings, drift, monitored event delivery and end-to-end generation **NOT independently verified**. This file describes source plus specific release evidence, not a complete live AWS inventory.
 
 **Authoritative source:** `infrastructure/app/backend.yaml`, `google-video.yaml`, `assembly.yaml`, `frontend.yaml`, `image-video-start-events.yaml`, `video-sequence-events.yaml`; `src/{api,image_worker,google_video_worker,assembly_worker}`; `.github/workflows/{release,deploy-aws-background-video,deploy-auto-video-start-ui}.yml`; `scripts/{capture_release_baseline,deploy_aws_background_video}.py`.
 
