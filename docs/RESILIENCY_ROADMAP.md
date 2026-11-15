@@ -18,7 +18,7 @@
 ## Step 1 — Documentation and baseline audit (FIRST; no application changes)
 
 - [ ] **1.1 Snapshot source and deployment:** record audited main commit SHA, current GitHub workflows and last deployed artifacts; establish accessible live AWS evidence (Lambda configuration/code SHA, Step Functions definitions, API Gateway, DynamoDB, S3, EventBridge, CloudWatch, CloudFormation parameters/drift). Do not guess if inaccessible.
-- [ ] **1.2 Update `README.md` and `docs/ARCHITECTURE.md`:** correct current direct Google image implementation, image `MaxConcurrency: 1`, server-side video sequencing, actual stitching, WIF, data flow, diagram, and obsolete Replicate/parallel references.
+- [ ] **1.2 Update `README.md` and `docs/ARCHITECTURE.md`:** correct current direct Google image implementation, image `MaxConcurrency: 3`, server-side video sequencing, actual stitching, WIF, data flow, diagram, and obsolete Replicate/parallel references.
 - [ ] **1.3 Update `docs/API_ENDPOINTS.md`:** inventory *every* implemented HTTP endpoint and developer-only/legacy endpoint; method, path, purpose, caller, Lambda integration, auth, idempotency, request/response examples, timeout, success/error codes, synchrony, signed URLs, and CORS. Reconcile with API Gateway deployment.
 - [ ] **1.4 Create `docs/JOB_STATUSES.md`:** complete job/image/video/sequence/assembly state dictionary; legal transitions, source of truth, error codes, retries, timestamps, and what the UI actually displays. Document `GET /jobs/{jobId}`, `/images`, `/videos`, `/videos/{scene}`, and `/assembly`. Distinguish **existing behavior** from a **proposed unified overall status**; do not claim it exists.
 - [ ] **1.5 Create `docs/RETRIES_AND_TIMEOUTS.md`:** actual source and deployed Lambda timeout/memory/concurrency, Step Functions waits/retries/backoff/jitter/max attempts, provider HTTP socket timeout, frontend polling/upload retries, SDK retry defaults, EventBridge delivery/retries, workflow deadlines. Include matrix for upload, images 1–3, videos 1–3, Google polling, S3, DynamoDB, assembly. Check nested retry multiplication and Google current published guidance.
@@ -62,7 +62,7 @@
 
 ## Current verified source findings (NOT live-AWS claims)
 
-- Direct Google image model `gemini-3-pro-image`; Step Functions Map `MaxConcurrency: 1`; image Lambda 600s; Google image HTTP socket 240s; explicit 429 only: maximum 8 attempts within 600s retry window.
+- Direct Google image model `gemini-3-pro-image`; Step Functions Map `MaxConcurrency: 3`; image Lambda 600s; Google image HTTP socket 240s; explicit 429 only: maximum 8 attempts within 600s retry window.
 - Google video model `gemini-omni-1.2-flash`; Google Lambda configured 300s; Step Functions 3600s; wait/poll 20s; PollVideo TaskFailed retry 3 times (10s base, ×2). No automatic paid Submit retries.
 - Video sequence progresses through AWS EventBridge on successful completed scene; eligible manual scene retry max 10 attempts.
 - Assembly Lambda configured 600s, and assembly workflow contains no automatic Retry; frontend currently requests assembly when all three scenes appear complete.
@@ -71,6 +71,8 @@
 - Existing `docs/ARCHITECTURE.md`, `docs/API_ENDPOINTS.md`, `docs/DEPLOYMENT.md` and some stale API strings include obsolete parallel/Replicate/assembly claims.
 
 ## Change log
+
+- 2026-11-15 — Image concurrency restored to **3** in source `infrastructure/app/backend.yaml` (`MaxConcurrency: 3`), with a guarded deployment-intent commit `5ec4cb8f`. Updated architecture, infrastructure, API, status and retry docs to match; per-scene 429 retries are unchanged. Source verified; independently checking live deployed state is still open.
 
 - 2026-11-15 — Updated [ARCHITECTURE.md](ARCHITECTURE.md) to current sequential image Map, direct Google model, server-side per-scene video orchestration, frontend-triggered assembly, detailed state/data flow (commit `e0829cd7`). Task 1.2 source documentation drafted; live comparison pending.
 - 2026-11-15 — Created [INFRASTRUCTURE.md](INFRASTRUCTURE.md) with CloudFormation stacks, five Lambda configurations and env variable names, state diagrams, DDB record fields, S3 lifecycle, API Gateway, CloudFront, EventBridge and release/monitoring gaps (commit `139d6ec5`). Task 1.6 source documentation drafted; live and legacy mock stack verification pending.
