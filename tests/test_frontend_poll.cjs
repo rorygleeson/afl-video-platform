@@ -36,7 +36,7 @@ function setup(options = {}) {
       appendChild(child) { this.children.push(child); },
       setAttribute(name, value) { (this.attributes ||= {})[name] = value; },
       getAttribute(name) { return this.attributes?.[name] ?? null; },
-      removeAttribute(name) { if (this.attributes) delete this.attributes[name]; },
+      removeAttribute(name) { if (this.attributes) delete this.attributes[name]; if (name === 'src') this.src = ''; },
       querySelector(tag) { return this.children.map(c => c.tagName === tag ? c : c.querySelector?.(tag)).find(Boolean) || null; },
       querySelectorAll(tag) { return this.children.filter(c => c.tagName === tag); },
       replaceChildren(...children) { this.children = [...children]; },
@@ -410,7 +410,7 @@ test('remove selfie clears file and preview, then permits reselecting without AP
   assert.equal(h.els.selfie.value, '');
   assert.equal(h.els.preview.hidden, true);
   assert.equal(h.els.removeSelfie.hidden, true);
-  assert.equal(h.els.preview.src, undefined);
+  assert.equal(h.els.preview.src, '');
   assert.equal(h.calls.length, 0, 'Clearing a photo never calls AWS');
   h.els.selfie.files = [{name: 'correct-selfie.jpg', type: 'image/jpeg', size: 2400}];
   h.els.selfie.listeners.change();
