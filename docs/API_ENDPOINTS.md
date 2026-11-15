@@ -168,6 +168,34 @@ x-api-key: <developer-key>
 - Frontend job status polling: **5s**, or **15s** after a polling failure. Uploaded S3 POST has up to **2 extra retries** only on browser `TypeError`.
 - **Caution:** AWS SDK underlying retry settings, API Gateway integration timeout, live concurrency, and EventBridge retry policies require deployed/configured verification. See [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md).
 
+## Implemented read-only overall progress on job GET
+
+`GET /jobs/{jobId}` now returns the original `{"job": {...}}` object with one additional `job.progress` member. Legacy `job.status` **continues to describe image-pipeline status** and is not renamed. The progress object is calculated from existing DynamoDB image/video/assembly records, plus the API's existing safe read-only video/assembly status projections. It does not write state, start generation, retry or stitch.
+
+Example (synthetic):
+
+```json
+{
+  "job": {
+    "jobId": "<32hex>",
+    "status": "COMPLETED",
+    "progress": {
+      "currentStage": "VIDEO_2",
+      "stageStatus": "PROCESSING",
+      "imagesCompleted": 3,
+      "imagesTotal": 3,
+      "videosCompleted": 1,
+      "videosTotal": 3,
+      "finalVideoReady": false
+    }
+  }
+}
+```
+
+Stages: `IMAGES`, `VIDEO_1`, `VIDEO_2`, `VIDEO_3`, `STITCHING`, `COMPLETED`. Stage status: `PENDING`, `PROCESSING`, `RETRYING`, `WAITING_FOR_ACTION`, `FAILED`, `REVIEW_REQUIRED`, `COMPLETED`. Each image retains its independent record in existing `job.scenes`. If all three images are complete but the image workflow has not finalised its overall state, progress stays at `IMAGES / PROCESSING`. A stopped/uncertain video workflow can surface `REVIEW_REQUIRED`. Before browser-independent orchestration, `VIDEO_1` and `STITCHING` may report `WAITING_FOR_ACTION`. The response does not claim payment entitlement or automatically advance any stage.
+
+**Deployment status:** implementation committed to repository; live API deployment and integration-test validation not established by this documentation audit.
+
 ## Open verification items
 
 - [ ] Compare all API routes/flags and timeouts against deployed API Gateway and Lambda (source is verified; live drift unknown).
