@@ -31,3 +31,8 @@ Removed seven obsolete, one-off Google WIF investigation/repair GitHub Action **
 5. Retain the mock stack until real-video reliability, idempotency and regression coverage are proven. Remove later by a separately reviewed stack deletion.
 
 No AWS Lambda, IAM role, CloudFormation stack or Google IAM binding was deleted by this repository-only cleanup.
+
+
+## S3 media retention proposal — 2026-11-16 (not deployed)
+
+Track this work in [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md), findings R5/R8. Current source `infrastructure/app/backend.yaml` expires `uploads/` and `results/` at seven days, while generated `videos/{jobId}/scene*.mp4` and `videos/{jobId}/final.mp4` have no corresponding lifecycle rule. Proposed: clean disposable selfies/reference images/intermediate videos ~24 hours **after verified final assembly**; retain final video seven days initially; define separate exhausted/abandoned-job handling; never delete retry-dependent files, permanent team templates/prompts or the frontend. S3 age-based Lifecycle does not automatically understand a job completion timestamp. Confirm real object inventory and test before any CloudFormation rollout. No cleanup script or lifecycle change has been deployed.
