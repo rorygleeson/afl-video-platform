@@ -16,7 +16,7 @@ class WatchdogTests(unittest.TestCase):
     def setUp(self):
         import boto3
         self.ddb, self.states, self.api = MagicMock(), MagicMock(), MagicMock()
-        self.ddb.scan.return_value = {"Items": []}
+
         self.states.describe_execution.return_value = {
             "status": "SUCCEEDED", "stopDate": NOW-timedelta(minutes=3)}
         self.api.invoke.return_value = {"Payload": io.BytesIO(b'{"status":"NEXT_SCENE_REQUESTED"}')}
@@ -28,7 +28,8 @@ class WatchdogTests(unittest.TestCase):
              "IMAGE_STATE_MACHINE_ARN":MACHINE+"afl-app-dev-scene1-pilot",
              "GOOGLE_STATE_MACHINE_ARN":MACHINE+"afl-app-dev-google-omni",
              "API_LAMBDA_ARN":"arn:aws:lambda:ap-southeast-2:123456789012:function:afl-app-dev-api",
-             "WATCHDOG_ACTIVATED_AT":(NOW-timedelta(days=1)).isoformat()}
+             "WATCHDOG_ACTIVATED_AT":(NOW-timedelta(days=1)).isoformat(),
+             "WATCHDOG_MACHINE_ARN":MACHINE+"afl-app-dev-handoff-watchdog"}
         with patch.dict(os.environ,env),patch.object(boto3,"client",side_effect=client),patch.object(boto3,"resource",side_effect=resource):
             spec=importlib.util.spec_from_file_location("isolated_watchdog",ROOT)
             self.w=importlib.util.module_from_spec(spec); spec.loader.exec_module(self.w)
@@ -95,12 +96,69 @@ class WatchdogTests(unittest.TestCase):
             {"Error":{"Code":"ExecutionDoesNotExist","Message":"not found"}},"DescribeExecution")
         self.assertEqual(self.w.reconcile(self.job,NOW),"WAIT_IMAGE_EXECUTION")
         self.api.invoke.assert_not_called()
-    def test_scan_bounded_and_never_writes(self):
-        self.ddb.scan.return_value={"Items":[self.job]}
-        result=self.w.lambda_handler({},None)
-        self.assertEqual(result["checked"],1)
-        self.ddb.update_item.assert_not_called()
-        self.assertEqual(self.api.invoke.call_count,1)
+    def start_event(self):
+        machine=self.w.IMAGE_ARN
+        return {"source":"aws.states",
+                "detail-type":"Step Functions Execution Status Change",
+                "detail":{"stateMachineArn":machine,"status":"RUNNING",
+                          "executionArn":self.w.arn_for(machine,ID)}}
+
+    def test_image_start_event_creates_one_named_watchdog(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        status=self.w.lambda_handler(self.start_event(),None)
+        self.assertEqual(status["status"],"MONITORING_STARTED")
+        self.states.start_execution.assert_called_once()
+        params=self.states.start_execution.call_args.kwargs
+        self.assertEqual(params["name"],"watch-"+ID)
+        self.assertEqual(params["stateMachineArn"],self.w.WATCHDOG_MACHINE_ARN)
+        self.ddb.scan.assert_not_called()
+
+    def test_duplicate_image_start_is_idempotent(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.states.exceptions.ExecutionAlreadyExists=type("ExecutionAlreadyExists",(Exception,),{})
+        self.states.start_execution.side_effect=self.states.exceptions.ExecutionAlreadyExists()
+        self.assertEqual(self.w.lambda_handler(self.start_event(),None)["status"],"ALREADY_MONITORING")
+
+    def test_old_job_and_mismatched_start_event_ignored(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["createdAt"]=(NOW-timedelta(days=3)).isoformat()
+        self.assertEqual(self.w.lambda_handler(self.start_event(),None)["status"],"IGNORED_OLD_JOB")
+        self.states.start_execution.assert_not_called()
+        event=self.start_event()
+        event["detail"]["status"]="SUCCEEDED"
+        self.assertEqual(self.w.lambda_handler(event,None)["status"],"IGNORED_EVENT")
+        self.states.start_execution.assert_not_called()
+
+    def test_job_check_single_get_no_scan_and_finished_stops(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"COMPLETED"}
+        result=self.w.lambda_handler({"op":"check","input":{
+            "jobId":ID,"startedAt":NOW.isoformat()}},None)
+        self.assertEqual(result,{"continue":False,"status":"FINAL_VIDEO_COMPLETED"})
+        self.ddb.get_item.assert_called_once()
+        self.ddb.scan.assert_not_called()
+        self.states.start_execution.assert_not_called()
+
+    def test_active_job_check_continues(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["status"]="GENERATING_IMAGES"
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertTrue(result["continue"])
+        self.assertEqual(result["status"],"SKIP_UNAUTHORISED")
+        self.ddb.scan.assert_not_called()
+
+    def test_ambiguous_video_check_stops_without_retry(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["realVideos"]={"scene1":{"status":"SUBMISSION_UNKNOWN"}}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result,{"continue":False,"status":"REVIEW_VIDEO_FAILURE_OR_UNKNOWN"})
+        self.api.invoke.assert_not_called()
+
+    def test_expired_job_watchdog_stops_without_api_call(self):
+        result=self.w.check_one({"jobId":ID,"startedAt":(NOW-timedelta(hours=3)).isoformat()})
+        self.assertEqual(result["continue"],False)
+        self.ddb.get_item.assert_not_called()
+        self.api.invoke.assert_not_called()
 
 if __name__=="__main__":
     unittest.main()
