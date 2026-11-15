@@ -1,5 +1,5 @@
 name: Deploy video Preparing status text (frontend only)
-# Frontend-only release: selfie removal control; no backend or paid-generation changes.
+# Frontend-only release: selfie removal and fixed-size personal message; no backend or paid-generation changes.
 # Regression fixture covers selfie reselect and AWS-owned video/stitching UI progression.
 # Validate cleared image src and publish only the three UI files.
 on:
