@@ -55,6 +55,14 @@ class AssemblyHandoffBehaviourTests(unittest.TestCase):
         self.assertEqual(json.loads(response["body"])["executionStatus"], "RUNNING")
         self.states.start_execution.assert_not_called()
 
+    def test_terminal_execution_requires_review_not_new_start(self):
+        self.states.describe_execution.return_value = {"status": "FAILED"}
+        response = self.env["start_assembly"](JOB_ID)
+        self.assertEqual(response["statusCode"], 409)
+        self.assertEqual(json.loads(response["body"])["status"],
+                         "ASSEMBLY_WORKFLOW_NEEDS_REVIEW")
+        self.states.start_execution.assert_not_called()
+
     def test_missing_execution_starts_stable_name_once(self):
         self.states.describe_execution.side_effect = self.error("ExecutionDoesNotExist")
         response = self.env["start_assembly"](JOB_ID)
