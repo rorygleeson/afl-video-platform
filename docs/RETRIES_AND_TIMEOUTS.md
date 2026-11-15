@@ -150,3 +150,21 @@ Use mocked Google response fixtures and isolated AWS fakes for most cases. Curre
 - [ ] Check model failure billing and Google/Stripe price economics before approving automatic retry budgets.
 
 **Overall conclusion:** Current source is intentionally conservative about duplicate expensive Google POSTs, but it does **not yet** implement fully automatic, browser-independent, end-to-end recovery and refund readiness. The next phase should strengthen reconciliation, checkpoint resume, server-side stitching and customer recovery without changing prompts or models.
+
+## Image no-content diagnostics — additive observability only (15 November 2026)
+
+For a successful HTTP response that contains no usable generated image,
+`src/image_worker/google_direct.py` captures only provider enum categories
+(`finishReason` and `promptFeedback.blockReason`), safely bounded candidate/
+image-part counts, blocked rating category names, and a text-part-present
+flag. The response body, provider free-text explanations and user media are
+never persisted or shown. Existing `GOOGLE_NO_IMAGE_CONTENT` may now be
+categorised more specifically as `GOOGLE_PROMPT_BLOCKED` or
+`GOOGLE_IMAGE_SAFETY_BLOCK` when Google's *response itself* explicitly
+supports the classification. Other image-free responses retain
+`GOOGLE_NO_IMAGE_CONTENT` or `GOOGLE_NO_CANDIDATES`.
+
+No change to provider requests, prompts, model, Step Functions transitions,
+timeouts, number of image scenes, backoff, 8-attempt / 600-second budget, 429
+retry-only policy, or the rule that ambiguous submissions must never be
+blindly retried. This does not recover response details missing from older jobs.
