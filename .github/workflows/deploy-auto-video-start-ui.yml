@@ -1,4 +1,4 @@
-name: Deploy final stitching estimated progress bar
+name: Deploy polished personal greeting field UI
 on:
   push:
     branches: [main]
@@ -23,7 +23,9 @@ jobs:
         run: |
           set -euo pipefail
           node --check frontend/app.js
-          # Regression suite verifies assembly progress, retries, autoplay and existing behavior.
+          # Regression suite verifies greeting UI, assembly progress, retries, autoplay and existing behavior.
+          grep -q 'personal-message-hint' frontend/index.html
+          grep -q '#personalMessage{display:block;box-sizing:border-box;width:100%' frontend/styles.css
           node --test tests/test_frontend_poll.cjs
           grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
           grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
