@@ -217,5 +217,30 @@ class SelfieReadOnlyTests(unittest.TestCase):
         self.assertEqual(len(s3.calls), 1)
 
 
+
+class SavedMessageProjectionTests(unittest.TestCase):
+    def test_public_job_returns_saved_greeting_without_altering_it(self):
+        fn = next(node for node in source.body
+                  if isinstance(node, ast.FunctionDef) and node.name == "public_job")
+        scope = {}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), str(SOURCE), "exec"), scope)
+        job = {
+            "jobId": "a"*32,
+            "scenarioId": "afl-grand-final-winning-kick",
+            "team": "collingwood",
+            "firstName": "Alex",
+            "lastName": "Brown",
+            "personalMessage": "Happy birthday",
+            "status": "GENERATING_IMAGES",
+            "createdAt": "2026-11-16T00:00:00+00:00",
+            "scenes": {},
+        }
+        projected = scope["public_job"](job)
+        self.assertEqual(projected["personalMessage"], "Happy birthday")
+        self.assertEqual(job["personalMessage"], "Happy birthday")
+        del job["personalMessage"]
+        self.assertEqual(scope["public_job"](job)["personalMessage"], "")
+
+
 if __name__ == "__main__":
     unittest.main()
