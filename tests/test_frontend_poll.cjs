@@ -976,7 +976,7 @@ test('image, video and stitching spinner styles use the same green rotating cog'
   assert.match(css, /color:#16733b;animation:reference-gear-spin/);
   assert.match(script, /paidStatus\.classList\.toggle\('generating'/);
   assert.match(script, /assemblyStatus\.classList\.toggle\('generating'/);
-  assert.match(script, /assemblyStatus'\)\.classList\.add\('generating'\)/);
+  assert.doesNotMatch(script, /submitFinalAssembly\(/, 'Browser cannot start assembly from status polling');
 });
 
 test('image retry waiting switches to green-cog Generating when attempt resumes', async () => {
