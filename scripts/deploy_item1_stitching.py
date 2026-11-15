@@ -119,7 +119,7 @@ def validate(changes, allowed, required, kind):
 
 
 def inline_definition(template):
-    match = re.search(r"(?ms)^      DefinitionString: !Sub \\|\\n(?P<definition>.*?)(?=^Outputs:|\\Z)", template)
+    match = re.search(r"(?ms)^      DefinitionString: !Sub \|\n(?P<definition>.*?)(?=^Outputs:|\Z)", template)
     if not match:
         # Safe diagnostic: show only formatting around the CFN key, never
         # parameters, secrets, complete template, or customer content.
