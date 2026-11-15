@@ -20,7 +20,7 @@
 
 | Method | Path | Purpose; request fields | Response / code highlights | Execution |
 |---|---|---|---|---|
-| GET | `/scenarios` | Scenario metadata | 200 `{scenarios:[{id,name,sceneCount,imageGenerationEnabled,parallelScenes}]}`; **known stale** `parallelScenes:true` despite sequential image Map | Sync/read-only |
+| GET | `/scenarios` | Scenario metadata | 200 `{scenarios:[{id,name,sceneCount,imageGenerationEnabled,parallelScenes}]}`; `parallelScenes:true` now aligns with image Map `MaxConcurrency:3` | Sync/read-only |
 | POST | `/uploads` | JSON `{contentType,sizeBytes}`, JPEG/PNG/WebP; up to 10 MiB | 200 `{uploadKey,upload:{url,fields},expiresInSeconds:300}` | Sync presign, then direct S3 POST |
 | POST | `/jobs` | JSON `{uploadKey,scenarioId,team,firstName,lastName}`; **Idempotency-Key required** | 201 `{job}`, 200 same-key/same-input replay; 409 same-key/different-input | Sync; S3 HEAD + DDB conditional Put |
 | GET | `/jobs/{jobId}` | Job ID | 200 `{job:{jobId,scenarioId,team,firstName,lastName,status,createdAt,imageCount,sceneCount,completedScenes,failedScenes,scenes}}` | Sync DDB read |
@@ -141,7 +141,7 @@ x-api-key: <developer-key>
 - Retry: only confirmed terminal provider failures, old workflow SUCCEEDED, still-matching image source, and fewer than 10 attempts. Current retries are separately confirmed by developer UI.
 - Assembly: conditional `assembly` creation and named execution `final-{jobId}`. Current frontend initiates assembly upon seeing `READY`; no independent backend auto-trigger yet.
 - A 300-second presigned media URL expiry does **not** mean generation output expired; authenticated status GET obtains another URL. Actual S3 lifecycle and DDB TTL are separate.
-- **Known misleading source strings:** `parallelScenes:true` in `/scenarios` and old messages referencing Replicate/parallel image submissions. These are logged for later code correction, **not changed** in the documentation audit.
+- **Source compatibility note:** `parallelScenes:true` in `/scenarios` is now consistent with the image Map concurrency of 3. The existing start-images response still contains legacy Replicate wording; this is a wording defect only, recorded for later code cleanup, **not changed** in this documentation audit.
 
 ## Integration details
 
@@ -162,7 +162,7 @@ x-api-key: <developer-key>
 
 - API Lambda: **15s**, 256MB.
 - Image worker: **600s**, 1024MB; outbound Google image POST **240s**; retry explicit 429 only up to **8 total attempts**, 600s retry window.
-- Image state machine: **1800s** overall, sequential Map `MaxConcurrency:1`; dedicated Wait for 429 Retry-After/backoff.
+- Image state machine: **1800s** overall, parallel Map `MaxConcurrency:3`; dedicated Wait for 429 Retry-After/backoff.
 - Google worker: **300s**, 1024MB; Google Interactions POST/GET `urlopen(... timeout=150)`; video workflow **3600s**, 20s poll wait, PollVideo TaskFailed 3 retries at 10/20/40s.
 - Assembly: **600s**, 2048MB, no Step Functions retry; FFmpeg normalisation up to **150s per clip**, concat up to **60s**.
 - Frontend job status polling: **5s**, or **15s** after a polling failure. Uploaded S3 POST has up to **2 extra retries** only on browser `TypeError`.
