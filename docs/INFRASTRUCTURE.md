@@ -27,7 +27,7 @@
 | `afl-app-dev-google-omni-worker` | `src/google_video_worker/handler.py`, `video_prompts.py` | Python 3.13 | 1024 MiB | 300s | 512 MiB | Google Interactions POST/GET, per-scene MP4 output, safe transition/diagnostics |
 | `afl-app-dev-assembly` | `src/assembly_worker/handler.py` | Python 3.13, x86_64 | 2048 MiB | 600s | 2048 MiB | FFmpeg/ffprobe layer, reads scene MP4s, final stitched MP4 |
 
-**Concurrency:** The principal CloudFormation Lambda resources reviewed do not explicitly declare `ReservedConcurrentExecutions`. Do not infer actual concurrency limits, unreserved capacity or provider quotas without live AWS checks. Image Map has concurrency 1 **per image job execution**, not a global account concurrency cap. Video sequencing orders scenes *within a job*, not necessarily across multiple customers. Historical global video admission slot is retired for real Google video (`release()` is a no-op) but legacy mock admissions differ.
+**Concurrency:** The principal CloudFormation Lambda resources reviewed do not explicitly declare `ReservedConcurrentExecutions`. Do not infer actual concurrency limits, unreserved capacity or provider quotas without live AWS checks. Image Map has concurrency **up to 3 per image job execution**, not a global account concurrency cap. Video sequencing orders scenes *within a job*, not necessarily across multiple customers. Historical global video admission slot is retired for real Google video (`release()` is a no-op) but legacy mock admissions differ.
 
 ### Environment variable **names** (values and secrets intentionally excluded)
 
@@ -55,7 +55,7 @@
 
 ```mermaid
 flowchart TD
-  P[Prepare] --> M["ParallelScenes Map (MaxConcurrency 1)"]
+  P[Prepare] --> M["ParallelScenes Map (MaxConcurrency 3)"]
   P -- failure --> R[RecoverJob]
   M --> F[Finalize]
   M -- failure --> R
@@ -70,7 +70,7 @@ flowchart TD
 ```
 
 - `Prepare` Lambda `op:prepare`, locks input assets in preflight, updates DDB.
-- Inline Map `ItemsPath: $.prepared.Payload.scenes`, fixed ordered three scene IDs, `MaxConcurrency:1`. The state name `ParallelScenes` is historical only.
+- Inline Map `ItemsPath: $.prepared.Payload.scenes`, three scene IDs, `MaxConcurrency:3`. This permits all three image branches to execute concurrently; each scene independently handles 429 wait/retry and completion/failure.
 - Each `Generate` invokes image worker `op:generate`; a returned `RETRY_WAIT` causes Wait `SecondsPath: $.attemptResult.Payload.retryAfterSeconds`, then new invocation; errors go to `op:failed`.
 - `Finalize` updates overall status based on 3 scene states. Catch from Prepare, Map or Finalize goes to `RecoverJob` (worker `op:recover`), preserving successful image checkpoints and terminalising incomplete scenes.
 - No general SFN Task retry for Google image; all re-submissions originate only from bounded explicit 429 application logic.
