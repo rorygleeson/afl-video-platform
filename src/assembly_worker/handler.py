@@ -134,18 +134,32 @@ def render_personal_message(source, destination, message, duration, directory):
         "-movflags", "+faststart", str(destination), timeout=180)
 
 
-def assemble(job_id):
+def assemble(job_id, retry=False):
     if not isinstance(job_id, str) or not JOB_PATTERN.fullmatch(job_id):
         raise AssemblyError("INVALID_JOB_ID")
     item = DDB.get_item(Key={"jobId": job_id}, ConsistentRead=True).get("Item")
-    if not item or item.get("assembly", {}).get("status") != "QUEUED":
+    if not item:
+        raise AssemblyError("ASSEMBLY_NOT_QUEUED")
+    assembly = item.get("assembly") or {}
+    status = assembly.get("status")
+    if retry:
+        # Only retry a CONFIRMED failed attempt. PROCESSING might be an
+        # ambiguous timeout; it is unsafe to run two FFmpeg writers at once.
+        if status != "FAILED" or assembly.get("retryCount", 0) != 0:
+            raise AssemblyError("ASSEMBLY_RETRY_NOT_SAFE")
+    elif status != "QUEUED":
         raise AssemblyError("ASSEMBLY_NOT_QUEUED")
     # Verify the three *real* completed videos, not mock video results.
     for scene in SCENES:
         video = item.get("realVideos", {}).get(scene, {})
         if video.get("status") != "COMPLETED" or video.get("resultKey") != f"videos/{job_id}/{scene}.mp4":
             raise AssemblyError("SOURCE_VIDEO_NOT_READY")
-    set_status(job_id, "QUEUED", "PROCESSING")
+    if retry:
+        # DynamoDB conditional transition prevents concurrent retry workers.
+        # A retry does not invoke Google or change the three source MP4s.
+        set_status(job_id, "FAILED", "PROCESSING", retryCount=1, errorCode="")
+    else:
+        set_status(job_id, "QUEUED", "PROCESSING")
     try:
         with tempfile.TemporaryDirectory(dir="/tmp") as directory:
             root = Path(directory)
@@ -216,4 +230,4 @@ def lambda_handler(event, context):
         return {"status": "READY" if os.access(FFMPEG, os.X_OK)
                 and os.access(FFPROBE, os.X_OK) else "NOT_CONFIGURED",
                 "videoGeneration": False}
-    return assemble(event.get("jobId"))
+    return assemble(event.get("jobId"), retry=event.get("retry") is True)
