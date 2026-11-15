@@ -1,6 +1,6 @@
 # AFL Video Platform — Retry, Timeout and Failure Audit
 
-**Audit date:** 2026-11-15 · **Verification:** SOURCE VERIFIED, **not yet LIVE VERIFIED**.  
+**Audit date:** 2026-11-15 · **Verification:** SOURCE VERIFIED; guarded AWS handoff/resource deployments VERIFIED from GitHub Actions logs, but individual timeout/runtime/SDK settings **not independently live-audited**.  
 **Sources:** `src/api/handler.py`, `src/image_worker/handler.py`, `src/image_worker/google_direct.py`, `src/google_video_worker/handler.py`, `src/assembly_worker/handler.py`, `frontend/app.js`, `infrastructure/app/backend.yaml`, `infrastructure/app/google-video.yaml`, `infrastructure/app/assembly.yaml`.  
 **Related:** [API_ENDPOINTS.md](API_ENDPOINTS.md), [JOB_STATUSES.md](JOB_STATUSES.md), [RESILIENCY_ROADMAP.md](RESILIENCY_ROADMAP.md).
 
