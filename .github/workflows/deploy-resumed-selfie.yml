@@ -1,6 +1,7 @@
 name: Deploy safe resume selfie preview (API and UI only)
 # Repeat after correcting the offline filename-regex fixture; no provider calls.
-# Final UI publication includes restored-selfie label visibility correction.
+# This release also returns the persisted personal message on job recovery.
+# UI rehydrates the greeting and character counter from the same read-only job GET.
 on:
   push:
     branches: [main]
@@ -32,6 +33,7 @@ jobs:
           node --check frontend/app.js
           node --test tests/test_frontend_poll.cjs
           grep -q 'def selfie_for_job(job):' src/api/handler.py
+          grep -q '"personalMessage": item.get("personalMessage", "")' src/api/handler.py
           grep -q 'finalVideoReady' frontend/app.js
           grep -q 'id="savedSelfieNote"' frontend/index.html
           python scripts/check_deployment_ownership.py --enforce
