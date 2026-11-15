@@ -68,6 +68,22 @@ class AssemblyContractTests(unittest.TestCase):
         self.assertIn('"AssemblyNeedsReview"', infra)
         self.assertNotIn('GoogleWorker', infra)
 
+    def test_step_functions_retry_definition_is_valid_and_bounded(self):
+        import json
+        import textwrap
+        infra = (ROOT / "infrastructure/app/assembly.yaml").read_text(encoding="utf-8")
+        definition = infra.split("      DefinitionString: !Sub |", 1)[1].split("\\nOutputs:", 1)[0]
+        definition = json.loads(textwrap.dedent(definition))
+        states = definition["States"]
+        self.assertEqual(definition["StartAt"], "Stitch")
+        self.assertNotIn("Retry", states["Stitch"])
+        self.assertEqual(states["Stitch"]["Catch"][0]["Next"], "WaitBeforeConfirmedRetry")
+        self.assertEqual(states["WaitBeforeConfirmedRetry"]["Seconds"], 15)
+        self.assertEqual(states["RetryConfirmedAssemblyFailure"]["Parameters"]["Payload"]["retry"], True)
+        self.assertEqual(states["RetryConfirmedAssemblyFailure"]["Catch"][0]["Next"], "AssemblyNeedsReview")
+        self.assertEqual(states["AssemblyNeedsReview"]["Type"], "Fail")
+        self.assertNotIn("Retry", states["RetryConfirmedAssemblyFailure"])
+
     def test_existing_scene_download_contract_preserved(self):
         api = API.read_text(encoding="utf-8")
         self.assertIn('f"videos/{job[\'jobId\']}/{scene_id}.mp4"', api)
