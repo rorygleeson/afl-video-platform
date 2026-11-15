@@ -1,5 +1,6 @@
 const input = document.getElementById('selfie');
   const preview = document.getElementById('preview');
+  const removeSelfie = document.getElementById('removeSelfie');
   const generate = document.getElementById('generate');
   const testApi = document.getElementById('testApi');
   const apiTestResult = document.getElementById('apiTestResult');
@@ -731,12 +732,28 @@ const input = document.getElementById('selfie');
   input.addEventListener('change', () => {
     invalidateJobSelection();
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = undefined;
     const file = input.files[0];
     preview.hidden = !file;
+    removeSelfie.hidden = !file;
     if (file) {
       previewUrl = URL.createObjectURL(file);
       preview.src = previewUrl;
+    } else {
+      preview.removeAttribute('src');
     }
+  });
+
+  removeSelfie.addEventListener('click', () => {
+    if (uploadInProgress || input.disabled) return;
+    invalidateJobSelection();
+    input.value = '';
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    previewUrl = undefined;
+    preview.removeAttribute('src');
+    preview.hidden = true;
+    removeSelfie.hidden = true;
+    showStatus('Selfie removed. Choose the correct photo, then upload it.');
   });
 
   async function api(path, options = {}) {
@@ -1188,6 +1205,7 @@ const input = document.getElementById('selfie');
     const formFields = ['key', 'scenario', 'team', 'firstName', 'lastName', 'selfie', 'personalMessage']
       .map(id => document.getElementById(id));
     for (const field of formFields) field.disabled = true;
+    removeSelfie.disabled = true;
     let jobCreated = false;
     let jobCreateRequestSent = false;
     try {
@@ -1289,6 +1307,7 @@ const input = document.getElementById('selfie');
     } finally {
       uploadInProgress = false;
       for (const field of formFields) field.disabled = false;
+      removeSelfie.disabled = false;
       generate.disabled = !apiBaseUrl || jobCreated || !!currentJobId || uploadSubmissionUncertain;
     }
   });
