@@ -1,4 +1,4 @@
-name: Repair image status polling JSON (DynamoDB Decimal)
+name: Deploy Nano Banana ALLOW_ALL config (image worker only)
 on:
   push:
     branches: [main]
