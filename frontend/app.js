@@ -106,6 +106,7 @@ const input = document.getElementById('selfie');
     resetVideoUi();
     currentJobId = id;
     latestJobProgress = job.progress || null;
+    showFinalOnlyView(latestJobProgress?.finalVideoReady === true);
     rememberJob(id);
     lockJobFields(true);
     if (job.scenarioId) document.getElementById('scenario').value = job.scenarioId;
@@ -213,6 +214,20 @@ const input = document.getElementById('selfie');
   let availablePaidScenes = [];
   let videoSequenceAttemptUncertain = false;
   let lastVideoSnapshot = null;
+  let finalOnlyView = false;
+  // Presentation only: S3 scene clips and DynamoDB progress are unchanged.
+  function showFinalOnlyView(ready) {
+    finalOnlyView = ready === true;
+    document.getElementById('jobProgressSection').hidden = finalOnlyView;
+    document.getElementById('generationVideosHeading').hidden = finalOnlyView;
+    for (const n of [1, 2, 3]) {
+      document.getElementById('videoPanel' + n).hidden = finalOnlyView;
+    }
+    if (finalOnlyView && activeScenePreview) {
+      activeScenePreview.pause();
+      activeScenePreview = null;
+    }
+  }
   const videoSubmissionLog = new Map();
   let lastImageScenes = {};
   let imageRetryCountdownTimer = null;
@@ -493,6 +508,7 @@ const input = document.getElementById('selfie');
     availablePaidScenes = [];
     videoSequenceAttemptUncertain = false;
     lastVideoSnapshot = null;
+    showFinalOnlyView(false);
     for (const n of [1, 2, 3]) document.getElementById('scene' + n + 'Progress').hidden = true;
     generateAllVideos.hidden = true;
     generateAllVideos.disabled = true;
@@ -552,6 +568,8 @@ const input = document.getElementById('selfie');
       const data = await api('/jobs/' + jobId + '/videos');
       if (jobId !== currentJobId) return;
       const approvals = data.paidScenes || {};
+      const finalReady = data.assembly?.status === 'COMPLETED' && !!data.assembly.url;
+      showFinalOnlyView(finalReady);
       lastVideoSnapshot = data;
       updateNewJobAvailability();
       if (data.sequence?.status === "APPROVED") videoSequenceAttemptUncertain = false;
@@ -667,7 +685,7 @@ const input = document.getElementById('selfie');
         // The paid-status element already shows this scene's state; keep this
         // secondary status for internal updates but never display it twice.
         state.hidden = true;
-        if (item.status === 'COMPLETED' && item.url && !item.mock) {
+        if (!finalReady && item.status === 'COMPLETED' && item.url && !item.mock) {
           state.textContent = 'Real MP4 completed.';
           // Polling regenerates short-lived S3 URLs. Do not replace a playing
           // video every five seconds while another scene is generating.
@@ -735,7 +753,7 @@ const input = document.getElementById('selfie');
       const assemblyStatus = document.getElementById('assemblyStatus');
       const finalPlayer = document.getElementById('assemblyPlayer');
       const finalDownload = document.getElementById('downloadFinal');
-      assemblyPanel.hidden = !(readyForAssembly && assembly.enabled);
+      assemblyPanel.hidden = !(finalReady || (readyForAssembly && assembly.enabled));
       // Start the visual estimate once per job, never during a failed assembly.
       // A refresh does not restart it; a browser reload starts from observation.
       if (!assemblyPanel.hidden && ['READY', 'QUEUED', 'PROCESSING'].includes(assembly.status)
@@ -765,6 +783,10 @@ const input = document.getElementById('selfie');
       } else {
         finalPlayer.replaceChildren();
         finalDownload.hidden = true;
+      }
+      if (finalReady) {
+        // Scene state rendering can change individual visibility; final wins.
+        showFinalOnlyView(true);
       }
       if (assembly.errorCode && ['FAILED','REVIEW_REQUIRED'].includes(assembly.status)) {
         assemblyStatus.textContent += ' (' + assembly.errorCode.replaceAll('_', ' ') + ')';
@@ -1036,6 +1058,7 @@ const input = document.getElementById('selfie');
       if (requestedJobId !== currentJobId || generation !== pollGeneration) return;
       pollErrors = 0;
       latestJobProgress = record.job.progress || null;
+      if (latestJobProgress?.finalVideoReady === true) showFinalOnlyView(true);
       updateNewJobAvailability();
       const scenes = record.job.scenes || {};
       lastImageScenes = scenes;
@@ -1063,7 +1086,7 @@ const input = document.getElementById('selfie');
       // Only show video controls after all three reference images are complete.
       const referenceImagesReady = ['scene1', 'scene2', 'scene3']
         .every(id => scenes[id]?.status === 'COMPLETED' && (sceneResults.images || []).some(image => image.sceneId === id && image.url));
-      videoTestSection.hidden = !referenceImagesReady;
+      videoTestSection.hidden = !(referenceImagesReady || latestJobProgress?.finalVideoReady === true);
       if (!referenceImagesReady) {
         stopVideoPoll();
       }
@@ -1113,7 +1136,7 @@ const input = document.getElementById('selfie');
         }
       }
       syncImageRetryCountdown();
-      if (referenceImagesReady) {
+      if (referenceImagesReady || latestJobProgress?.finalVideoReady === true) {
         void refreshVideos();
         // Run once per visible job. A manual recheck remains available if inputs change.
         if (preflightCheckedJobId !== requestedJobId) {
