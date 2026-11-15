@@ -48,7 +48,7 @@ function setup(options = {}) {
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
                       'referenceImagesHeading',
-                      'imageDiagnosticsText',
+                      'imageDiagnosticsText', 'developerDiagnostics', 'overallJobStatus',
                       'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName', 'personalMessage', 'personalMessageCount',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
                       'videoPromptStatus1','videoPromptStatus2','videoPromptStatus3',
