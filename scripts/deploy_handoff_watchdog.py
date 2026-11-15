@@ -41,7 +41,7 @@ def main():
 
     cf = session.client("cloudformation")
     stack = cf.describe_stacks(StackName=STACK)["Stacks"][0]
-    assert stack["StackStatus"] == "CREATE_COMPLETE"
+    assert stack["StackStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
     assert stack["RoleARN"] == ROLE
     for name, kind in EXISTING.items():
         item = cf.describe_stack_resource(
@@ -74,6 +74,31 @@ def main():
     assert "afl-app-dev-handoff-watchdog-minute" not in template
     assert "StartExecution" in template  # To launch ONLY the watchdog workflow.
     assert "stateMachine:afl-app-dev-handoff-watchdog" in template
+
+    # If CloudFormation already completed the migration, verify it without
+    # creating a redundant changeset. The GitHub role intentionally lacks
+    # events:DescribeRule; CFN records the exact rule identity and template.
+    deployed_template = cf.get_template(StackName=STACK)["TemplateBody"]
+    if isinstance(deployed_template, str) and deployed_template.strip() == template.strip():
+        lam = session.client("lambda").get_function_configuration(
+            FunctionName="afl-app-dev-handoff-watchdog")
+        assert lam["LastUpdateStatus"] == "Successful"
+        assert lam["CodeSha256"] == base64.b64encode(checksum).decode()
+        assert "WATCHDOG_ACTIVATED_AT" in lam["Environment"]["Variables"]
+        machine_arn = lam["Environment"]["Variables"]["WATCHDOG_MACHINE_ARN"]
+        assert machine_arn.endswith(":stateMachine:afl-app-dev-handoff-watchdog")
+        sf = session.client("stepfunctions")
+        machine = sf.describe_state_machine(stateMachineArn=machine_arn)
+        assert machine["status"] == "ACTIVE" and machine["type"] == "STANDARD"
+        rule = cf.describe_stack_resource(
+            StackName=STACK, LogicalResourceId="EveryMinute")["StackResourceDetail"]
+        assert rule["ResourceStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
+        assert rule["PhysicalResourceId"].endswith(
+            "rule/afl-app-dev-handoff-watchdog-image-start")
+        assert stack["StackStatus"] == "UPDATE_COMPLETE"
+        print("PER_JOB_WATCHDOG_DEPLOYED_VERIFIED", flush=True)
+        print("NO_IDLE_SCHEDULE_IN_DEPLOYED_CFN_VERIFIED", flush=True)
+        return
 
     # Never reset the activation cutoff, even on redeployment.
     parameters = [{"ParameterKey": "ArtifactKey", "ParameterValue": key}]
@@ -145,12 +170,13 @@ def main():
         stateMachineArn=lam["Environment"]["Variables"]["WATCHDOG_MACHINE_ARN"])
     assert state["status"] == "ACTIVE"
     assert state["type"] == "STANDARD"
-    rule = session.client("events").describe_rule(
-        Name="afl-app-dev-handoff-watchdog-image-start")
-    assert rule["State"] == "ENABLED" and "RUNNING" in rule["EventPattern"]
-    assert not rule.get("ScheduleExpression"), "Old idle schedule still active"
+    rule = cf.describe_stack_resource(
+        StackName=STACK, LogicalResourceId="EveryMinute")["StackResourceDetail"]
+    assert rule["PhysicalResourceId"].endswith(
+        "rule/afl-app-dev-handoff-watchdog-image-start")
+    assert rule["ResourceStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
     print("PER_JOB_WATCHDOG_DEPLOYED_VERIFIED", flush=True)
-    print("NO_IDLE_SCHEDULE_VERIFIED", flush=True)
+    print("NO_IDLE_SCHEDULE_IN_DEPLOYED_CFN_VERIFIED", flush=True)
 
 
 if __name__ == "__main__":
