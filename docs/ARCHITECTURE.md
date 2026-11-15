@@ -103,3 +103,15 @@ Full inventory: [INFRASTRUCTURE.md](INFRASTRUCTURE.md). Retry matrix: [RETRIES_A
 10. Configured AWS values must be checked against active live resources before production sign-off.
 
 **Documentation revision only:** no prompts, model calls, code, AWS infrastructure or payment logic were modified while updating this file. Backend handoffs were separately deployed in [Stage 1](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745), [Stage 2](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297) and [Stage 3](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205). No new full paid end-to-end run was made as part of this document review.
+
+## Event-driven handoff watchdog (source review: 2026-11-16)
+
+The **isolated** `afl-app-dev-handoff-watchdog` stack monitors **one explicitly consented job at a time**. Image Step Functions `RUNNING` emits an EventBridge event to the watchdog Lambda; the Lambda validates the job and starts uniquely named Standard Step Functions `watch-{jobId}`. A selfie upload alone does not start it. The watchdog state machine then **waits 60 seconds** between Lambda checks (the currently reviewed source is **not** configured for 2 minutes). There is no idle watchdog cron and no DynamoDB Scan. It has a 7,200-second (2-hour) maximum life and exits for completed assembly or terminal failure/review cases.
+
+This is a **missed-success-handoff reconciler**, not a universal stuck-stage timeout manager. The **120-second** `MIN_AGE_SECONDS` constant is the *minimum age since a verified successful execution stopped* before replaying a potentially lost success event to the existing API. It is **not** the check interval or a two-minute timeout for an in-flight Google operation. `DescribeExecution` must report `SUCCEEDED`; the watchdog must not resubmit a provider request, write a job record, restart a running scene, or bypass existing API reservations. `SUBMISSION_UNKNOWN` is left in monitoring/review, never automatically paid again. An assembly already reserved is observed, not retriggered.
+
+**Separate legacy system:** `afl-app-dev-reconcile-images` still has a **5-minute** schedule and can terminalise stalled image jobs after approximately 45 minutes. Unlike this isolated watchdog, that scheduled image reconciliation can run when no user jobs are active. Do not combine the two in cost/timeout claims.
+
+**Limitations before customer rollout:** an image `RUNNING` EventBridge event can be lost (no per-job watchdog then); the 2-hour watchdog deadline is not per-stage timeout enforcement; a reserved/unknown assembly is not automatically recovered; and no end-to-end provider run or fault injection was performed during this documentation review. Source checked: `src/handoff_watchdog/handler.py`, `infrastructure/app/handoff-watchdog.yaml`, `tests/test_handoff_watchdog.py`. Previous guarded AWS deployment verification is recorded in [RESILIENCY_ROADMAP.md](RESILIENCY_ROADMAP.md); this review did **not** re-read live CloudFormation resources.
+
+See [the focused watchdog architecture diagram](watchdog-architecture.svg).
