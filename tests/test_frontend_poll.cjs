@@ -48,7 +48,7 @@ function setup(options = {}) {
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
                       'referenceImagesHeading',
-                      'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName',
+                      'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName', 'personalMessage', 'personalMessageCount',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
                       'videoPromptStatus1','videoPromptStatus2','videoPromptStatus3',
                       'videoPromptText1','videoPromptText2','videoPromptText3',
@@ -1241,4 +1241,22 @@ test('assembly estimate hides on review and reset, without influencing AWS submi
   assert.equal([...h.intervals.values()].filter(t=>t.delay===1000).length,0);
   h.els.team.listeners.change();
   assert.equal(h.els.assemblyProgress.hidden,true);
+});
+
+test('optional greeting is sent to job creation and displayed character count updates', async () => {
+  assert.match(html,/id="personalMessage"[^>]*maxlength="80"/);
+  assert.match(html,/Happy Birthday Dad, from Mary/);
+  const h=setup();
+  h.els.personalMessage.value='Happy Birthday Dad, from Mary';
+  h.els.personalMessage.listeners.input();
+  assert.equal(h.els.personalMessageCount.textContent, '29');
+  await h.els.generate.listeners.click();await h.flush();
+  const post=h.calls.find(c=>c.url.endsWith('/jobs') && c.opts.method==='POST');
+  assert.equal(JSON.parse(post.opts.body).personalMessage,'Happy Birthday Dad, from Mary');
+});
+test('blank optional greeting is permitted without changed generation flow', async () => {
+  const h=setup();
+  await h.els.generate.listeners.click();await h.flush();
+  const post=h.calls.find(c=>c.url.endsWith('/jobs') && c.opts.method==='POST');
+  assert.equal(JSON.parse(post.opts.body).personalMessage,'');
 });
