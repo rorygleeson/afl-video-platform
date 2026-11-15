@@ -1,0 +1,82 @@
+name: Diagnose live image status polling (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-image-status-readonly.yml'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Read recent image job states, API errors and deployment (no personal info)
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import boto3,collections,datetime,json,re,time
+          s=boto3.Session(region_name="ap-southeast-2")
+          assert s.client("sts").get_caller_identity()["Account"]=="134387458447"
+          now=int(time.time());since=now-2700
+          cf=s.client("cloudformation");lam=s.client("lambda")
+          stack=cf.describe_stacks(StackName="afl-app-dev-backend")["Stacks"][0]
+          print("BACKEND_STACK",stack["StackStatus"],stack.get("LastUpdatedTime"),flush=True)
+          for fn in ("afl-app-dev-api","afl-app-dev-image-worker"):
+            c=lam.get_function_configuration(FunctionName=fn)
+            print("LAMBDA",fn,c["State"],c["LastUpdateStatus"],c["LastModified"],c["CodeSha256"],flush=True)
+          table=s.resource("dynamodb").Table("afl-app-dev-jobs")
+          statuses=collections.Counter();recent=[]
+          try:
+            scan={"ProjectionExpression":"jobId,#st,createdAt,scenes,failedScenes,completedScenes",
+                  "ExpressionAttributeNames":{"#st":"status"}}
+            for page in range(20):
+              response=table.scan(**scan)
+              for item in response.get("Items",[]):
+                statuses[item.get("status","MISSING")]+=1
+                created=item.get("createdAt","")
+                if created and created >= datetime.datetime.fromtimestamp(since,datetime.timezone.utc).isoformat():
+                  scenes=item.get("scenes",{})
+                  recent.append({"createdAt":created,
+                    "status":item.get("status"),
+                    "scenes":{k:{"status":v.get("status"),"errorCode":v.get("errorCode"),
+                      "providerFinishReason":v.get("providerFinishReason"),
+                      "providerBlockReason":v.get("providerBlockReason")}
+                    for k,v in scenes.items()},
+                    "completed":item.get("completedScenes"),"failed":item.get("failedScenes")})
+              if "LastEvaluatedKey" not in response:break
+              scan["ExclusiveStartKey"]=response["LastEvaluatedKey"]
+            print("RECENT_JOB_STATES_SANITIZED",json.dumps(recent[-12:],default=str),flush=True)
+            print("ALL_JOB_STATUS_COUNTS",json.dumps(statuses),flush=True)
+          except Exception as e:print("DDB_READ_ERROR",type(e).__name__,str(e)[:240],flush=True)
+          logs=s.client("logs")
+          for group in ("/aws/lambda/afl-app-dev-api","/aws/lambda/afl-app-dev-image-worker"):
+            try:
+              events=[];token=None
+              for _ in range(5):
+                args={"logGroupName":group,"startTime":since*1000,"limit":1000,
+                      "filterPattern":"?ERROR ?Error ?Traceback ?Exception ?Task"}
+                if token:args["nextToken"]=token
+                response=logs.filter_log_events(**args)
+                for item in response.get("events",[]):
+                  message=item.get("message","")
+                  if any(w in message for w in ("ERROR","Error","Traceback","Exception","Task")):
+                    # Strictly avoid full log entries, which might contain private customer content.
+                    category = ("Traceback" if "Traceback" in message
+                        else "Lambda error" if "ERROR" in message
+                        else "Exception")
+                    events.append({"timestamp":item["timestamp"],"category":category,
+                      "type":next((x for x in ("TypeError","KeyError","ValueError","AttributeError",
+                        "ValidationException","AccessDeniedException","ResourceNotFoundException",
+                        "Runtime.ExitError","Task timed out") if x in message),"other")})
+                new=response.get("nextToken")
+                if not new or new==token:break
+                token=new
+              print("RECENT_LOG_ERRORS",group,len(events),json.dumps(events[-18:]),flush=True)
+            except Exception as e:print("LOG_READ_ERROR",group,type(e).__name__,str(e)[:220],flush=True)
+          PY
