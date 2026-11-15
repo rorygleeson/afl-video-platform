@@ -1,5 +1,5 @@
 name: Deploy video Preparing status text (frontend only)
-# Frontend-only release: selfie removal and fixed-size personal message; no backend or paid-generation changes.
+# Frontend-only release: restore job after refresh and preserve read-only paid status; no backend changes.
 # Regression fixture covers selfie reselect and AWS-owned video/stitching UI progression.
 # Validate cleared image src and publish only the three UI files.
 on:
@@ -29,6 +29,8 @@ jobs:
           # Regression suite verifies greeting UI, assembly progress, retries, autoplay and existing behavior.
           grep -q 'personal-message-hint' frontend/index.html
           grep -q '#personalMessage{display:block;box-sizing:border-box;width:100%' frontend/styles.css
+          grep -q 'afl-video-active-job-v1' frontend/app.js
+          grep -q 'id="startNewJob"' frontend/index.html
           node --test tests/test_frontend_poll.cjs
           # Job creation still records consent, but video/stitching POSTs are AWS-owned.
           grep -q 'confirmPaidSequence: true' frontend/app.js
