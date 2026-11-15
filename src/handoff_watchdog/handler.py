@@ -73,6 +73,25 @@ def replay(machine, name):
     return answer.get("status", "UNKNOWN")
 
 
+def request_assembly_reconciliation(job_id):
+    """Ask existing API to inspect/reconcile the one named FFmpeg execution.
+
+    This is assembly-only. Watchdog cannot submit Google requests or
+    change DynamoDB state directly.
+    """
+    payload = {"op": "reconcile_assembly", "jobId": job_id}
+    result = API.invoke(FunctionName=API_ARN, InvocationType="RequestResponse",
+                        Payload=json.dumps(payload).encode())
+    if result.get("FunctionError"):
+        raise RuntimeError("Assembly reconciliation API failed")
+    answer = json.loads(result["Payload"].read())
+    if not isinstance(answer, dict):
+        raise RuntimeError("Invalid assembly reconciliation reply")
+    if answer.get("statusCode") in (200, 202):
+        return "ASSEMBLY_RECONCILED"
+    return "REVIEW_ASSEMBLY_RECONCILIATION"
+
+
 def reconcile(job, now):
     job_id = job.get("jobId")
     if not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
@@ -192,7 +211,14 @@ def check_one(event):
     if assembly.get("status") == "FAILED":
         return {"continue": False, "status": "REVIEW_ASSEMBLY_FAILED"}
     if assembly:
-        # Do not re-trigger an assembly which has already been reserved.
+        if assembly.get("status") == "QUEUED":
+            queued_at = when(assembly.get("createdAt"))
+            if not queued_at or (now - queued_at).total_seconds() < MIN_AGE_SECONDS:
+                return {"continue": True, "status": "WAIT_ASSEMBLY_SETTLEMENT"}
+            outcome = request_assembly_reconciliation(job_id)
+            # Keep watching until a confirmed finished job or deadline.
+            return {"continue": True, "status": outcome}
+        # Do not launch a second worker for an in-flight/uncertain assembly.
         return {"continue": True, "status": "ASSEMBLY_IN_PROGRESS_OR_REVIEW"}
     for record in (job.get("realVideos") or {}).values():
         if record.get("status") == "FAILED":
