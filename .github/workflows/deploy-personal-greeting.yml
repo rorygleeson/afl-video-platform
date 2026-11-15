@@ -1,4 +1,4 @@
-name: Deploy optional personal MP4 greeting (guarded, regression fix)
+name: Deploy optional personal MP4 greeting with PNG overlay
 on:
   push:
     branches: [main]
@@ -26,7 +26,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'Pillow>=11,<13'
+          python3 -m pip install --disable-pip-version-check --target dist/greeting-deps 'Pillow>=11,<13'
           python3 -m py_compile scripts/deploy_personal_greeting.py src/api/handler.py src/assembly_worker/handler.py
           python3 -m unittest discover -s tests -p 'test_personal_greeting.py' -v
           node --check frontend/app.js
