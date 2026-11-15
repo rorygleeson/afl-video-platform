@@ -54,6 +54,20 @@ class AssemblyContractTests(unittest.TestCase):
         self.assertIn("attribute_not_exists(assembly)", api)
         self.assertNotIn("start_video_sequence(job_id)", api[api.index("def ensure_assembly_execution"):api.index("def video_scene_public")])
 
+    def test_confirmed_failure_only_stitch_retry_is_bounded(self):
+        worker = WORKER.read_text(encoding="utf-8")
+        infra = (ROOT / "infrastructure/app/assembly.yaml").read_text(encoding="utf-8")
+        ast.parse(worker)
+        self.assertIn('def assemble(job_id, retry=False):', worker)
+        self.assertIn('status != "FAILED" or assembly.get("retryCount", 0) != 0', worker)
+        self.assertIn('raise AssemblyError("ASSEMBLY_RETRY_NOT_SAFE")', worker)
+        self.assertIn('set_status(job_id, "FAILED", "PROCESSING", retryCount=1', worker)
+        self.assertIn('retry=event.get("retry") is True', worker)
+        self.assertIn('"retry": true', infra)
+        self.assertIn('"WaitBeforeConfirmedRetry"', infra)
+        self.assertIn('"AssemblyNeedsReview"', infra)
+        self.assertNotIn('GoogleWorker', infra)
+
     def test_existing_scene_download_contract_preserved(self):
         api = API.read_text(encoding="utf-8")
         self.assertIn('f"videos/{job[\'jobId\']}/{scene_id}.mp4"', api)
