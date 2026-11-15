@@ -83,7 +83,17 @@ def main():
         lam = session.client("lambda").get_function_configuration(
             FunctionName="afl-app-dev-handoff-watchdog")
         assert lam["LastUpdateStatus"] == "Successful"
-        assert lam["CodeSha256"] == base64.b64encode(checksum).decode()
+        expected_sha = base64.b64encode(checksum).decode()
+        current_key = next((p["ParameterValue"] for p in stack["Parameters"]
+                            if p["ParameterKey"] == "ArtifactKey"), "")
+        print("WATCHDOG_CODE_VERIFICATION", {
+            "expectedSHA": expected_sha[:16],
+            "deployedSHA": lam["CodeSha256"][:16],
+            "stackArtifactMatches": current_key == key,
+            "status": stack["StackStatus"],
+        }, flush=True)
+        assert lam["CodeSha256"] == expected_sha, (
+            "Watchdog Lambda code mismatch; review the isolated deployment artifact")
         assert "WATCHDOG_ACTIVATED_AT" in lam["Environment"]["Variables"]
         machine_arn = lam["Environment"]["Variables"]["WATCHDOG_MACHINE_ARN"]
         assert machine_arn.endswith(":stateMachine:afl-app-dev-handoff-watchdog")
