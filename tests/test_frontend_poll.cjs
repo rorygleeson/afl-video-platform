@@ -553,22 +553,23 @@ test('Scene 1 free readiness automatically runs once for a finished job', async 
                'Readiness never submits a paid MP4');
 });
 
-test('automatic video start waits for backend approvals', async () => {
+test('video status polling never starts paid generation without backend approval', async () => {
   const h=setup({paidScenes:{scene1:false,scene2:false,scene3:false}});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   assert.equal(h.els.generateAllVideos.hidden,true);
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
 });
-test('three completed images automatically submit one AWS sequence; panels reveal in order', async () => {
+test('three completed images stay read-only while AWS scenes unlock panels and stitching', async () => {
   const options={paidScenes:{scene1:true,scene2:true,scene3:true},realVideos:{}};
   const h=setup(options);
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   const approvals=()=>h.calls.filter(c=>c.url.endsWith('/real-videos/sequence') && c.opts.method==='POST');
-  assert.equal(approvals().length,1);
-  assert.deepEqual(JSON.parse(approvals()[0].opts.body),{confirmPaidSequence:true});
-  assert.ok(approvals()[0].opts.headers['Idempotency-Key']);
+  assert.equal(approvals().length,0, 'Backend owns video sequence submission');
+  const jobPosts=h.calls.filter(c=>c.url.endsWith('/jobs') && c.opts.method==='POST');
+  assert.equal(JSON.parse(jobPosts[0].opts.body).confirmPaidSequence,true,
+    'Consent is recorded at initial job creation');
   assert.equal(h.els.generateAllVideos.hidden,true);
   assert.equal(h.els.videoPanel2.hidden,true);
   options.realVideos.scene1={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
@@ -582,11 +583,11 @@ test('three completed images automatically submit one AWS sequence; panels revea
   options.assembly={enabled:true,status:'READY'};
   await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(h.els.assembleFinal.hidden,true);
-  assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,1,
-    'Three completed real MP4s automatically start stitching exactly once');
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,0,
+    'Only AWS may start stitching after Scene 3');
   await h.els.refresh.listeners.click(); await h.flush();
-  assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,1);
-  assert.equal(approvals().length,1);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,0);
+  assert.equal(approvals().length,0);
   assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,0);
 });
 test('Scene 2 and Scene 3 video panels unlock only after previous MP4 completion', async () => {
@@ -622,7 +623,7 @@ test('failed Scene 2 blocks Scene 3 while keeping manual retry and successful vi
   const h=setup(options);
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  await h.flush(); // sequence auto-started when all reference images completed
+  await h.flush(); // sequence is now started by AWS, not browser polling
   options.realVideos.scene1={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
   options.realVideos.scene2={mode:'REAL',status:'FAILED',retryAvailable:true,
     providerFinalStatus:'failed',providerErrorCode:'too_many_requests'};
@@ -632,14 +633,14 @@ test('failed Scene 2 blocks Scene 3 while keeping manual retry and successful vi
   assert.equal(h.els.retryVideoScene2.hidden,false);
   assert.ok(h.els.videoPlayer1.querySelector('video'),'Completed scene stays playable');
   const count=()=>h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length;
-  assert.equal(count(),1);
+  assert.equal(count(),0);
   await h.els.retryVideoScene2.listeners.click(); await h.flush();
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/scene2/retry')).length,1);
   assert.equal(h.els.videoPanel3.hidden,true);
   options.realVideos.scene2={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene2.mp4'};
   await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(h.els.videoPanel3.hidden,false);
-  assert.equal(count(),1,'No extra sequence approvals');
+  assert.equal(count(),0,'No browser-side sequence approvals');
   assert.equal(h.calls.filter(c=>/\/real-videos\/scene3$/.test(c.url) && c.opts.method==='POST').length,0,
     'Scene 3 is submitted by AWS, not this browser');
 });
@@ -657,13 +658,13 @@ test('background app pauses read-only polling but AWS completion becomes visible
   options.realVideos.scene3={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene3.mp4'};
   await h.flush();
   const approvals=h.calls.filter(c=>c.url.endsWith('/real-videos/sequence'));
-  assert.equal(approvals.length,1);
+  assert.equal(approvals.length,0);
   assert.equal(h.els.videoPanel3.hidden,true,'Background page did not repaint');
   h.doc.hidden=false;
   h.doc.listeners.visibilitychange();
   await h.flush();
   assert.equal(h.els.videoPanel3.hidden,false,'On return page displays AWS-completed scenes');
-  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,1);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
   assert.equal(h.calls.filter(c=>/\/real-videos\/scene[123]$/.test(c.url) && c.opts.method==='POST').length,0);
 });
 
@@ -677,27 +678,23 @@ test('already approved sequence never triggers automatic paid resubmission', asy
   assert.equal(h.els.generateAllVideos.hidden,true);
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
 });
-test('uncertain automatic approval does not duplicate paid requests', async () => {
+test('browser never attempts paid approval even when backend reports uncertain status', async () => {
   const h=setup({paidScenes:{scene1:true,scene2:true,scene3:true},
     realVideos:{},deferPaidVideoResponses:true});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  assert.equal(h.pendingVideoPosts.size,1);
-  assert.ok(h.pendingVideoPosts.has('sequence'));
-  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,1);
-  h.pendingVideoPosts.get('sequence')({ok:false,status:503,async json(){return {error:'Unknown submission status'};}});
-  await h.flush();
+  assert.equal(h.pendingVideoPosts.size,0);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
   await h.els.refresh.listeners.click(); await h.flush();
-  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,1);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
   assert.equal(h.els.generateAllVideos.hidden,true);
-  assert.match(h.els.videoDebugText1.textContent,/NOT be retried/);
 });
-test('automatic sequence approval survives stale read-only polling', async () => {
+test('stale video polling cannot initiate an AWS-owned paid sequence', async () => {
   const h=setup({paidScenes:{scene1:true,scene2:true,scene3:true}});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
   await h.els.refresh.listeners.click(); await h.flush();
-  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,1);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
 });
 test('read-only workflow review does not unlock another paid attempt', async () => {
   const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false},
