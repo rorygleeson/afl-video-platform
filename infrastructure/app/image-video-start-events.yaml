@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Stage 1 only. On successful existing image Step Functions execution, notify
+  existing API to start the user-consented paid video sequence. No model changes.
+Resources:
+  CompletedImageExecution:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: afl-app-dev-images-to-video
+      State: ENABLED
+      Description: Trigger consent-checked video sequence when all three image scenes complete
+      EventPattern:
+        source:
+          - aws.states
+        detail-type:
+          - Step Functions Execution Status Change
+        detail:
+          stateMachineArn:
+            - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-scene1-pilot'
+          status:
+            - SUCCEEDED
+      Targets:
+        - Id: ImageCompletionToApi
+          Arn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-api'
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 3600
+            MaximumRetryAttempts: 24
+  AllowImageCompletionToApi:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-api'
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CompletedImageExecution.Arn
+Outputs:
+  ImageCompletionRuleArn:
+    Value: !GetAtt CompletedImageExecution.Arn
