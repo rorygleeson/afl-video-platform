@@ -108,6 +108,19 @@ def validate(changes, allowed, required, kind):
         assert c.get("Replacement") in ("False", False, None), f"{kind} replacement"
         for detail in c.get("Details", []):
             target = detail.get("Target", {})
+            print("REVIEW_CFN_DETAIL", kind, c["LogicalResourceId"],
+                  detail.get("Evaluation"), detail.get("ChangeSource"),
+                  target.get("Attribute"), target.get("Name"), flush=True)
+            if c["LogicalResourceId"] == "AssemblyStateMachineRole":
+                assert kind == "assembly-worker"
+                assert detail.get("Evaluation") == "Dynamic"
+                assert detail.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
+                assert target.get("Name") in ("Policies", "RoleArn")
+            if c["LogicalResourceId"] == "AssemblyStateMachine":
+                if detail.get("Evaluation") == "Static":
+                    assert target.get("Name") in ("DefinitionString", "Definition")
+                else:
+                    assert detail.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
             if detail.get("Evaluation") == "Static" and c["LogicalResourceId"] in required:
                 if kind in ("api", "assembly-worker"):
                     assert target.get("Name") == "Code", f"{kind} non-code setting change"
@@ -232,7 +245,8 @@ def main():
                                               ("ArtifactKey", p["wd_key"]) if p["kind"] == "watchdog" else None)
         allowed = {
             "api": {"ApiLambda", "InvokePermission", "ProxyAny"},
-            "assembly-worker": {"AssemblyWorker", "AssemblyStateMachine"},
+            "assembly-worker": {"AssemblyWorker", "AssemblyStateMachine",
+                                "AssemblyStateMachineRole"},
             "assembly-sfn": {"AssemblyStateMachine"},
             "watchdog": {"WatchdogRole", "WatchdogLambda", "WatchdogMachine"},
         }[p["kind"]]
