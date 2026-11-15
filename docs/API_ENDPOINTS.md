@@ -5,7 +5,9 @@
 
 **Source-documented dev base URL:** `https://ue36acwvrc.execute-api.ap-southeast-2.amazonaws.com/dev` (confirm live before relying on it).
 
-**Backend-owned orchestration note (2026-11-15):** Once the browser has uploaded the selfie, created a consented job and POSTed `/jobs/{jobId}/generate`, successful AWS completion events—not frontend polling—trigger Video 1, Video 2, Video 3 and final FFmpeg stitching. Existing video retry POSTs still require deliberate confirmation. **No Stripe payment gate is implemented.**\n\n## Shared conventions
+**Backend-owned orchestration note (2026-11-15):** Once the browser has uploaded the selfie, created a consented job and POSTed `/jobs/{jobId}/generate`, successful AWS completion events—not frontend polling—trigger Video 1, Video 2, Video 3 and final FFmpeg stitching. Existing video retry POSTs still require deliberate confirmation. **No Stripe payment gate is implemented.**
+
+## Shared conventions
 
 - API Gateway REST API: `ANY /{proxy+}` using **AWS_PROXY Lambda integration** to `afl-app-dev-api`, handler `handler.lambda_handler`; application dispatches actual GET/POST routes. `OPTIONS /{proxy+}` is a non-key mock CORS preflight. No per-route standalone Lambda integrations.
 - Every business route currently requires API Gateway `x-api-key`, with `AuthorizationType: NONE`. **API keys are not customer identity or payment entitlements.** They are developer-only. Future paid customers require per-job secure authorisation.
