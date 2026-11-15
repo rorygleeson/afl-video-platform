@@ -1260,6 +1260,9 @@ const input = document.getElementById('selfie');
           firstName,
           lastName,
           personalMessage: document.getElementById('personalMessage').value.trim(),
+          // Authorise the existing three-scene sequence at job creation;
+          // AWS waits for successful image completion before starting video.
+          confirmPaidSequence: true,
         }),
       });
       if (!/^[0-9a-f]{32}$/.test(created.job?.jobId || '')) {
