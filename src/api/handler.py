@@ -158,12 +158,25 @@ def public_job(item):
     }
 
 
+def validate_personal_message(value):
+    """Optional on-video message; guard FFmpeg text rendering and readable output."""
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError("Personal message must be text")
+    value = value.strip()
+    if len(value) > 80 or any(ord(char) < 32 or ord(char) == 127 for char in value):
+        raise ValueError("Personal message must be up to 80 printable characters")
+    return value
+
+
 def create_job(event):
     data = body_json(event)
     scenario_id = data.get("scenarioId")
     team = data.get("team")
     first_name = validate_name(data.get("firstName"), "First name")
     last_name = validate_name(data.get("lastName"), "Surname")
+    personal_message = validate_personal_message(data.get("personalMessage"))
     upload_key = data.get("uploadKey")
     if scenario_id != SCENARIO_ID:
         raise ValueError("Unsupported scenario")
@@ -181,7 +194,8 @@ def create_job(event):
     fingerprint = hashlib.sha256(
         json.dumps(
             {"scenarioId": scenario_id, "team": team, "uploadKey": upload_key,
-             "firstName": first_name, "lastName": last_name},
+             "firstName": first_name, "lastName": last_name,
+              "personalMessage": personal_message},
             sort_keys=True, separators=(",", ":"),
         ).encode()
     ).hexdigest()
@@ -210,6 +224,7 @@ def create_job(event):
         "team": team,
         "firstName": first_name,
         "lastName": last_name,
+        "personalMessage": personal_message,
         "uploadKey": upload_key,
         "requestFingerprint": fingerprint,
         "status": "AWAITING_IMAGE_PIPELINE",
