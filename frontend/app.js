@@ -364,7 +364,7 @@ const input = document.getElementById('selfie');
                         WORKFLOW_REVIEW_REQUIRED: 'workflow needs review',
                       }[real.retryBlockedReason] || 'needs review') +
                       '). See Developer Diagnostics.'
-                    : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
+                    : real.status === 'PREPARED' ? 'Preparing…' : 'MP4 status: ' + real.status.replaceAll('_',' ').toLowerCase())
             : authorised ? 'Ready to generate — paid Google API' : 'MP4 generation: locked (not charged)';
         paidStatus.classList.toggle('generating',
           (real.mode === 'REAL' && ['REQUESTED', 'QUEUED', 'SUBMITTING', 'GENERATING', 'PROCESSING', 'POLLING', 'IN_PROGRESS'].includes(real.status)) ||
