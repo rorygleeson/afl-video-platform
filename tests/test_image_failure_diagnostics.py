@@ -83,6 +83,35 @@ class DiagnosticTests(unittest.TestCase):
         config=(ROOT/"infrastructure/app/backend.yaml").read_text()
         self.assertIn("MaxConcurrency: 1",config)
 
+    def test_failed_image_dynamodb_decimal_counters_are_json_serializable(self):
+        import json
+        from decimal import Decimal
+        tree=ast.parse(API.read_text())
+        fn=next(n for n in tree.body if isinstance(n,ast.FunctionDef)
+                and n.name=="public_job")
+        scope={}
+        exec(compile(ast.Module(body=[fn],type_ignores=[]),str(API),"exec"),scope)
+        item={"jobId":"a"*32,"scenarioId":"afl-grand-final-winning-kick",
+              "team":"collingwood","status":"PARTIAL_SUCCESS","createdAt":"2026-11-15",
+              "scenes":{
+                "scene1":{"status":"FAILED","errorCode":"GOOGLE_IMAGE_SAFETY_BLOCK",
+                  "providerFinishReason":"IMAGE_PROHIBITED_CONTENT",
+                  "providerBlockReason":"UNKNOWN","providerBlockedCategories":[],
+                  "providerCandidateCount":Decimal("1"),"providerImageParts":Decimal("0"),
+                  "providerTextOnly":True},
+                "scene2":{"status":"COMPLETED"},
+                "scene3":{"status":"FAILED","errorCode":"GOOGLE_IMAGE_SAFETY_BLOCK",
+                  "providerCandidateCount":Decimal("1"),"providerImageParts":Decimal("0")},
+              }}
+        public=scope["public_job"](item)
+        encoded=json.loads(json.dumps(public))
+        self.assertEqual(encoded["scenes"]["scene1"]["providerCandidateCount"],1)
+        self.assertEqual(encoded["scenes"]["scene1"]["providerImageParts"],0)
+        self.assertEqual(encoded["scenes"]["scene1"]["providerFinishReason"],
+                         "IMAGE_PROHIBITED_CONTENT")
+        self.assertTrue(encoded["scenes"]["scene1"]["providerTextOnly"])
+        self.assertNotIn("providerCandidateCount",encoded["scenes"]["scene2"])
+
     def test_api_only_exposes_diagnostics_on_failure(self):
         api=API.read_text()
         self.assertIn('"providerFinishReason"',api)
