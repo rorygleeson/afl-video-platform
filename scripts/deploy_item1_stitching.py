@@ -80,13 +80,7 @@ def change_set(cf, stack, name, template=None, parameter_replace=None):
     old_params = parameters(stack)
     args = dict(StackName=stack["StackName"], ChangeSetName=name,
                 ChangeSetType="UPDATE", RoleARN=ROLE,
-                Capabilities=["CAPABILITY_NAMED_IAM"],
-                Parameters=[{"ParameterKey": k, **(
-                    {"ParameterValue": v} if k == parameter_replace
-                    else {"UsePreviousValue": True})}
-                    for k, v in ((k, parameter_replace[1]) if isinstance(parameter_replace, tuple) and k == parameter_replace[0] else (k, x)
-                                 for k, x in old_params.items())])
-    # Rebuild parameters explicitly to avoid accidental parameter modifications.
+                Capabilities=["CAPABILITY_NAMED_IAM"])
     args["Parameters"] = [
         {"ParameterKey": k, **(
             {"ParameterValue": parameter_replace[1]}
@@ -186,10 +180,15 @@ def main():
     before_machine = sf.describe_state_machine(stateMachineArn=machine_arn)
     assert before_machine["status"] == "ACTIVE"
     assert before_machine["type"] == "STANDARD"
-    if update_definition:
+    assembly_plan = next((p for p in plans if p["kind"] == "assembly-worker"), None)
+    if assembly_plan and update_definition:
+        # One combined CFN change set for the assembly stack. Two independent
+        # change sets from the original stack could otherwise revert the worker.
+        assembly_plan["template"] = updated_assembly
+        assembly_plan["machine"] = machine_arn
+    elif update_definition:
         plans.append(dict(kind="assembly-sfn", stack=assembly_stack,
-                          template=updated_assembly, machine=machine_arn,
-                          old_definition=before_machine["definition"]))
+                          template=updated_assembly, machine=machine_arn))
     wd_stack = require_stack(cf, WATCHDOG)
     wd_source = Path("src/handoff_watchdog/handler.py").read_bytes()
     wd_buffer = io.BytesIO()
@@ -253,7 +252,7 @@ def main():
             fn = lam.get_function_configuration(FunctionName=p["function"])
             assert fn["CodeSha256"] == p["after"]
             assert fn["LastUpdateStatus"] == "Successful"
-        if p["kind"] == "assembly-sfn":
+        if "machine" in p:
             actual = sf.describe_state_machine(stateMachineArn=p["machine"])
             assert "RetryConfirmedAssemblyFailure" in actual["definition"]
             assert actual["type"] == "STANDARD"
