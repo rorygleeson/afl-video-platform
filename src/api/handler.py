@@ -145,6 +145,13 @@ def public_job(item):
                    if item.get("scenes", {}).get(scene_id, {}).get("status") == "FAILED"
                    and item.get("scenes", {}).get(scene_id, {}).get("errorCode")
                    else {}),
+                **({key: item["scenes"][scene_id][key] for key in (
+                    "providerFinishReason", "providerBlockReason",
+                    "providerBlockedCategories", "providerCandidateCount",
+                    "providerImageParts", "providerTextOnly")
+                    if key in item["scenes"][scene_id]}
+                   if item.get("scenes", {}).get(scene_id, {}).get("status") == "FAILED"
+                   else {}),
                 **({"retryCount": int(item["scenes"][scene_id].get("retryCount", 0)),
                     "maxRetries": int(item["scenes"][scene_id].get("maxRetries", 7)),
                     "nextRetryAt": int(item["scenes"][scene_id].get("nextRetryAt", 0))}
