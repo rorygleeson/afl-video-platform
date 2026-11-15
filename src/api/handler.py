@@ -234,7 +234,9 @@ def overall_job_progress(job):
         if job.get("videoSequence") and job["videoSequence"].get("status") != "APPROVED":
             progress["stageStatus"] = "REVIEW_REQUIRED"
             return progress
-        if not job.get("videoSequence") and not job.get("paidVideoApprovals", {}).get(scene):
+        if (not job.get("videoSequence")
+                and not job.get("paidVideoApprovals", {}).get(scene)
+                and not video):
             progress["stageStatus"] = "WAITING_FOR_ACTION"
             return progress
 
