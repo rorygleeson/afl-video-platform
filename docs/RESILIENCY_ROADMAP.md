@@ -144,3 +144,8 @@ Given an authorised job, after `POST /jobs/{jobId}/generate` succeeds the user m
 - 2026-11-15 — Step 1.1 source baseline captured in [DEPLOYMENT_BASELINE_2026-11-15.md](DEPLOYMENT_BASELINE_2026-11-15.md) (commit `892bf629`). **IN PROGRESS:** live AWS config and workflow evidence not yet accessible/verified. No application changes.
 
 - 2026-11-15 — Roadmap created. Checklist tasks are **not yet marked complete**; current source findings are preliminary and live AWS values remain unverified.
+
+
+## 2026-11-16 source audit and cleanup tracking
+
+See [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md) for the current source-based audit, eight tracked resilience findings R1–R8, fault-injection test matrix, and job-aware S3 cleanup proposal. **Audit only:** no AWS changes, deletion rules, Stripe integration, or paid Google calls were made. Critical pre-payment gates: queued-but-not-started assembly recovery; missed watchdog-start event; safe handling of unknown provider submissions; consumer job restoration; and source-versus-live verification. Existing S3 Lifecycle covers uploads/results but not videos. Do not claim production readiness without the listed tests.
