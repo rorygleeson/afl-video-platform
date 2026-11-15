@@ -6,7 +6,9 @@
 
 > The values below are confirmed in current repository source and CloudFormation. Do not represent them as measured live AWS values until compared against deployed resources and effective SDK settings. **Do not rerun paid Google requests just to test retry logic.**
 
-**Post-release verification (2026-11-15):** Source and guarded AWS deployment logs confirm the Stage 1–3 backend handoff. [Images → Video 1](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745), [Scene 3 → assembly](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297), [browser read-only after image start](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205). Source and offline tests verified; a fresh live unattended full job and failed-event injection were **not** executed. This addendum overrides older browser-driven descriptions.\n\n## Operation retry and timeout matrix
+**Post-release verification (2026-11-15):** Source and guarded AWS deployment logs confirm the Stage 1–3 backend handoff. [Images → Video 1](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745), [Scene 3 → assembly](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297), [browser read-only after image start](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205). Source and offline tests verified; a fresh live unattended full job and failed-event injection were **not** executed. This addendum overrides older browser-driven descriptions.
+
+## Operation retry and timeout matrix
 
 | Operation | Source-configured timeout | Delay / backoff | Maximum attempts | Failure behaviour |
 |---|---|---|---|---|
@@ -28,7 +30,8 @@
 | FFprobe validation | subprocess timeout **15s** per probe | None | 1 each | Invalid media/errors cause assembly failure |
 | FFmpeg normalisation | **150s per clip** | None | 1 per scene | Fails assembly; input scene MP4s remain in S3 |
 | FFmpeg final concatenate | **60s** | None | 1 | Fails assembly; inputs remain in S3 |
-| Browser image/video status poll | Every **5s** normally; **15s** after polling error | Fixed intervals; read-only | Continuous while active/visible | Browser stopping polling does not stop AWS orchestration after image job start; explicit retry controls remain separate |\n| Developer overall job status GET | Every **2s** while diagnostics expanded and browser visible | Read-only single-flight | Continuous while open/visible | `GET /jobs/{jobId}` includes `job.progress` derived from existing records; never creates work |
+| Browser image/video status poll | Every **5s** normally; **15s** after polling error | Fixed intervals; read-only | Continuous while active/visible | Browser stopping polling does not stop AWS orchestration after image job start; explicit retry controls remain separate |
+| Developer overall job status GET | Every **2s** while diagnostics expanded and browser visible | Read-only single-flight | Continuous while open/visible | `GET /jobs/{jobId}` includes `job.progress` derived from existing records; never creates work |
 | Video manual scene retry | API Lambda 15s + new SFN/worker deadlines | Separate user confirmation; **not automatic** | **10 total attempts** per video scene | Only confirmed provider terminal failures and safe prior workflow completion eligible |
 | Stalled image watchdog | Invoked by EventBridge every **5min**; image worker Lambda 600s | No model retry | Scans up to 10 pages × 100 evaluated records | After **45min** image job threshold, marks incomplete records failed; preserves completed ones |
 
