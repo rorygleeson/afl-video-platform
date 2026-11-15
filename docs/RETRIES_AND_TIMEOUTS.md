@@ -6,7 +6,7 @@
 
 > The values below are confirmed in current repository source and CloudFormation. Do not represent them as measured live AWS values until compared against deployed resources and effective SDK settings. **Do not rerun paid Google requests just to test retry logic.**
 
-## Operation retry and timeout matrix
+**Post-release verification (2026-11-15):** Source and guarded AWS deployment logs confirm the Stage 1–3 backend handoff. [Images → Video 1](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745), [Scene 3 → assembly](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297), [browser read-only after image start](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205). Source and offline tests verified; a fresh live unattended full job and failed-event injection were **not** executed. This addendum overrides older browser-driven descriptions.\n\n## Operation retry and timeout matrix
 
 | Operation | Source-configured timeout | Delay / backoff | Maximum attempts | Failure behaviour |
 |---|---|---|---|---|
@@ -28,7 +28,7 @@
 | FFprobe validation | subprocess timeout **15s** per probe | None | 1 each | Invalid media/errors cause assembly failure |
 | FFmpeg normalisation | **150s per clip** | None | 1 per scene | Fails assembly; input scene MP4s remain in S3 |
 | FFmpeg final concatenate | **60s** | None | 1 | Fails assembly; inputs remain in S3 |
-| Browser job poll | Every **5s** normally; **15s** after polling error | Fixed intervals; not paid generation | Continuous while active/visible | Browser stops polling when hidden; backend running SFN remains independent |
+| Browser image/video status poll | Every **5s** normally; **15s** after polling error | Fixed intervals; read-only | Continuous while active/visible | Browser stopping polling does not stop AWS orchestration after image job start; explicit retry controls remain separate |\n| Developer overall job status GET | Every **2s** while diagnostics expanded and browser visible | Read-only single-flight | Continuous while open/visible | `GET /jobs/{jobId}` includes `job.progress` derived from existing records; never creates work |
 | Video manual scene retry | API Lambda 15s + new SFN/worker deadlines | Separate user confirmation; **not automatic** | **10 total attempts** per video scene | Only confirmed provider terminal failures and safe prior workflow completion eligible |
 | Stalled image watchdog | Invoked by EventBridge every **5min**; image worker Lambda 600s | No model retry | Scans up to 10 pages × 100 evaluated records | After **45min** image job threshold, marks incomplete records failed; preserves completed ones |
 
@@ -48,7 +48,7 @@ State machines:
 - `afl-app-dev-scene1-pilot` **STANDARD**, `TimeoutSeconds:1800`: `Prepare → ParallelScenes` (**Map MaxConcurrency 3**, three image branches may execute concurrently) → `Finalize`; Catch to `RecoverJob`. Each Map iteration: `Generate → AssessImageResult`, confirmed 429 `WaitForGoogleCapacity → Generate`, otherwise `SceneCompleted` or `MarkSceneFailed`.
 - `afl-app-dev-google-omni` **STANDARD**, `TimeoutSeconds:3600`: `PaidGate → Claim → SubmissionSchedule` (scene 2 Wait 10s/scene 3 Wait 20s) `→ Submit → WaitForVideo(20s) → PollVideo → InspectVideo`, loop while waiting, terminal to `Finalize`, unknown status to `UnexpectedStatus` Fail. **Only PollVideo** has TaskFailed retry (three retries with backoff 2).
 - `afl-app-dev-assembly` **STANDARD**: single `Stitch` task; no explicit Retry/Catch or state-machine TimeoutSeconds in source definition.
-- EventBridge forwards successful video workflow execution status events to API Lambda `video_sequence_event()`, which checks DDB completion and S3 before starting next scene.
+- **Two isolated successful execution EventBridge rules:** image state machine → API `image_sequence_event()` (job consent and 3 completed images required) → Video 1; Google video state machine → API `video_sequence_event()` (current attempt/S3 completion verified) → Video 2, Video 3 or final FFmpeg assembly after Scene 3. Both event targets specify **24 attempts maximum / 3600-second maximum event age** in CloudFormation; neither template defines a DLQ. Missing delivery/ambiguous handoff still lacks a periodic backend reconciler.
 - EventBridge `afl-app-dev-reconcile-images` runs every 5 minutes; returns incomplete image jobs to terminal state rather than resubmitting paid images.
 
 **No explicit Lambda reserved concurrency settings were found in the four principal source templates**; this must be verified live. AWS-managed event retry and SDK backoff defaults need effective configuration checks; don't assume “no retry” means no provider/network retries in every underlying library.
@@ -103,7 +103,7 @@ Thus a “3 retries” polling setting does not mean three Google generations, a
 - `ffprobe` 15s subprocess deadline; each FFmpeg normalisation up to 150s; concat 60s.
 - A transient S3 read or DDB update failure can leave `PROCESSING` or `FAILED`; current SFN has no automatic Retry/Catch.
 - Input MP4s remain safely in S3 when assembly fails, so an idempotent assembly-only recovery is plausible without another Google call.
-- **Gap:** frontend currently invokes assembly when all video statuses are ready; if browser is closed, server-side scene completion alone does not initiate assembly.
+- **Updated (2026-11-15):** successful Scene 3 AWS execution now initiates assembly through the existing EventBridge → API handler. Frontend assembly polling is read-only, so closing the browser after image workflow initiation does not by itself prevent FFmpeg handoff. **Remaining gap:** lost event, unknown StartExecution, failed/stalled FFmpeg and missing assembly-only watchdog; no automatic FFmpeg retry is configured.
 - Current frontend stitching progress bar is a **10-second estimate**, not runtime FFmpeg percent. Its estimate cannot be used to detect stuck jobs.
 
 ## Retry policy classification — findings, not implemented fixes
@@ -120,7 +120,7 @@ Thus a “3 retries” polling setting does not mean three Google generations, a
 | DDB failure after Google completed | Workflow may fail; review required | Inspect output/SFN history before reopening scene |
 | Step Functions timeout | Review required, no new POST | Query interaction status; don't infer provider stopped |
 | Assembly transient failure | Assembly fails, no retry | Server-owned bounded assembly-only retry; preserve clips |
-| Browser closure | Backend SFN may continue | Anonymous recovery token; server-owned stitching trigger |
+| Browser closure | AWS progression can continue after the image SFN has started; browser-owned upload/job-start still needs connectivity | Add anonymous secure same-job recovery and lost-event reconciliation; stitching trigger is already AWS-owned |
 | Duplicate paid submit/retry | Conditional DDB admission guards | Preserve stable names, verify race testing |
 | Job expires during delivery/refund review | DDB TTL and S3 lifecycle may remove state | Separate paid-order retention/lifecycle; never TTL-away unresolved order |
 
@@ -149,7 +149,7 @@ Use mocked Google response fixtures and isolated AWS fakes for most cases. Curre
 - [ ] Verify S3 lifecycle including `videos/` retention, DDB TTL and available point-in-time recovery, logging/monitoring and customer retention controls.
 - [ ] Check model failure billing and Google/Stripe price economics before approving automatic retry budgets.
 
-**Overall conclusion:** Current source is intentionally conservative about duplicate expensive Google POSTs, but it does **not yet** implement fully automatic, browser-independent, end-to-end recovery and refund readiness. The next phase should strengthen reconciliation, checkpoint resume, server-side stitching and customer recovery without changing prompts or models.
+**Overall conclusion (updated 2026-11-15):** The deployed source now has browser-independent AWS stage progression **after the browser initiates image generation**, including successful image completion → Video 1, per-video progress to Video 3, and Scene 3 completion → final assembly. Source is conservative about duplicate expensive Google POSTs, but this is **not** a fully reconciled or payment-ready delivery system. Next phase: missed EventBridge/StartExecution reconciliation, safe provider uncertainty handling, assembly-only recovery, anonymous job restore and payment verification. Preserve prompts and models.
 
 ## Image no-content diagnostics — additive observability only (15 November 2026)
 
