@@ -176,6 +176,7 @@ def request_body(prompt, master, selfie):
     ]}], "generationConfig": {
         "responseModalities": ["TEXT", "IMAGE"],
         "imageConfig": {"aspectRatio": "9:16", "imageSize": "2K",
+                        "personGeneration": "ALLOW_ALL",
                         "imageOutputOptions": {"mimeType": "image/png"}},
     }}
 
