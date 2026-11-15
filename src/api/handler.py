@@ -132,6 +132,7 @@ def public_job(item):
         "team": item["team"],
         "firstName": item.get("firstName"),
         "lastName": item.get("lastName"),
+        "personalMessage": item.get("personalMessage", ""),
         "status": item["status"],
         "createdAt": item["createdAt"],
         "imageCount": sum(1 for scene in item.get("scenes", {}).values() if scene.get("status") == "COMPLETED"),
