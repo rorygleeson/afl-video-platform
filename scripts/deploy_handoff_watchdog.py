@@ -107,9 +107,10 @@ def main():
         assert machine["status"] == "ACTIVE" and machine["type"] == "STANDARD"
         rule = cf.describe_stack_resource(
             StackName=STACK, LogicalResourceId="EveryMinute")["StackResourceDetail"]
+        assert rule["ResourceType"] == "AWS::Events::Rule"
         assert rule["ResourceStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
         assert rule["PhysicalResourceId"].endswith(
-            "rule/afl-app-dev-handoff-watchdog-image-start")
+            "afl-app-dev-handoff-watchdog-image-start")
         assert stack["StackStatus"] == "UPDATE_COMPLETE"
         print("PER_JOB_WATCHDOG_DEPLOYED_VERIFIED", flush=True)
         print("NO_IDLE_SCHEDULE_IN_DEPLOYED_CFN_VERIFIED", flush=True)
@@ -188,7 +189,7 @@ def main():
     rule = cf.describe_stack_resource(
         StackName=STACK, LogicalResourceId="EveryMinute")["StackResourceDetail"]
     assert rule["PhysicalResourceId"].endswith(
-        "rule/afl-app-dev-handoff-watchdog-image-start")
+        "afl-app-dev-handoff-watchdog-image-start")
     assert rule["ResourceStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
     print("PER_JOB_WATCHDOG_DEPLOYED_VERIFIED", flush=True)
     print("NO_IDLE_SCHEDULE_IN_DEPLOYED_CFN_VERIFIED", flush=True)
