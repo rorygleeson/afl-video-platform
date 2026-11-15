@@ -1,0 +1,46 @@
+name: Deploy read-only Google image response diagnostics (guarded)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-image-response-diagnostics.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  image-diagnostics:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate provider classifications, retry guards and frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 -m py_compile scripts/deploy_image_response_diagnostics.py src/image_worker/google_direct.py src/image_worker/handler.py src/api/handler.py
+          python3 -m unittest discover -s tests -p 'test_image_failure_diagnostics.py' -v
+          node --check frontend/app.js
+          node --test tests/test_frontend_poll.cjs
+          grep -q 'MaxConcurrency: 1' infrastructure/app/backend.yaml
+          grep -q 'MAX_ATTEMPTS = 8' src/image_worker/google_direct.py
+          grep -q 'MAX_RETRY_WINDOW_SECONDS = 600' src/image_worker/google_direct.py
+          grep -q 'imageDiagnosticsText' frontend/index.html
+          echo 'OFFLINE_IMAGE_DIAGNOSTICS_VERIFIED'
+      - name: Assume existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Guarded atomic backend code update and frontend publication
+        shell: bash
+        run: python3 -u scripts/deploy_image_response_diagnostics.py
