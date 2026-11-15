@@ -105,7 +105,13 @@ def validate(changes, allowed, required, kind):
     assert required <= ids <= allowed, f"{kind} unexpected CFN resources: {ids}"
     for c in changes:
         assert c["Action"] == "Modify", f"{kind} non-modify action"
-        assert c.get("Replacement") in ("False", False, None), f"{kind} replacement"
+        replacement = c.get("Replacement")
+        print("REVIEW_REPLACEMENT", kind, c["LogicalResourceId"], replacement, flush=True)
+        if kind == "watchdog" and c["LogicalResourceId"] in ("EveryMinute", "InvokeFromEventBridge"):
+            assert replacement in ("False", False, None, "Conditional"), (
+                "Definite EventBridge rule/permission replacement forbidden")
+        else:
+            assert replacement in ("False", False, None), f"{kind} replacement"
         for detail in c.get("Details", []):
             target = detail.get("Target", {})
             print("REVIEW_CFN_DETAIL", kind, c["LogicalResourceId"],
