@@ -48,6 +48,7 @@ function setup(options = {}) {
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
                       'referenceImagesHeading',
+                      'imageDiagnosticsText',
                       'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName', 'personalMessage', 'personalMessageCount',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
                       'videoPromptStatus1','videoPromptStatus2','videoPromptStatus3',
@@ -1259,4 +1260,23 @@ test('blank optional greeting is permitted without changed generation flow', asy
   await h.els.generate.listeners.click();await h.flush();
   const post=h.calls.find(c=>c.url.endsWith('/jobs') && c.opts.method==='POST');
   assert.equal(JSON.parse(post.opts.body).personalMessage,'');
+});
+
+test('failed reference image renders safely recorded Google diagnostic reasons', async () => {
+  const opts={};
+  const h=setup(opts);
+  await h.els.generate.listeners.click();
+  await h.flush();
+  const scene = h.mockStatuses.scene1;
+  scene.status='FAILED';
+  scene.errorCode='GOOGLE_IMAGE_SAFETY_BLOCK';
+  scene.providerFinishReason='IMAGE_SAFETY';
+  scene.providerBlockReason='UNKNOWN';
+  scene.providerBlockedCategories=['HARM_CATEGORY_DANGEROUS_CONTENT'];
+  scene.providerCandidateCount=1;
+  await h.els.refresh.listeners.click();
+  await h.flush();
+  assert.match(h.els.imageDiagnosticsText.textContent,/IMAGE_SAFETY/);
+  assert.match(h.els.imageDiagnosticsText.textContent,/HARM_CATEGORY_DANGEROUS_CONTENT/);
+  assert.equal(h.calls.filter(c => c.url.includes('/diagnostics') && c.url.includes('/images')).length,0);
 });
