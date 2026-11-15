@@ -60,3 +60,21 @@ The six new offline behavioural tests in `tests/test_assembly_handoff_behaviour.
 - New tests cover the safe handoff cases, watchdog QUEUED waiting/reconciliation and bounded FFmpeg-only retry policy. **Full CI and live integration still not validated; this is a staged change only.**
 
 Residual: unknown Lambda timeout stays review-required rather than automatically retried. True operator-guided recovery for a confirmed dead timed-out attempt may require a separate, token-fenced execution and distinct attempt output key; it must not be rushed into the current single-name system. Also verify all existing/source regression tests, IAM configuration, and exact live stacks before deploying.
+
+### R1 final safety review and deployment gate — 2026-11-16
+
+Implementation on PR #83 now includes: reconciling a reserved but missing named final execution; one bounded FFmpeg-only retry after a **confirmed worker-persisted FAILED** state; withholding retry when worker is still PROCESSING/unknown; per-job watchdog inspection of aged QUEUED/PROCESSING/FAILED records and terminal execution statuses. Watchdog has read-only DescribeExecution permission for the final state machine, and delegates QUEUED restart checks to the existing API, which verifies all three real source MP4s.
+
+Tests added/updated: fake AWS assembly handoff (missing/existing/uncertain/duplicate/terminal), watcher WAIT/REVIEW behaviour for queued/processing/failed records, retry worker contract, JSON parsing of the assembly Step Functions definition, and current scene-3 handoff AWS mocks. **The last full CI result must be compared with the main baseline before merge.** Main already has failing unrelated image-prompt tests; do not change prompt payloads to suppress tests.
+
+#### Controlled deployment order (NOT performed)
+1. Record exact live AWS source/artifact checksums and verify the existing backend, FFmpeg worker, assembly state machine and watchdog stack; ensure rollback packages.
+2. Deploy API Lambda recovery function **first** (no externally advertised endpoint change).
+3. Deploy FFmpeg Lambda worker supporting explicit retry flag and conditional failed->processing transition.
+4. Update assembly Step Functions ASL to add a 15-second delay and one conditional retry; validate no Google Lambda references.
+5. Deploy watchdog Lambda **and its CloudFormation IAM/env changes together** (adds read-only access to named final execution).
+6. Run free synthetic/fault tests against a known fixture (or explicitly authorised test assets), then one already-completed real three-scene job. Do not invoke Google generation or change customer data without permission.
+7. Confirm no more than one matching final execution name, exactly one retry when the first worker has persistently FAILED, no retry on a PROCESSING timeout, final S3 output and DynamoDB status match, and rollback readiness.
+8. Only then mark **LIVE VERIFIED / R1 COMPLETE**. Missing watchdog start events and >2h per-job lifetime remain Item 2 work.
+
+No deployment is implicit from a source merge. This PR intentionally has no automatic AWS deployment trigger.
