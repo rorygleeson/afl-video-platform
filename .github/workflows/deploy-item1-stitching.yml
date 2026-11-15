@@ -1,0 +1,53 @@
+name: Deploy Item 1 stitching recovery (guarded four-component release)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-item1-stitching.yml'
+      - 'scripts/deploy_item1_stitching.py'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[deploy-item1-stitching]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate the isolated recovery release before AWS access
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'cfn-lint>=1,<2'
+          python -m py_compile scripts/deploy_item1_stitching.py src/api/handler.py src/assembly_worker/handler.py src/handoff_watchdog/handler.py
+          cfn-lint infrastructure/app/assembly.yaml infrastructure/app/handoff-watchdog.yaml --regions ap-southeast-2
+          python -m unittest discover -s tests -p 'test_assembly_worker.py' -v
+          python -m unittest discover -s tests -p 'test_assembly_handoff_behaviour.py' -v
+          python -m unittest discover -s tests -p 'test_assembly_retry_runtime.py' -v
+          python -m unittest discover -s tests -p 'test_handoff_watchdog.py' -v
+          python -m unittest discover -s tests -p 'test_aws_video_sequence.py' -v
+          python -m unittest discover -s tests -p 'test_assembly_worker.py' -v
+          ! grep -Eq 'googleapis|start_video_sequence|start_real_scene|JOBS.scan' src/handoff_watchdog/handler.py
+          ! grep -Eq 'googleapis|start_real_scene|start_video_sequence' src/assembly_worker/handler.py
+          ! grep -Eq 'ScheduleExpression:|dynamodb:Scan|dynamodb:UpdateItem|s3:PutObject' infrastructure/app/handoff-watchdog.yaml
+      - name: Authenticate deployment role (only after offline tests pass)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: deploy-item1-stitching
+      - name: Guarded CloudFormation previews, deployment, and exact resource readback
+        env:
+          DEPLOY_ITEM1: AUTHORIZE_ITEM1_STITCHING
+        run: python -u scripts/deploy_item1_stitching.py
