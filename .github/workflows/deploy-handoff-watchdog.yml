@@ -1,0 +1,45 @@
+name: Deploy isolated 1-minute AFL handoff watchdog (guarded)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/handoff_watchdog/handler.py'
+      - 'infrastructure/app/handoff-watchdog.yaml'
+      - 'scripts/deploy_handoff_watchdog.py'
+      - 'tests/test_handoff_watchdog.py'
+      - '.github/workflows/deploy-handoff-watchdog.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: ${{ contains(github.event.head_commit.message, '[deploy-handoff-watchdog]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate isolated source, safety and regression tests
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'cfn-lint>=1,<2'
+          python -m py_compile src/handoff_watchdog/handler.py scripts/deploy_handoff_watchdog.py
+          cfn-lint infrastructure/app/handoff-watchdog.yaml --regions ap-southeast-2
+          python -m unittest discover -s tests -p 'test_handoff_watchdog.py' -v
+          python -m unittest discover -s tests -p 'test_aws_video_sequence.py' -v
+          ! grep -Eq 'start_execution|start_real_scene|start_video_sequence|dynamodb:UpdateItem|googleapis' src/handoff_watchdog/handler.py
+          ! grep -Eq 'states:StartExecution|dynamodb:UpdateItem|s3:PutObject' infrastructure/app/handoff-watchdog.yaml
+          grep -q 'rate(1 minute)' infrastructure/app/handoff-watchdog.yaml
+          grep -q 'MIN_AGE_SECONDS = 120' src/handoff_watchdog/handler.py
+      - name: Authenticate existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Create and verify only the isolated watchdog stack
+        run: python -u scripts/deploy_handoff_watchdog.py
