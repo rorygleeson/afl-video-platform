@@ -2,7 +2,7 @@
 
 **Source audit:** 15 November 2026. **Classification:** SOURCE VERIFIED; live AWS deployment versions, actual environment parameter values, and drift **NOT VERIFIED**. This file inventories deployed-intent CloudFormation and current handler code, not the contents of a live AWS console.
 
-**Authoritative source:** `infrastructure/app/backend.yaml`, `google-video.yaml`, `assembly.yaml`, `frontend.yaml`; `src/{api,image_worker,google_video_worker,assembly_worker}`; `.github/workflows/release.yml`; `scripts/capture_release_baseline.py`.
+**Authoritative source:** `infrastructure/app/backend.yaml`, `google-video.yaml`, `assembly.yaml`, `frontend.yaml`, `image-video-start-events.yaml`, `video-sequence-events.yaml`; `src/{api,image_worker,google_video_worker,assembly_worker}`; `.github/workflows/{release,deploy-aws-background-video,deploy-auto-video-start-ui}.yml`; `scripts/{capture_release_baseline,deploy_aws_background_video}.py`.
 
 ## CloudFormation stack ownership
 
@@ -11,6 +11,8 @@
 | `afl-app-dev-backend` | Upload/media bucket, jobs table, REST API, API/image/legacy auth Lambdas, image SFN and image watchdog | `infrastructure/app/backend.yaml` |
 | `afl-app-dev-google-video` | Real Google Omni worker, WIF env, video SFN | `infrastructure/app/google-video.yaml` |
 | `afl-app-dev-assembly` | FFmpeg layer, assembly Lambda and SFN | `infrastructure/app/assembly.yaml` |
+| `afl-app-dev-image-video-start-events` | Image Step Functions success → consent-gated Video 1 API handler | `infrastructure/app/image-video-start-events.yaml` |
+| `afl-app-dev-video-sequence-events` | Google video success → next scene or final assembly API handler | `infrastructure/app/video-sequence-events.yaml` |
 | `afl-app-dev-frontend` | Private frontend S3 and CloudFront | `infrastructure/app/frontend.yaml` |
 | `afl-app-dev-video` | Historical mock workflow / video admission infrastructure | Current baseline script inventories; detailed current stack template still to cross-check |
 | `afl-video-bootstrap` | Existing bootstrap/artifact/deployment role foundation | Historical bootstrap docs; not recreated in normal app deployment |
@@ -100,7 +102,7 @@ flowchart TD
 - `Submit` is a single billable POST **without** a state-machine Retry.
 - `PollVideo` has `Retry: [{ErrorEquals:[States.TaskFailed], IntervalSeconds:10, MaxAttempts:3, BackoffRate:2}]` — initial + up to 3 extra read-only invocations.
 - Each provider `WAITING` status loops via another 20s Wait. Unknown status enters explicit Fail, not a new generation.
-- The first video success leads to EventBridge `aws.states` successful execution event; API handler checks S3 and DDB before starting next scene. The third scene returns `ALL_SCENES_FINISHED` from event handler, but no server-side assembly trigger is present.
+- Successful image workflow completion emits an EventBridge event (dedicated `afl-app-dev-images-to-video` rule); API checks persisted consent and three completed images before starting Video 1. Successful Google video workflow emits another event (dedicated `afl-app-dev-google-video-completed` rule). API checks attempt ownership and S3/DDB completion before advancing to Video 2/3; **after verified Scene 3**, handler now calls `start_assembly()` and starts `final-{jobId}` only once, using existing conditional DDB reservation.
 - 10 total attempts per failed scene (API enforces user-confirmed retry eligibility after provider terminal failure and previous workflow safely stopped).
 
 ### Final assembly — `afl-app-dev-assembly`
@@ -127,6 +129,7 @@ Source `AWS::DynamoDB::Table` with:
 | --- | --- | --- |
 | `jobId`, `scenarioId`, `team`, `firstName`, `lastName`, `uploadKey` | API `create_job` | Job identity/input |
 | `requestFingerprint`, `createdAt`, `expiresAt`, `status` | API `create_job` | Idempotent creation, TTL and overall **image** job state |
+| `autoVideoConsent` | API `create_job` | Boolean set from `confirmPaidSequence` at job creation; authorises AWS image-success → Video 1 progression in developer-mode; **not** a verified Stripe entitlement |
 | `scenes.sceneN` | Image worker | `status`, `resultKey`, `errorCode`, `attemptCount`, `retryCount`, `maxRetries`, `firstAttemptAt`, `nextRetryAt`, `generationStartedAt`, `completedAt`, etc. |
 | `sceneCount`, `completedScenes`, `failedScenes`, `generationStartedAt`, `completedAt`, `teamMasterKeys` | Image worker | Counts, start/end, source master locking |
 | `videoSequence` | API | `APPROVED`, `AWS_EVENT_DRIVEN`, approval timestamp/fingerprint |
@@ -177,7 +180,7 @@ Versioned scenario configuration/prompt and team master artwork under `scenarios
 
 - Source CloudWatch log groups `/aws/lambda/afl-app-dev-api`, `...image-worker`, `...video-worker`, `...google-omni-worker`, `...assembly` with **14-day retention**; image SFN log group also defined with 14-day retention.
 - EventBridge image watchdog `afl-app-dev-reconcile-images`, schedule **rate(5 minutes)**, invokes image worker `op:reconcile`. Worker scans jobs stuck in `GENERATING_IMAGES` older than **45 minutes**, marks unfinished scenes failed, does **not** issue new Google requests.
-- EventBridge video success status-change handler lives in API Lambda `video_sequence_event`; delivery rule, target retry policy and DLQ need their owning resource definition/actual AWS checks before documenting exact retry count.
+- **Successful execution rules:** isolated `afl-app-dev-image-video-start-events` stack holds `CompletedImageExecution`/`AllowImageCompletionToApi`; existing `afl-app-dev-video-sequence-events` stack holds `CompletedGoogleVideoExecution`/`AllowVideoSequenceEvent`. Both target `afl-app-dev-api` on `aws.states` `SUCCEEDED` events, with `MaximumRetryAttempts:24` and `MaximumEventAgeInSeconds:3600`. **Neither source template configures a DLQ**, and no independent video/assembly event-handoff reconciler is implemented. Rule stacks were verified installed through guarded AWS deployments [43689396745](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745) and [43689754297](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297).
 - Existing baseline capture: `scripts/capture_release_baseline.py` inspects five app stacks, five Lambdas, state machine definition hashes, original deployed templates and Google worker artifact hash. It does not prove all runtime settings by itself.
 - Release manifest, change-set preview, rollout and rollback scripts in `scripts/`; latest canonical workflow `.github/workflows/release.yml` includes explicit manual backend deployment gate. Historic one-off deploy jobs exist and should be inventoried before production.
 - **No verified CloudWatch alarm inventory** (stuck jobs, error rates, unusual cost, failed assembly) from source review yet. Mark monitoring as open, not zero.
@@ -190,7 +193,14 @@ Versioned scenario configuration/prompt and team master artwork under `scenarios
 - [ ] Step Functions event rule, event target retry/DLQ, provider polling/retry behavior and job-wide watchdog.
 - [ ] Verify actual S3 `videos/` lifecycle, storage duration, object-level encryption and access, backup/PITR of jobs.
 - [ ] Create genuine secure anonymous recovery and payment-entitlement controls before charging consumers; developer API key is insufficient.
-- [ ] Implement server-triggered stitching and bounded assembly-only retry later, **not part of this docs-only pass**.
+- [x] Backend-triggered stitching implemented and guarded-deployment verified (run 43689754297). [ ] Bounded assembly-only retry and lost-handoff recovery remain future work; no code, CloudFormation or model change in this documentation update.
 - [ ] Confirm CloudWatch alerts, cost monitoring and runbooks. Never expose selfies, customer names, API keys or provider bearer tokens in logs or docs.
 
 This is a **documentation snapshot only**; the code, CloudFormation deployment and provider integrations have not been altered.
+
+## Backend handoff deployment evidence (15 November 2026)
+
+- [Stage 1](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745): image-success event/API + frontend consent deployed.
+- [Stage 2](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297): Scene 3 → FFmpeg handler deployed.
+- [Stage 3](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205): frontend read-only progression deployed.
+- A live unattended full-job test and fault-injected missed-event test remain unverified.
