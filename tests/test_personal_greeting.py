@@ -26,7 +26,7 @@ class GreetingTests(unittest.TestCase):
         self.assertEqual(check(None), "")
         self.assertEqual(check(" Happy Birthday Dad "), "Happy Birthday Dad")
         self.assertEqual(check("a"*80), "a"*80)
-        for invalid in (42, "a"*81, "Hi\\nDad", "Bad\\rMsg", "Bad\\x00Msg"):
+        for invalid in (42, "a"*81, "Hi\nDad", "Bad\rMsg", "Bad\x00Msg"):
             with self.assertRaises(ValueError):
                 check(invalid)
         source = API.read_text()
