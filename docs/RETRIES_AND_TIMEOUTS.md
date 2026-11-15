@@ -15,8 +15,8 @@
 | Job creation | API Lambda 15s | No client replay on ambiguous response in current form; stable idempotency key supports server replay if retained | 1 attempt in current UI flow | Conditional DDB insert; same key/input returns existing job, conflicting input 409 |
 | Start image workflow | API Lambda 15s; Step Functions **1800s** total | No general retry; named execution `jobId` | One workflow name per job | Duplicate named execution protected; ambiguous handoff requires checking job/SFN |
 | Image 1 | Image Lambda **600s**; Google HTTP POST **240s** socket | Explicit HTTP 429 only: `Retry-After` (+ jitter), else approx 15/30/60/120/180s cap (+0–3s jitter); Step Functions Wait | **8 total submissions** within 600s retry window | Other failures caught and scene marked `FAILED`; ambiguous Google POST **not resubmitted** |
-| Image 2 | Same as Image 1 | Same | Same | Sequentially processed after Image 1 map iteration finishes, including a failed scene result |
-| Image 3 | Same as Image 1 | Same | Same | Sequentially processed after Image 2 map iteration finishes |
+| Image 2 | Same as Image 1 | Same | Same | Runs in parallel with other image scenes (Map permits 3 branches); its own 429 wait/retry is independent |
+| Image 3 | Same as Image 1 | Same | Same | Runs in parallel with other image scenes (Map permits 3 branches); its own 429 wait/retry is independent |
 | Google image output parse/S3 write/DDB update | Image Lambda 600s | No application-level repeat of accepted model generation | No safe automatic second model submission | If Google returned image but storage/state fails, process can fail; must reconcile S3/DDB before new chargeable request |
 | Video 1 Google submission | Video Lambda **300s**; HTTP POST **150s** socket; video SFN **3600s** | **No Submit Task retry** | **1 submit per authorised attempt**; max 10 separately confirmed scene attempts | Pre-marked `SUBMISSION_UNKNOWN` prior to POST; unknown acceptance requires reconciliation |
 | Video 2 Google submission | Same as Video 1 | SFN adds **10s initial scheduling Wait** for scene 2 | Same | AWS completion event advances only after video 1 recorded `COMPLETED` and S3 object verified |
@@ -32,7 +32,7 @@
 | Video manual scene retry | API Lambda 15s + new SFN/worker deadlines | Separate user confirmation; **not automatic** | **10 total attempts** per video scene | Only confirmed provider terminal failures and safe prior workflow completion eligible |
 | Stalled image watchdog | Invoked by EventBridge every **5min**; image worker Lambda 600s | No model retry | Scans up to 10 pages × 100 evaluated records | After **45min** image job threshold, marks incomplete records failed; preserves completed ones |
 
-**Important detail:** the image worker catches a failed per-scene invocation, writes failed state and lets the sequential Map continue; it is *not* an automatic “resume from last completed scene” service. The overall image Step Functions deadline of 1800s may be less than the maximum theoretical sum of three 600s Lambda invocations plus retry waits; workflow timeout is still binding.
+**Important detail:** the image worker catches a failed per-scene invocation, writes failed state without blocking other parallel Map branches; it is *not* an automatic “resume from last completed scene” service. The overall image Step Functions deadline is 1800s; concurrent image branches are individually subject to 600s Lambda timeouts and may require additional Wait/retry cycles. The workflow timeout remains binding.
 
 ## Lambda and state-machine configuration snapshot (SOURCE, not live proof)
 
@@ -45,7 +45,7 @@
 | `afl-app-dev-video-worker` | Python 3.13, `handler.lambda_handler` | 256 MB | 50s | Legacy Google authentication-only worker |
 
 State machines:
-- `afl-app-dev-scene1-pilot` **STANDARD**, `TimeoutSeconds:1800`: `Prepare → ParallelScenes` (misleading historical name: actual **Map MaxConcurrency 1**) → `Finalize`; Catch to `RecoverJob`. Each Map iteration: `Generate → AssessImageResult`, confirmed 429 `WaitForGoogleCapacity → Generate`, otherwise `SceneCompleted` or `MarkSceneFailed`.
+- `afl-app-dev-scene1-pilot` **STANDARD**, `TimeoutSeconds:1800`: `Prepare → ParallelScenes` (**Map MaxConcurrency 3**, three image branches may execute concurrently) → `Finalize`; Catch to `RecoverJob`. Each Map iteration: `Generate → AssessImageResult`, confirmed 429 `WaitForGoogleCapacity → Generate`, otherwise `SceneCompleted` or `MarkSceneFailed`.
 - `afl-app-dev-google-omni` **STANDARD**, `TimeoutSeconds:3600`: `PaidGate → Claim → SubmissionSchedule` (scene 2 Wait 10s/scene 3 Wait 20s) `→ Submit → WaitForVideo(20s) → PollVideo → InspectVideo`, loop while waiting, terminal to `Finalize`, unknown status to `UnexpectedStatus` Fail. **Only PollVideo** has TaskFailed retry (three retries with backoff 2).
 - `afl-app-dev-assembly` **STANDARD**: single `Stitch` task; no explicit Retry/Catch or state-machine TimeoutSeconds in source definition.
 - EventBridge forwards successful video workflow execution status events to API Lambda `video_sequence_event()`, which checks DDB completion and S3 before starting next scene.
@@ -128,7 +128,7 @@ Thus a “3 retries” polling setting does not mean three Google generations, a
 
 These tests are defined, **not passed**:
 
-- [ ] Google image HTTP 429, Retry-After, max 8 attempts, max 600s window, backoff+jitter and successful resume.
+- [ ] Google image HTTP 429, Retry-After, max 8 attempts, max 600s window, backoff+jitter and successful resume with **all 3 images running concurrently**; verify one branch's backoff never suppresses another branch's completion.
 - [ ] Image Google 500, network timeout, accepted response lost, malformed output, S3 save fail, DDB save fail, Lambda timeout.
 - [ ] Video Google POST 429/500/502/503/504, lost interaction ID, timeout, stuck operation, terminal failed, invalid polling response.
 - [ ] Video polling GET temporary 5xx recovery and MaxAttempts exhaustion; no generation resubmission.
