@@ -1,5 +1,6 @@
 name: Deploy safe resume selfie preview (API and UI only)
 # Repeat after correcting the offline filename-regex fixture; no provider calls.
+# Final UI publication includes restored-selfie label visibility correction.
 on:
   push:
     branches: [main]
