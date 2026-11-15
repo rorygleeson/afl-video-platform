@@ -356,6 +356,39 @@ const input = document.getElementById('selfie');
     }
   }
 
+  // A completed MP4 stays in S3, but its presigned URL only lasts five minutes.
+  // Refresh *only* the selected clip when Replay is tapped; never call a paid POST.
+  async function replaySceneWithFreshUrl(scene, jobId, video, button, player) {
+    if (button.disabled || !jobId || jobId !== currentJobId) return;
+    button.disabled = true;
+    button.textContent = 'Loading…';
+    try {
+      const data = await api('/jobs/' + jobId + '/videos/scene' + scene);
+      if (jobId !== currentJobId || !player.querySelector('video') ||
+          player.querySelector('video') !== video) return;
+      const clip = data.video || {};
+      if (clip.mode !== 'REAL' || clip.status !== 'COMPLETED' ||
+          typeof clip.url !== 'string' || !clip.url.startsWith('https://') || clip.mock) {
+        throw new Error('Completed video is not currently available.');
+      }
+      // Never update an actively playing preview during routine status polling.
+      // The explicit replay tap is the safe point to replace the expired URL.
+      video.src = clip.url;
+      player.dataset.url = clip.url;
+      await playScenePreview(video, button, true);
+    } catch (error) {
+      if (jobId === currentJobId) {
+        button.hidden = false;
+        videoTestMessage.textContent = 'Scene ' + scene +
+          ' playback could not be refreshed: ' + error.message +
+          '. Tap Play to try again. No video generation was restarted.';
+      }
+    } finally {
+      button.disabled = false;
+      button.textContent = '▶';
+    }
+  }
+
   function clearPollTimer() {
     if (pollTimer !== null) {
       clearTimeout(pollTimer);
@@ -661,7 +694,7 @@ const input = document.getElementById('selfie');
             playButton.textContent = '▶';
             playButton.setAttribute('aria-label', 'Play Scene ' + n + ' video silently');
             playButton.addEventListener('click', () => {
-              void playScenePreview(video, playButton, true);
+              void replaySceneWithFreshUrl(n, jobId, video, playButton, player);
             });
             video.addEventListener('ended', () => {
               if (activeScenePreview === video) activeScenePreview = null;
