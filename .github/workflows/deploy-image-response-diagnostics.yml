@@ -1,4 +1,4 @@
-name: Deploy read-only Google image response diagnostics (guarded)
+name: Deploy read-only Google image response diagnostics (atomic CFN fix)
 on:
   push:
     branches: [main]
