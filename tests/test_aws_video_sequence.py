@@ -76,6 +76,52 @@ class AwsVideoSequenceTests(unittest.TestCase):
         self.job["paidVideoApprovals"][scene] = {
             "executionName": f"real-{self.id}-{scene}{attempt}"}
 
+    def image_completion(self):
+        arn = self.api.IMAGE_STATE_MACHINE_ARN
+        return {"source": "aws.states",
+                "detail-type": "Step Functions Execution Status Change",
+                "detail": {"status": "SUCCEEDED", "stateMachineArn": arn,
+                           "executionArn": arn.replace(":stateMachine:", ":execution:") + ":" + self.id}}
+
+    def test_image_success_starts_original_video_only_with_explicit_job_consent(self):
+        self.job["status"] = "COMPLETED"
+        self.job["autoVideoConsent"] = True
+        result = self.api.lambda_handler(self.image_completion(), None)
+        self.assertEqual(result["status"], "SEQUENCE_APPROVED")
+        self.assertEqual(self.states.start_execution.call_args.kwargs["name"],
+                         f"real-{self.id}-scene1")
+        self.assertTrue(any("paidVideoApprovals" in c.kwargs.get("UpdateExpression", "")
+                            for c in self.ddb.update_item.call_args_list))
+
+    def test_image_event_without_consent_never_starts_paid_video(self):
+        self.job["status"] = "COMPLETED"
+        result = self.api.lambda_handler(self.image_completion(), None)
+        self.assertEqual(result["status"], "IGNORED_NOT_AUTHORISED")
+        self.states.start_execution.assert_not_called()
+        self.ddb.update_item.assert_not_called()
+
+    def test_image_event_rejects_partial_or_unfinished_images(self):
+        self.job["autoVideoConsent"] = True
+        self.job["status"] = "GENERATING_IMAGES"
+        self.assertEqual(self.api.lambda_handler(self.image_completion(), None)["status"],
+                         "IGNORED_IMAGES_NOT_COMPLETE")
+        self.job["status"] = "COMPLETED"
+        self.job["scenes"]["scene2"]["status"] = "FAILED"
+        self.assertEqual(self.api.lambda_handler(self.image_completion(), None)["status"],
+                         "IGNORED_IMAGES_NOT_COMPLETE")
+        self.states.start_execution.assert_not_called()
+
+    def test_image_event_rejects_unauthorised_execution_name_and_wrong_status(self):
+        self.job["autoVideoConsent"] = True
+        self.job["status"] = "COMPLETED"
+        bad = self.image_completion()
+        bad["detail"]["executionArn"] += "-unexpected"
+        self.assertEqual(self.api.lambda_handler(bad, None)["status"], "IGNORED")
+        bad = self.image_completion()
+        bad["detail"]["status"] = "FAILED"
+        self.assertEqual(self.api.lambda_handler(bad, None)["status"], "IGNORED")
+        self.states.start_execution.assert_not_called()
+
     def test_sequence_requires_explicit_consent_and_one_atomic_reservation(self):
         status, _ = self.route({"confirmPaidSequence": False})
         self.assertEqual(status, 400)
