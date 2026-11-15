@@ -42,6 +42,18 @@ class AssemblyContractTests(unittest.TestCase):
         self.assertIn("POST", front_js)
         self.assertIn("Download Final Video MP4", front)
 
+    def test_queued_handoff_reconciles_named_execution_without_google(self):
+        api = API.read_text(encoding="utf-8")
+        ast.parse(api)
+        self.assertIn("def ensure_assembly_execution(job_id):", api)
+        self.assertIn('execution_name = "final-" + job_id', api)
+        self.assertIn("STATES.describe_execution(executionArn=execution_arn)", api)
+        self.assertIn('"ExecutionDoesNotExist"', api)
+        self.assertIn("return ensure_assembly_execution(job_id)", api)
+        self.assertIn('assembly.get("status") != "QUEUED"', api)
+        self.assertIn("attribute_not_exists(assembly)", api)
+        self.assertNotIn("start_video_sequence(job_id)", api[api.index("def ensure_assembly_execution"):api.index("def video_scene_public")])
+
     def test_existing_scene_download_contract_preserved(self):
         api = API.read_text(encoding="utf-8")
         self.assertIn('f"videos/{job[\'jobId\']}/{scene_id}.mp4"', api)
