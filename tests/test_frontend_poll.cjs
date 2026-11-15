@@ -48,7 +48,7 @@ function setup(options = {}) {
   for (const name of ['selfie', 'preview', 'removeSelfie', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
-                      'referenceImagesHeading',
+                      'referenceImagesHeading', 'startNewJob', 'resumeNotice',
                       'imageDiagnosticsText', 'developerDiagnostics', 'overallJobStatus',
                       'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName', 'personalMessage', 'personalMessageCount',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
@@ -85,6 +85,8 @@ function setup(options = {}) {
   for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
   for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
   els.referenceImagesHeading.hidden = true;
+  els.startNewJob.hidden = true;
+  els.resumeNotice.hidden = true;
   els.jobIdPanel.hidden = true;
   els.key.value = 'test-api-key';
   els.team.value = 'geelong';
@@ -230,7 +232,7 @@ function setup(options = {}) {
       statusPolls++;
       const status = statusPolls >= 3 ? 'COMPLETED' : 'GENERATING_IMAGES';
       return {ok: true, async json() { return {
-        job: {status, completedScenes: Math.min(statusPolls, 3), failedScenes: 0,
+        job: {jobId: 'a'.repeat(32), scenarioId:'afl-grand-final-winning-kick', team:'geelong', firstName:'Alex', lastName:'Tonelli', status, completedScenes: Math.min(statusPolls, 3), failedScenes: 0,
           scenes: {
             scene1: {status: 'COMPLETED'},
             scene2: {status: statusPolls >= 2 ? 'COMPLETED' : 'GENERATING'},
@@ -241,7 +243,13 @@ function setup(options = {}) {
     }
     throw new Error('Unexpected URL ' + url);
   };
-  const storage = new Map();
+  const storage = options.sessionMap || new Map();
+  const localData = options.localMap || new Map();
+  const localStorage = {
+    getItem(k) { return localData.has(k) ? localData.get(k) : null; },
+    setItem(k, v) { localData.set(k, String(v)); },
+    removeItem(k) { localData.delete(k); },
+  };
   const sessionStorage = {
     getItem(k) { return storage.has(k) ? storage.get(k) : null; },
     setItem(k, v) { storage.set(k, String(v)); },
@@ -249,7 +257,7 @@ function setup(options = {}) {
   };
   const ctx = {
     document: doc,
-    window: {AFL_CONFIG: {apiBaseUrl: 'https://api.example.com'}, confirm: () => true, sessionStorage},
+    window: {AFL_CONFIG: {apiBaseUrl: 'https://api.example.com'}, confirm: () => true, sessionStorage, localStorage},
     fetch, TypeError, Set, Blob, URL: {createObjectURL() { return 'blob:test'; }, revokeObjectURL() {}},
     FormData: class { append() {} },
     crypto: {randomUUID() { return 'test-idempotency-key'; }},
@@ -273,7 +281,7 @@ function setup(options = {}) {
     await flush();
     return scheduled.delay;
   }
-  return {els, doc, calls, downloads, timers, intervals, pendingVideoPosts, flush, nextTimer, sessionStorage, getPolls: () => statusPolls, imageCount, mockStatuses, getS3Attempts: () => s3UploadAttempts};
+  return {els, doc, calls, downloads, timers, intervals, pendingVideoPosts, flush, nextTimer, sessionStorage, localStorage, getPolls: () => statusPolls, imageCount, mockStatuses, getS3Attempts: () => s3UploadAttempts};
 }
 
 test('auto polls every 5 seconds, adds each image once and stops when complete', async () => {
@@ -1295,4 +1303,48 @@ test('failed reference image renders safely recorded Google diagnostic reasons',
   assert.match(h.els.imageDiagnosticsText.textContent,/IMAGE_SAFETY/);
   assert.match(h.els.imageDiagnosticsText.textContent,/HARM_CATEGORY_DANGEROUS_CONTENT/);
   assert.equal(h.calls.filter(c => c.url.includes('/diagnostics') && c.url.includes('/images')).length,0);
+});
+
+test('created job is stored without persisting the API key in localStorage', async () => {
+  const h=setup();
+  await h.els.generate.listeners.click(); await h.flush();
+  assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),'a'.repeat(32));
+  assert.equal(h.localStorage.getItem('afl-video-dev-key-v1'),null);
+  assert.equal(h.sessionStorage.getItem('afl-video-dev-key-v1'),'test-api-key');
+  assert.equal(h.els.startNewJob.hidden,false);
+});
+test('reload resumes the same image job via GET only and preserves scene progress', async () => {
+  const localMap=new Map([['afl-video-active-job-v1','a'.repeat(32)]]);
+  const sessionMap=new Map([['afl-video-dev-key-v1','test-api-key']]);
+  const h=setup({localMap,sessionMap});
+  await h.flush();
+  assert.equal(h.els.generate.hidden,true);
+  assert.equal(h.els.referenceImagesHeading.hidden,false);
+  assert.equal(h.els.startNewJob.hidden,false);
+  assert.match(h.els.resumeNotice.textContent,/Resumed your previous video/);
+  assert.equal(h.els.firstName.value,'Alex');
+  assert.equal(h.els.team.value,'geelong');
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0,'Recovery cannot start model calls');
+  assert.equal(h.els.imageCard1?.hidden,undefined);
+});
+test('saved job needs key after a full browser session ends; no duplicate generation', async () => {
+  const localMap=new Map([['afl-video-active-job-v1','a'.repeat(32)]]);
+  const h=setup({localMap,sessionMap:new Map()});
+  h.els.key.value='';
+  // Explicitly clear the key fixture before testing the no-key resume action.
+  h.els.key.value='';
+  await h.flush();
+  assert.equal(h.els.generate.disabled,true);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
+});
+test('start new video clears saved job without deleting AWS state', async () => {
+  const localMap=new Map([['afl-video-active-job-v1','a'.repeat(32)]]);
+  const sessionMap=new Map([['afl-video-dev-key-v1','test-api-key']]);
+  const h=setup({localMap,sessionMap});
+  await h.flush();
+  h.els.startNewJob.listeners.click();
+  assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),null);
+  assert.equal(h.els.generate.hidden,false);
+  assert.equal(h.els.team.disabled,false);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
 });
