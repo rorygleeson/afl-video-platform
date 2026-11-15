@@ -134,6 +134,30 @@ This is an **example proposal, not an existing response**. The eight completion 
 - Never mark refund complete merely because refund API accepted a request; future payment/refund lifecycle must be independent of image `job.status`.
 - A backend-owned reconciler must handle uncertain Google submissions and stale AWS workflows before retrying, terminalising or refunding.
 
+## Implemented computed overall progress (new API-only change)
+
+The `GET /jobs/{jobId}` response now includes **`job.progress`**. This is the computed overall lifecycle, in contrast to legacy `job.status` (image workflow only). No new DynamoDB attribute, SFN or generation call is created.
+
+```json
+{
+  "currentStage": "IMAGES",
+  "stageStatus": "RETRYING",
+  "imagesCompleted": 2,
+  "imagesTotal": 3,
+  "videosCompleted": 0,
+  "videosTotal": 3,
+  "finalVideoReady": false
+}
+```
+
+`currentStage` values: `IMAGES`, `VIDEO_1`, `VIDEO_2`, `VIDEO_3`, `STITCHING`, `COMPLETED`. `stageStatus` values: `PENDING`, `PROCESSING`, `RETRYING`, `WAITING_FOR_ACTION`, `FAILED`, `REVIEW_REQUIRED`, `COMPLETED`.
+
+Pre-job selfie upload is **not a job stage** because a job ID is only created by `POST /jobs`. Payment is not yet implemented; do not include `AWAITING_PAYMENT` in active statuses.
+
+For concurrent images, `IMAGES` remains the overall stage and `job.scenes.scene1/scene2/scene3` remain the independent source of truth. If any branch has an explicit 429 `RETRY_WAIT`, overall `stageStatus` is `RETRYING`, even when the other branches continue. A failed image job remains `IMAGES / FAILED`; all scene records must be complete and the image workflow finalised before advancing. For video scenes, the first scene not durably marked `COMPLETED` with the expected key determines the stage; the existing video status projection may report a workflow requiring review. When video 3 completes, `STITCHING` is next; before server-owned orchestration it can be `WAITING_FOR_ACTION` until the browser requests assembly.
+
+The original **proposed** eight-milestone contract below is historical design context; the six-stage `currentStage` and `stageStatus` fields above describe the new source implementation. This feature is not confirmed live-deployed; offline test cases have been committed but no test-run evidence has been captured.
+
 ## Documentation changes pending
 
 - [ ] Validate deployed version, environment flags and source/CloudFormation drift.
