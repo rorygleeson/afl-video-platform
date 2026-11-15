@@ -1,4 +1,4 @@
-name: Deploy polished personal greeting field UI
+name: Deploy video Preparing status text (frontend only)
 on:
   push:
     branches: [main]
