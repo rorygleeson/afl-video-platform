@@ -40,3 +40,9 @@ Reviewed current `main` source: `src/api/handler.py`, `src/image_worker/{handler
 
 ## Deployment safety
 Do not execute GitHub workflows containing deploy or paid-generation steps during this documentation audit. Verify source against live AWS using an explicitly read-only authorised route later. Preserve the development API-key bypass only for pre-payment testing; production admission requires server-side verified Stripe entitlement.
+
+## R1 staging progress — 2026-11-16
+
+On branch `resilience/assembly-handoff-recovery`, API code checks whether a `QUEUED` assembly's stable `final-{jobId}` execution exists and, only if AWS confirms it is absent, retries starting that **same named execution**. A guarded source-contract test was added. This does not invoke Google generation or create a new assembly name. **Not deployed or live-tested.**
+
+**R1 remains open:** an automatic reconciliation trigger is still needed for stranded QUEUED jobs, as are bounded assembly-only retries after FFmpeg FAILED/PROCESSING timeouts. Behavioural fault-injection and CI must pass before considering deployment. Avoid blindly retrying a worker with uncertain execution status.
