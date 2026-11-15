@@ -54,6 +54,8 @@ const input = document.getElementById('selfie');
     input.hidden = visible;
     removeSelfie.hidden = true;
     selfieUploadLabel.hidden = visible;
+    // Author CSS sets label{display:block}, so override it when hidden.
+    selfieUploadLabel.style.display = visible ? 'none' : '';
     savedSelfieNote.hidden = !visible;
   }
   async function restoreSelfie(id) {
