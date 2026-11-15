@@ -169,6 +169,25 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(result["status"],"WAIT_ASSEMBLY_SETTLEMENT")
         self.api.invoke.assert_not_called()
 
+    def test_failed_assembly_waits_during_one_bounded_retry(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"FAILED",
+                              "updatedAt":(NOW-timedelta(minutes=4)).isoformat()}
+        self.states.describe_execution.return_value={"status":"RUNNING"}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result,{"continue":True,"status":"WAIT_ASSEMBLY_RETRY_SETTLEMENT"})
+        self.api.invoke.assert_not_called()
+        self.states.start_execution.assert_not_called()
+
+    def test_failed_assembly_reports_terminal_after_retry(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"FAILED",
+                              "updatedAt":(NOW-timedelta(minutes=4)).isoformat()}
+        self.states.describe_execution.return_value={"status":"FAILED"}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result,{"continue":False,"status":"REVIEW_ASSEMBLY_FAILED"})
+        self.api.invoke.assert_not_called()
+
     def test_processing_assembly_timeout_never_resubmits(self):
         self.ddb.get_item.return_value={"Item":self.job}
         self.job["assembly"]={"status":"PROCESSING",
