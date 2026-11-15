@@ -72,6 +72,9 @@
 
 ## Change log
 
+- 2026-11-15 — Replaced [API_ENDPOINTS.md](API_ENDPOINTS.md) with source-verified 19-route inventory, request/response samples, auth, integrations, async and idempotency notes (commit `dcbe8d5d`). Step 1.3 documentation drafted; live/API contract tests remain.
+- 2026-11-15 — Created [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md) with per-stage source-configured timeouts, retry/backoff, AWS worker and SFN matrix, failure handling and unexecuted test list (commit `e98748f6`). Step 1.5 drafted; published Google guidance and live cross-check remain.
+
 - 2026-11-15 — Added [JOB_STATUSES.md](JOB_STATUSES.md) (commit `48e506a3`) documenting existing API states, response fields, limitations and a clearly labelled proposed unified status. Task 1.4 remains pending deployment cross-check and response tests.
 - 2026-11-15 — Decision: proceed with source-verified documentation and do not block documentation work on live AWS access. Deployed resource comparison is a later audit cross-check, not a prerequisite to drafting current endpoint/status/timeout docs.
 
