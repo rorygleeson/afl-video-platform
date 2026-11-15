@@ -196,7 +196,7 @@ class SelfieReadOnlyTests(unittest.TestCase):
             responses.append((status, payload))
             return status, payload
         scope = {"UPLOAD_KEY_RE": __import__("re").compile(
-            r"^uploads/[0-9a-f]{32}\\.(jpg|png|webp)$"),
+            r"^uploads/[0-9a-f]{32}\.(jpg|png|webp)$"),
             "UPLOAD_BUCKET": "private-uploads",
             "S3": s3,
             "response": respond}
