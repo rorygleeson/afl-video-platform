@@ -657,6 +657,11 @@ const input = document.getElementById('selfie');
   document.getElementById('scenario').addEventListener('change', invalidateJobSelection);
   document.getElementById('firstName').addEventListener('input', invalidateJobSelection);
   document.getElementById('lastName').addEventListener('input', invalidateJobSelection);
+  document.getElementById('personalMessage').addEventListener('input', () => {
+    const field = document.getElementById('personalMessage');
+    document.getElementById('personalMessageCount').textContent = [...field.value].length;
+    invalidateJobSelection();
+  });
 
   input.addEventListener('change', () => {
     invalidateJobSelection();
@@ -1094,7 +1099,7 @@ const input = document.getElementById('selfie');
     }
     uploadInProgress = true;
     generate.disabled = true;
-    const formFields = ['key', 'scenario', 'team', 'firstName', 'lastName', 'selfie']
+    const formFields = ['key', 'scenario', 'team', 'firstName', 'lastName', 'selfie', 'personalMessage']
       .map(id => document.getElementById(id));
     for (const field of formFields) field.disabled = true;
     let jobCreated = false;
@@ -1150,6 +1155,7 @@ const input = document.getElementById('selfie');
           team: document.getElementById('team').value,
           firstName,
           lastName,
+          personalMessage: document.getElementById('personalMessage').value.trim(),
         }),
       });
       if (!/^[0-9a-f]{32}$/.test(created.job?.jobId || '')) {
