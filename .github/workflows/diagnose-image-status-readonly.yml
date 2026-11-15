@@ -1,4 +1,5 @@
 name: Diagnose live image status polling (read-only)
+# Incident review: verify three EXECUTION_RECOVERED image scenes after API release.
 on:
   push:
     branches: [main]
