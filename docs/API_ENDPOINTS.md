@@ -1,11 +1,11 @@
 # AFL Video Platform — HTTP API Contract
 
-**Source audit:** 15 November 2026 · **Status:** SOURCE VERIFIED, live API Gateway/deployed Lambda drift NOT independently verified.  
+**Source audit:** 15 November 2026, updated after backend stages 1–3 · **Status:** SOURCE VERIFIED; guarded AWS deploy logs verify API Lambda, EventBridge stacks and frontend publishing; full live route/drift/e2e audit remains open.  
 **Authoritative code:** `src/api/handler.py` (route dispatcher and contracts), `infrastructure/app/backend.yaml` (API Gateway proxy/Lambda), `frontend/app.js` (browser calls). See [JOB_STATUSES.md](JOB_STATUSES.md), [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md), and [RESILIENCY_ROADMAP.md](RESILIENCY_ROADMAP.md).
 
 **Source-documented dev base URL:** `https://ue36acwvrc.execute-api.ap-southeast-2.amazonaws.com/dev` (confirm live before relying on it).
 
-## Shared conventions
+**Backend-owned orchestration note (2026-11-15):** Once the browser has uploaded the selfie, created a consented job and POSTed `/jobs/{jobId}/generate`, successful AWS completion events—not frontend polling—trigger Video 1, Video 2, Video 3 and final FFmpeg stitching. Existing video retry POSTs still require deliberate confirmation. **No Stripe payment gate is implemented.**\n\n## Shared conventions
 
 - API Gateway REST API: `ANY /{proxy+}` using **AWS_PROXY Lambda integration** to `afl-app-dev-api`, handler `handler.lambda_handler`; application dispatches actual GET/POST routes. `OPTIONS /{proxy+}` is a non-key mock CORS preflight. No per-route standalone Lambda integrations.
 - Every business route currently requires API Gateway `x-api-key`, with `AuthorizationType: NONE`. **API keys are not customer identity or payment entitlements.** They are developer-only. Future paid customers require per-job secure authorisation.
@@ -22,8 +22,8 @@
 |---|---|---|---|---|
 | GET | `/scenarios` | Scenario metadata | 200 `{scenarios:[{id,name,sceneCount,imageGenerationEnabled,parallelScenes}]}`; `parallelScenes:true` now aligns with image Map `MaxConcurrency:3` | Sync/read-only |
 | POST | `/uploads` | JSON `{contentType,sizeBytes}`, JPEG/PNG/WebP; up to 10 MiB | 200 `{uploadKey,upload:{url,fields},expiresInSeconds:300}` | Sync presign, then direct S3 POST |
-| POST | `/jobs` | JSON `{uploadKey,scenarioId,team,firstName,lastName}`; **Idempotency-Key required** | 201 `{job}`, 200 same-key/same-input replay; 409 same-key/different-input | Sync; S3 HEAD + DDB conditional Put |
-| GET | `/jobs/{jobId}` | Job ID | 200 `{job:{jobId,scenarioId,team,firstName,lastName,status,createdAt,imageCount,sceneCount,completedScenes,failedScenes,scenes}}` | Sync DDB read |
+| POST | `/jobs` | JSON `{uploadKey,scenarioId,team,firstName,lastName,personalMessage?,confirmPaidSequence?}`; **Idempotency-Key required** | 201 `{job}`, 200 same-key/same-input replay; 409 same-key/different-input | Sync; S3 HEAD + DDB conditional Put |
+| GET | `/jobs/{jobId}` | Job ID | 200 `{job:{...,status,scenes,progress:{currentStage,stageStatus,imagesCompleted,imagesTotal,videosCompleted,videosTotal,finalVideoReady}}}`; read-only, legacy `status` is image-pipeline state | Sync DDB read |
 | POST | `/jobs/{jobId}/generate` | Start reference images (no request body required) | 202 `{jobId,status,message}` on start/already-running; 200 for existing job state; 404 missing | Async; start named image SFN |
 | GET | `/jobs/{jobId}/images` | Image scene status + signed URLs | 200 `{jobId,status,scenes,images:[{sceneId,url}]}` | Sync DDB read, presigned S3 GETs |
 | GET | `/jobs/{jobId}/video/{scene}/preview` | Render versioned video prompt; free model-wise | 200 rendered prompt/metadata object from `render_scene`; 503 missing assets | Sync S3 templates |
@@ -69,10 +69,10 @@ x-api-key: <developer-key>
 Idempotency-Key: example-unique-key-20261115
 Content-Type: application/json
 
-{"uploadKey":"uploads/<32hex>.jpg","scenarioId":"afl-grand-final-winning-kick","team":"st-kilda","firstName":"Example","lastName":"Customer"}
+{"uploadKey":"uploads/<32hex>.jpg","scenarioId":"afl-grand-final-winning-kick","team":"st-kilda","firstName":"Example","lastName":"Customer","confirmPaidSequence":true}
 ```
 
-`201 {job:{jobId,status:"AWAITING_IMAGE_PIPELINE",...}}`. On matching replay, `200` returns the previously created job. Different input with same idempotency key gives `409`. Upload must be present in S3 and match its type/size.
+`201 {job:{jobId,status:"AWAITING_IMAGE_PIPELINE",...}}`. On matching replay, `200` returns the previously created job. Different input with same idempotency key gives `409`. Upload must be present in S3 and match its type/size. The current frontend sends `confirmPaidSequence:true`, stored internally as `autoVideoConsent:true`, to authorise automatic video progression after verified image completion. This **does not verify Stripe payment**.
 
 ### 3. Image status
 
@@ -104,7 +104,7 @@ Content-Type: application/json
 
 Response: `202 {status:"SEQUENCE_APPROVED",jobId:"...",sequence:{status:"APPROVED",mode:"AWS_EVENT_DRIVEN"}}`. No Stripe payment validation exists yet: the existing word *paid* refers to billable Google model invocation and explicit developer consent, **not** an already paid A$5 Stripe order.
 
-After scene completion, AWS EventBridge independently triggers next-scene admission. `GET /jobs/{jobId}/videos` does **not** trigger paid generation.
+The **current browser no longer POSTs the sequence endpoint**: it records consent on the job at creation and starts image generation with the existing one-time `POST /jobs/{jobId}/generate`. Image SFN `SUCCEEDED` EventBridge event invokes `image_sequence_event()` to check recorded consent and three completed images before internally calling `start_video_sequence()`. The public sequence endpoint remains for explicitly authorised developer/manual uses. Successful video executions emit EventBridge events for subsequent scenes; **Scene 3 triggers assembly**. All normal status GETs are read-only.
 
 ### 5. Video status
 
@@ -139,7 +139,7 @@ x-api-key: <developer-key>
 - Image start: named execution `jobId`; no second image workflow should start under same name. **Potential handoff ambiguity:** a failed StartExecution acknowledgement requires reconciliation.
 - Original Google scene start: per-scene DynamoDB conditional admission; stable execution name `real-{jobId}-{scene}`. No duplicate billable POST on response uncertainty.
 - Retry: only confirmed terminal provider failures, old workflow SUCCEEDED, still-matching image source, and fewer than 10 attempts. Current retries are separately confirmed by developer UI.
-- Assembly: conditional `assembly` creation and named execution `final-{jobId}`. Current frontend initiates assembly upon seeing `READY`; no independent backend auto-trigger yet.
+- Assembly: successful verified Scene 3 AWS completion automatically calls existing `start_assembly()` via EventBridge; this verifies all three real S3 MP4 files, conditionally creates `assembly`, and starts named `final-{jobId}`. Frontend no longer POSTs assembly. Existing `POST /assembly` route remains for controlled/manual use; lost-event, ambiguous workflow-start and assembly failure still require safe reconciliation.
 - A 300-second presigned media URL expiry does **not** mean generation output expired; authenticated status GET obtains another URL. Actual S3 lifecycle and DDB TTL are separate.
 - **Source compatibility note:** `parallelScenes:true` in `/scenarios` is now consistent with the image Map concurrency of 3. The existing start-images response still contains legacy Replicate wording; this is a wording defect only, recorded for later code cleanup, **not changed** in this documentation audit.
 
@@ -151,7 +151,7 @@ x-api-key: <developer-key>
 | API Gateway | Source `infrastructure/app/backend.yaml` REST `ANY /{proxy+}` → `ApiLambda` `handler.lambda_handler` |
 | API → image | `start_images()` starts `afl-app-dev-scene1-pilot` Standard SFN |
 | API → video | `start_real_scene()` starts `afl-app-dev-google-omni` Standard SFN |
-| EventBridge → API | `aws.states` completion events invoke API Lambda `video_sequence_event()`, not the public HTTP route |
+| EventBridge → API | Successful image SFN execution invokes `image_sequence_event()` for consent-gated Video 1; successful Google video SFN execution invokes `video_sequence_event()` for Video 2/3 and Scene 3 → final assembly. These are Lambda events, not public HTTP calls. |
 | API → assembly | `start_assembly()` starts `afl-app-dev-assembly` Standard SFN |
 | Google image outbound | `POST https://aiplatform.googleapis.com/v1/projects/afl-video-platform/locations/global/publishers/google/models/gemini-3-pro-image:generateContent` |
 | Google video outbound | `POST https://aiplatform.googleapis.com/v1beta1/projects/afl-video-platform/locations/global/interactions`; `GET .../interactions/{interactionId}` |
@@ -192,9 +192,9 @@ Example (synthetic):
 }
 ```
 
-Stages: `IMAGES`, `VIDEO_1`, `VIDEO_2`, `VIDEO_3`, `STITCHING`, `COMPLETED`. Stage status: `PENDING`, `PROCESSING`, `RETRYING`, `WAITING_FOR_ACTION`, `FAILED`, `REVIEW_REQUIRED`, `COMPLETED`. Each image retains its independent record in existing `job.scenes`. If all three images are complete but the image workflow has not finalised its overall state, progress stays at `IMAGES / PROCESSING`. A stopped/uncertain video workflow can surface `REVIEW_REQUIRED`. Before browser-independent orchestration, `VIDEO_1` and `STITCHING` may report `WAITING_FOR_ACTION`. The response does not claim payment entitlement or automatically advance any stage.
+Stages: `IMAGES`, `VIDEO_1`, `VIDEO_2`, `VIDEO_3`, `STITCHING`, `COMPLETED`. Stage status: `PENDING`, `PROCESSING`, `RETRYING`, `WAITING_FOR_ACTION`, `FAILED`, `REVIEW_REQUIRED`, `COMPLETED`. Each image retains its independent record in existing `job.scenes`. If all three images are complete but the image workflow has not finalised its overall state, progress stays at `IMAGES / PROCESSING`. A stopped/uncertain video workflow can surface `REVIEW_REQUIRED`. `WAITING_FOR_ACTION` may now reflect a missing backend reservation/handoff, not necessarily a required browser click. This GET reads state only; AWS EventBridge completion events drive stage advancement independently.
 
-**Deployment status:** implementation committed to repository; live API deployment and integration-test validation not established by this documentation audit.
+**Deployment status:** existing overall status API and diagnostics deployed in [run 43678843432](https://github.com/rorygleeson/afl-video-platform/actions/runs/43678843432); subsequent guarded backend handoff deployments succeeded in [Stage 1 run 43689396745](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745) and [Stage 2 run 43689754297](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297). Frontend read-only cleanup deployed in [run 43690121205](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205). Live unattended full-job proof and full API Gateway drift comparison remain outstanding.
 
 ## Frontend developer diagnostics — 2-second overall status display
 
@@ -215,7 +215,7 @@ The new read-only `job.progress` projection and two-second Developer diagnostics
 - [ ] Add isolated mock contract tests verifying every response shape and error code.
 - [ ] Verify `frontend/app.js` callers including hidden developer controls and browser reload behaviour.
 - [ ] Implement future customer recovery authorisation and paid entitlement only after audit completion and approval.
-- [ ] When unified `progress` status becomes implemented, document its actual schema rather than describing proposed fields as current.
+- [x] Document implemented read-only `job.progress` response with actual schema. [ ] Full end-to-end live status transition test and backend missed-event recovery remain open.
 
 ## Additive reference-image diagnostic fields (15 November 2026)
 
