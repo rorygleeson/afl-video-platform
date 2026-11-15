@@ -49,7 +49,7 @@ function setup(options = {}) {
   for (const name of ['selfie', 'selfieLabel', 'savedSelfieNote', 'preview', 'removeSelfie', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
-                      'referenceImagesHeading', 'startNewJob', 'resumeNotice',
+                      'referenceImagesHeading', 'startNewJob', 'resumeNotice', 'jobProgressSection', 'generationVideosHeading',
                       'imageDiagnosticsText', 'developerDiagnostics', 'overallJobStatus',
                       'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName', 'personalMessage', 'personalMessageCount',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
@@ -1469,4 +1469,66 @@ test('failed playback refresh leaves replay visible without any paid retry', asy
   assert.equal(btn.disabled,false);
   assert.match(h.els.videoTestMessage.textContent,/Tap Play to try again/);
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,before);
+});
+
+test('stitching keeps all three scene previews and reference images visible', async () => {
+  const opts = {
+    realVideos: Object.fromEntries([1,2,3].map(n => ['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'PROCESSING'}
+  };
+  const h=setup(opts);
+  await h.els.generate.listeners.click(); await h.flush();
+  await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.jobProgressSection.hidden,false);
+  assert.equal(h.els.generationVideosHeading.hidden,false);
+  for (const n of [1,2,3]) {
+    assert.equal(h.els['videoPanel'+n].hidden,false);
+    assert.ok(h.els['videoPlayer'+n].querySelector('video'));
+  }
+  assert.equal(h.els.assemblyPanel.hidden,false);
+  assert.equal(h.els.downloadFinal.hidden,true);
+});
+test('final MP4 arrival hides previews and reference images but preserves final play/download', async () => {
+  const opts = {
+    realVideos: Object.fromEntries([1,2,3].map(n => ['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'PROCESSING'}
+  };
+  const h=setup(opts);
+  await h.els.generate.listeners.click(); await h.flush();
+  await h.nextTimer(); await h.nextTimer(); await h.flush();
+  const oldPreview = h.els.videoPlayer3.querySelector('video');
+  opts.assembly={enabled:true,status:'COMPLETED',url:'https://s3.example.com/final.mp4'};
+  await h.els.refresh.listeners.click();await h.flush();
+  assert.equal(h.els.jobProgressSection.hidden,true);
+  assert.equal(h.els.generationVideosHeading.hidden,true);
+  for (const n of [1,2,3]) assert.equal(h.els['videoPanel'+n].hidden,true);
+  assert.equal(oldPreview.paused,true,'active temporary preview pauses on final transition');
+  assert.equal(h.els.videoTestSection.hidden,false);
+  assert.equal(h.els.assemblyPanel.hidden,false);
+  assert.equal(h.els.downloadFinal.hidden,false);
+  assert.equal(h.els.assemblyPlayer.querySelector('video').src,'https://s3.example.com/final.mp4');
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,0);
+});
+test('refresh completed job opens final view without autoplaying three scenes', async () => {
+  const h=setup({
+    localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    progress:{currentStage:'COMPLETED',stageStatus:'COMPLETED',finalVideoReady:true},
+    realVideos:Object.fromEntries([1,2,3].map(n=>['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'COMPLETED',url:'https://s3.example.com/final.mp4'}
+  });
+  await h.flush();
+  assert.equal(h.els.jobProgressSection.hidden,true);
+  assert.equal(h.els.generationVideosHeading.hidden,true);
+  for (const n of [1,2,3]) {
+    assert.equal(h.els['videoPanel'+n].hidden,true);
+    assert.equal(h.els['videoPlayer'+n].querySelector('video'),null);
+  }
+  assert.equal(h.els.assemblyPanel.hidden,false);
+  assert.equal(h.els.downloadFinal.hidden,false);
+  assert.equal(h.els.startNewJob.hidden,false);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
 });
