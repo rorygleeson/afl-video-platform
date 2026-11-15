@@ -205,6 +205,10 @@ The Developer diagnostics panel now contains an **Overall job** status line. Whi
 - If no job exists, show `Overall job: No job started.`. If the deployed API lacks `job.progress`, show `Status not available from API yet.`, not a fabricated stage.
 - **Release dependency:** both the frontend change and the API `job.progress` addition must be deployed for live status to display. GitHub commits are not proof of deployment.
 
+### Live deployment verification — 2026-11-15
+
+The new read-only `job.progress` projection and two-second Developer diagnostics status line were deployed in [GitHub Actions release run 43678843432](https://github.com/rorygleeson/afl-video-platform/actions/runs/43678843432). Evidence: 17 API contract tests and 60 frontend tests passed, API Lambda CodeSha256 verified after CloudFormation update, frontend `app.js` and `index.html` S3 byte-for-byte readback verified, CloudFront invalidation submitted. No actual customer job request has been used as end-to-end smoke proof; deployment verification is limited to AWS Lambda/S3 and offline contract tests.
+
 ## Open verification items
 
 - [ ] Compare all API routes/flags and timeouts against deployed API Gateway and Lambda (source is verified; live drift unknown).
