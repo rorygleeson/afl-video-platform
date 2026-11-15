@@ -196,6 +196,15 @@ Stages: `IMAGES`, `VIDEO_1`, `VIDEO_2`, `VIDEO_3`, `STITCHING`, `COMPLETED`. Sta
 
 **Deployment status:** implementation committed to repository; live API deployment and integration-test validation not established by this documentation audit.
 
+## Frontend developer diagnostics — 2-second overall status display
+
+The Developer diagnostics panel now contains an **Overall job** status line. While that panel is expanded, a valid `currentJobId` exists, and the browser tab is visible, `frontend/app.js` reads `GET /jobs/{jobId}` every **2 seconds after the prior request completes**. It displays `job.progress.currentStage`, `job.progress.stageStatus`, `imagesCompleted/imagesTotal`, and `videosCompleted/videosTotal`.
+
+- Polls are **read-only**; they never initiate generation, videos, retries or assembly.
+- At most one dedicated overall-status request is in flight; polling pauses when the panel closes or the tab becomes hidden. Existing image/video polling schedules are unchanged.
+- If no job exists, show `Overall job: No job started.`. If the deployed API lacks `job.progress`, show `Status not available from API yet.`, not a fabricated stage.
+- **Release dependency:** both the frontend change and the API `job.progress` addition must be deployed for live status to display. GitHub commits are not proof of deployment.
+
 ## Open verification items
 
 - [ ] Compare all API routes/flags and timeouts against deployed API Gateway and Lambda (source is verified; live drift unknown).
