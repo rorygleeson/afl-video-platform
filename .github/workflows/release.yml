@@ -43,7 +43,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy_overall_progress:
-    name: Deploy only overall job progress API and diagnostics UI
+    name: Deploy only overall job progress API and diagnostics UI (validated)
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-overall-job-progress]')
     runs-on: ubuntu-latest
     timeout-minutes: 25
