@@ -50,47 +50,48 @@ def active_images(states):
     assert not result.get("executions"), "Image generation is currently running; abort deployment"
 
 
-def change_set(cf,stack,parameter,key,logical,run):
-    name=f"image-diag-{logical.lower()}-{run}"
+def change_set(cf,stack,updates,run):
+    """Single atomic backend CFN change set for both Lambda packages."""
+    name="image-response-diag-"+run
     cf.create_change_set(StackName=BACKEND,ChangeSetName=name,
         ChangeSetType="UPDATE",UsePreviousTemplate=True,RoleARN=CFN_ROLE,
         Parameters=[{"ParameterKey":p["ParameterKey"],
-                     **({"ParameterValue":key} if p["ParameterKey"]==parameter
+                     **({"ParameterValue":updates[p["ParameterKey"]]}
+                        if p["ParameterKey"] in updates
                         else {"UsePreviousValue":True})}
                     for p in stack["Parameters"]],
         Capabilities=["CAPABILITY_NAMED_IAM"],
-        Description="Allowlisted Google image outcome diagnostics only; no retry changes")
+        Description="Allowlisted image diagnostics; no provider or workflow changes")
     cf.get_waiter("change_set_create_complete").wait(
         StackName=BACKEND,ChangeSetName=name,
         WaiterConfig={"Delay":5,"MaxAttempts":45})
     page=cf.describe_change_set(StackName=BACKEND,ChangeSetName=name)
     assert not page.get("NextToken")
     changes=[c["ResourceChange"] for c in page["Changes"]]
-    allowed={logical}
-    # CloudFormation can report indirect Lambda/permission references when the
-    # underlying ARN stays identical. Reject any unanticipated direct mutation.
-    if logical=="ImageWorkerLambda":
-        allowed|={"ImageWorkflowRole","ImageStateMachineRole","ImageStateMachine",
-                  "ReconcileImagesRole","ImageWatchdogRule","ImageReconcileRule",
-                  "ImageWorkerLambdaPermission","ReconcileImagesPermission"}
-    else:
-        allowed|={"ProxyAny","InvokePermission","ApiGatewayInvokePermission",
-                  "ApiLambdaPermission"}
-    assert logical in {c["LogicalResourceId"] for c in changes}
+    logicals={"ImageWorkerLambda","ApiLambda"}
+    ids={c["LogicalResourceId"] for c in changes}
+    assert ids & logicals == {p["logical"] for p in updates.values()}, (
+        "Missing expected Lambda code change"
+    )
+    # Allow only direct code modifications on the two worker/API Lambdas.
+    # Any other resource must be a purely dynamic dependency that cannot
+    # create/replace/modify direct configuration.
     for c in changes:
-        print("CHANGE",logical,c["LogicalResourceId"],c["Action"],
-              c.get("Replacement"),c.get("Details"),flush=True)
-        assert c["LogicalResourceId"] in allowed, "Unexpected CFN resource change"
+        rid=c["LogicalResourceId"]
+        print("CHANGE",rid,c["Action"],c.get("Replacement"),c.get("Details"),flush=True)
         assert c["Action"]=="Modify" and c.get("Replacement") in ("False",False)
-        for d in c.get("Details",[]):
-            target=d.get("Target",{})
+        for detail in c.get("Details",[]):
+            target=detail.get("Target",{})
             assert target.get("Attribute")=="Properties"
-            if c["LogicalResourceId"]==logical:
-                assert target.get("Name")=="Code", "Non-code Lambda resource modification"
+            if rid in logicals:
+                assert target.get("Name")=="Code", "Unexpected Lambda configuration edit"
             else:
-                assert d.get("Evaluation")=="Dynamic", "Unexpected direct infrastructure change"
-                assert d.get("ChangeSource") in ("ResourceAttribute","ResourceReference")
-    print("SAFE_DIAGNOSTIC_CHANGESET",logical,flush=True)
+                assert detail.get("Evaluation")=="Dynamic"
+                assert detail.get("ChangeSource") in ("ResourceAttribute","ResourceReference")
+                assert target.get("Name") in (
+                    "Policies","Integration","RoleArn","DefinitionString",
+                    "Definition","FunctionName","SourceArn")
+    print("ATOMIC_IMAGE_DIAGNOSTIC_CHANGESET_SAFE",flush=True)
     return name
 
 
@@ -145,59 +146,56 @@ def main():
                              fn=fn,key=key,expected=sha_b64(blob),
                              oldsha=live["CodeSha256"]))
     run=os.environ["GITHUB_RUN_ID"]
-    created=[]
-    executed=[]
+    updates={p["param"]:p for p in prepared}
+    name=None
+    executed=False
     try:
-        for p in prepared:
-            p["change"]=change_set(cf,stack,p["param"],p["key"],p["logical"],run)
-            created.append(p)
-        # Recheck live workflow before mutating the backend.
-        active_images(sf)
-        latest=sf.describe_state_machine(stateMachineArn=IMAGE_MACHINE)
-        assert json.loads(latest["definition"])==before
-        for p in prepared:
-            assert lam.get_function_configuration(FunctionName=p["fn"])["CodeSha256"]==p["oldsha"]
-            cf.execute_change_set(StackName=BACKEND,ChangeSetName=p["change"])
-            executed.append(p)
+        if prepared:
+            name=change_set(cf,stack,updates,run)
+            active_images(sf)
+            current_machine=sf.describe_state_machine(stateMachineArn=IMAGE_MACHINE)
+            assert json.loads(current_machine["definition"])==before
+            for p in prepared:
+                assert lam.get_function_configuration(FunctionName=p["fn"])["CodeSha256"]==p["oldsha"]
+            cf.execute_change_set(StackName=BACKEND,ChangeSetName=name)
+            executed=True
             cf.get_waiter("stack_update_complete").wait(
                 StackName=BACKEND,WaiterConfig={"Delay":10,"MaxAttempts":90})
-            updated=cf.describe_stacks(StackName=BACKEND)["Stacks"][0]
-            assert updated["StackStatus"]=="UPDATE_COMPLETE"
+        after_stack=cf.describe_stacks(StackName=BACKEND)["Stacks"][0]
+        assert after_stack["StackStatus"]=="UPDATE_COMPLETE"
+        expectedparams=dict(params)
+        expectedparams.update({p["param"]:p["key"] for p in prepared})
+        changed={p["ParameterKey"]:p["ParameterValue"] for p in after_stack["Parameters"]}
+        assert changed==expectedparams,"Unexpected backend parameter change"
+        for p in prepared:
             now=lam.get_function_configuration(FunctionName=p["fn"])
             assert now["CodeSha256"]==p["expected"] and now["LastUpdateStatus"]=="Successful"
             print("DIAGNOSTIC_LAMBDA_DEPLOYED_VERIFIED",p["kind"],flush=True)
         after=sf.describe_state_machine(stateMachineArn=IMAGE_MACHINE)
         assert json.loads(after["definition"])==before and after["roleArn"]==machine_role
-        after_stack=cf.describe_stacks(StackName=BACKEND)["Stacks"][0]
-        assert after_stack["StackStatus"]=="UPDATE_COMPLETE"
-        changed={p["ParameterKey"]:p["ParameterValue"] for p in after_stack["Parameters"]}
-        expectedparams=dict(params)
-        expectedparams.update({p["param"]:p["key"] for p in prepared})
-        assert changed==expectedparams,"Unexpected backend parameter change"
 
         frontend=cf.describe_stacks(StackName="afl-app-dev-frontend")["Stacks"][0]
         assert frontend["StackStatus"] in ("CREATE_COMPLETE","UPDATE_COMPLETE")
         outputs={v["OutputKey"]:v["OutputValue"] for v in frontend["Outputs"]}
         bucket=outputs["FrontendBucketName"]
         assert bucket==f"afl-app-dev-frontend-{ACCOUNT}-{REGION}"
-        for name,local,mime in (
+        for key,local,mime in (
             ("app.js","frontend/app.js","application/javascript; charset=utf-8"),
             ("index.html","frontend/index.html","text/html; charset=utf-8")):
             payload=Path(local).read_bytes()
-            s3.put_object(Bucket=bucket,Key=name,Body=payload,ContentType=mime,
+            s3.put_object(Bucket=bucket,Key=key,Body=payload,ContentType=mime,
                           CacheControl="max-age=60, must-revalidate")
-            assert s3.get_object(Bucket=bucket,Key=name)["Body"].read()==payload
-            print("DIAGNOSTIC_FRONTEND_VERIFIED",name,flush=True)
+            assert s3.get_object(Bucket=bucket,Key=key)["Body"].read()==payload
+            print("DIAGNOSTIC_FRONTEND_VERIFIED",key,flush=True)
         session.client("cloudfront").create_invalidation(
             DistributionId=outputs["DistributionId"],
             InvalidationBatch={"Paths":{"Quantity":2,"Items":["/app.js","/index.html"]},
                                "CallerReference":"image-outcome-diag-"+run})
         print("IMAGE_DIAGNOSTICS_RELEASE_COMPLETE: no Google calls or retry changes",flush=True)
     finally:
-        for p in created:
-            if p not in executed:
-                try:cf.delete_change_set(StackName=BACKEND,ChangeSetName=p["change"])
-                except ClientError:pass
+        if name and not executed:
+            try:cf.delete_change_set(StackName=BACKEND,ChangeSetName=name)
+            except ClientError:pass
 
 
 if __name__=="__main__":
