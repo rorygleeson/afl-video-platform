@@ -145,7 +145,10 @@ def public_job(item):
                    if item.get("scenes", {}).get(scene_id, {}).get("status") == "FAILED"
                    and item.get("scenes", {}).get(scene_id, {}).get("errorCode")
                    else {}),
-                **({key: item["scenes"][scene_id][key] for key in (
+                **({key: (int(item["scenes"][scene_id][key])
+                          if key in ("providerCandidateCount", "providerImageParts")
+                          else item["scenes"][scene_id][key])
+                    for key in (
                     "providerFinishReason", "providerBlockReason",
                     "providerBlockedCategories", "providerCandidateCount",
                     "providerImageParts", "providerTextOnly")
