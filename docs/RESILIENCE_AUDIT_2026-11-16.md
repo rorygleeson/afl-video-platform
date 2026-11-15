@@ -78,3 +78,9 @@ Tests added/updated: fake AWS assembly handoff (missing/existing/uncertain/dupli
 8. Only then mark **LIVE VERIFIED / R1 COMPLETE**. Missing watchdog start events and >2h per-job lifetime remain Item 2 work.
 
 No deployment is implicit from a source merge. This PR intentionally has no automatic AWS deployment trigger.
+
+### R1 AWS deployment evidence — 2026-11-16
+
+[Guarded release 43775514956](https://github.com/rorygleeson/afl-video-platform/actions/runs/43775514956) **succeeded**. Verified source/CloudFormation readback after three checked changesets: `api` (`ApiLambda`, dynamic `ProxyAny` reference), `assembly-worker` (`AssemblyWorker`, `AssemblyStateMachine` definition, dynamic `AssemblyStateMachineRole` references), and `watchdog` (`WatchdogLambda`, `WatchdogRole`, dynamic watchdog machine/rule/permission references). No application resource replacements; watchdog's `InvokeFromEventBridge` was reported as **Conditional** in preview, accepted under isolated rule guard; the stack update and deployed Lambda verification succeeded. The assembly workflow verified the bounded `RetryConfirmedAssemblyFailure` state and the watchdog Lambda verified `ASSEMBLY_STATE_MACHINE_ARN` environment config. No paid Google calls occurred.
+
+**R1 status: DEPLOYED / RESOURCE VERIFIED.** New offline tests passed. Actual injected failure recovery and browser-visible final-video validation remain unverified; do not claim complete customer-level reliability from a successful stack update alone. The missing watchdog start event remains Item 2.
