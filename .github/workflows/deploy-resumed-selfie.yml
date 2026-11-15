@@ -1,4 +1,5 @@
 name: Deploy safe resume selfie preview (API and UI only)
+# Repeat after correcting the offline filename-regex fixture; no provider calls.
 on:
   push:
     branches: [main]
