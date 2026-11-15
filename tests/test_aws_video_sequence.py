@@ -46,7 +46,18 @@ class AwsVideoSequenceTests(unittest.TestCase):
         }
         self.ddb.get_item.return_value = {"Item": self.job}
         self.s3.head_object.return_value = {"ContentLength": 2048}
-        self.states.describe_execution.return_value = {"status": "RUNNING"}
+        # Assembly reconciliation now checks the stable final-{jobId} ARN.
+        # Simulate AWS: execution is absent before start and present afterwards.
+        from botocore.exceptions import ClientError
+        def describe_execution(*, executionArn):
+            if ":execution:afl-app-dev-assembly:final-" in executionArn:
+                if any(c.kwargs.get("name") == "final-" + self.id
+                       for c in self.states.start_execution.call_args_list):
+                    return {"status": "RUNNING"}
+                raise ClientError({"Error": {"Code": "ExecutionDoesNotExist",
+                                            "Message": "not found"}}, "DescribeExecution")
+            return {"status": "RUNNING"}
+        self.states.describe_execution.side_effect = describe_execution
         # Botocore exposes an Exception subclass here, unlike MagicMock's
         # default placeholder. Exercise the non-ExecutionAlreadyExists path.
         class ExecutionAlreadyExists(Exception):

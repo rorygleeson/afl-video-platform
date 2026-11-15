@@ -27,6 +27,7 @@ JOB_ID = re.compile(r"[0-9a-f]{32}\Z")
 SCENES = ("scene1", "scene2", "scene3")
 MIN_AGE_SECONDS = 120
 WATCHDOG_MACHINE_ARN = os.environ["WATCHDOG_MACHINE_ARN"]
+ASSEMBLY_ARN = os.environ["ASSEMBLY_STATE_MACHINE_ARN"]
 MAX_LIFETIME_SECONDS = 7200
 
 
@@ -71,6 +72,25 @@ def replay(machine, name):
     if not isinstance(answer, dict):
         raise RuntimeError("Unexpected completion handler reply")
     return answer.get("status", "UNKNOWN")
+
+
+def request_assembly_reconciliation(job_id):
+    """Ask existing API to inspect/reconcile the one named FFmpeg execution.
+
+    This is assembly-only. Watchdog cannot submit Google requests or
+    change DynamoDB state directly.
+    """
+    payload = {"op": "reconcile_assembly", "jobId": job_id}
+    result = API.invoke(FunctionName=API_ARN, InvocationType="RequestResponse",
+                        Payload=json.dumps(payload).encode())
+    if result.get("FunctionError"):
+        raise RuntimeError("Assembly reconciliation API failed")
+    answer = json.loads(result["Payload"].read())
+    if not isinstance(answer, dict):
+        raise RuntimeError("Invalid assembly reconciliation reply")
+    if answer.get("statusCode") in (200, 202):
+        return "ASSEMBLY_RECONCILED"
+    return "REVIEW_ASSEMBLY_RECONCILIATION"
 
 
 def reconcile(job, now):
@@ -190,9 +210,51 @@ def check_one(event):
     if assembly.get("status") == "COMPLETED":
         return {"continue": False, "status": "FINAL_VIDEO_COMPLETED"}
     if assembly.get("status") == "FAILED":
+        # The assembly SFN can be waiting 15 seconds before its one
+        # confirmed-failure retry. Do not stop its watchdog prematurely.
+        updated = when(assembly.get("updatedAt")) or when(assembly.get("createdAt"))
+        if not updated or (now - updated).total_seconds() < MIN_AGE_SECONDS:
+            return {"continue": True, "status": "WAIT_ASSEMBLY_RETRY_SETTLEMENT"}
+        try:
+            execution = STATES.describe_execution(
+                executionArn=arn_for(ASSEMBLY_ARN, "final-" + job_id))
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+                return {"continue": False, "status": "REVIEW_ASSEMBLY_EXECUTION_MISSING"}
+            LOG.exception("Cannot verify assembly failure")
+            return {"continue": True, "status": "WAIT_ASSEMBLY_EXECUTION_CHECK"}
+        if execution.get("status") == "RUNNING":
+            return {"continue": True, "status": "WAIT_ASSEMBLY_RETRY_SETTLEMENT"}
         return {"continue": False, "status": "REVIEW_ASSEMBLY_FAILED"}
     if assembly:
-        # Do not re-trigger an assembly which has already been reserved.
+        if assembly.get("status") == "PROCESSING":
+            # A Lambda hard timeout can leave DynamoDB PROCESSING forever.
+            # Observe the named execution, but NEVER launch an ambiguous
+            # second FFmpeg writer while it could still be running.
+            updated = when(assembly.get("updatedAt")) or when(assembly.get("createdAt"))
+            if not updated or (now - updated).total_seconds() < MIN_AGE_SECONDS:
+                return {"continue": True, "status": "WAIT_ASSEMBLY_PROCESSING"}
+            try:
+                execution = STATES.describe_execution(
+                    executionArn=arn_for(ASSEMBLY_ARN, "final-" + job_id))
+            except ClientError as exc:
+                if exc.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+                    return {"continue": False, "status": "REVIEW_ASSEMBLY_EXECUTION_MISSING"}
+                LOG.exception("Cannot inspect assembly execution")
+                return {"continue": True, "status": "WAIT_ASSEMBLY_EXECUTION_CHECK"}
+            if execution.get("status") in ("FAILED", "TIMED_OUT", "ABORTED"):
+                return {"continue": False, "status": "REVIEW_ASSEMBLY_" + execution["status"]}
+            if execution.get("status") == "SUCCEEDED":
+                return {"continue": False, "status": "REVIEW_ASSEMBLY_STATUS_MISMATCH"}
+            return {"continue": True, "status": "WAIT_ASSEMBLY_PROCESSING"}
+        if assembly.get("status") == "QUEUED":
+            queued_at = when(assembly.get("createdAt"))
+            if not queued_at or (now - queued_at).total_seconds() < MIN_AGE_SECONDS:
+                return {"continue": True, "status": "WAIT_ASSEMBLY_SETTLEMENT"}
+            outcome = request_assembly_reconciliation(job_id)
+            # Keep watching until a confirmed finished job or deadline.
+            return {"continue": True, "status": outcome}
+        # Do not launch a second worker for an in-flight/uncertain assembly.
         return {"continue": True, "status": "ASSEMBLY_IN_PROGRESS_OR_REVIEW"}
     for record in (job.get("realVideos") or {}).values():
         if record.get("status") == "FAILED":

@@ -495,6 +495,44 @@ def assembly_public(job):
     return result
 
 
+def ensure_assembly_execution(job_id):
+    """Reconcile a durable QUEUED reservation with its one named workflow.
+
+    Safe on duplicate requests: Step Functions Standard execution names are
+    unique. Never re-submit paid Google jobs or create another assembly name.
+    """
+    execution_name = "final-" + job_id
+    execution_arn = ASSEMBLY_STATE_MACHINE_ARN.replace(
+        ":stateMachine:", ":execution:", 1) + ":" + execution_name
+    try:
+        existing = STATES.describe_execution(executionArn=execution_arn)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ExecutionDoesNotExist":
+            LOG.exception("Cannot verify reserved assembly execution")
+            return response(503, {"status": "HANDOFF_UNKNOWN",
+                                  "error": "Check status; do not retry"})
+    else:
+        if existing.get("status") in ("FAILED", "TIMED_OUT", "ABORTED"):
+            return response(409, {"status": "ASSEMBLY_WORKFLOW_NEEDS_REVIEW",
+                                  "executionStatus": existing.get("status"),
+                                  "jobId": job_id})
+        return response(202, {"status": "ALREADY_REQUESTED",
+                              "executionStatus": existing.get("status"),
+                              "jobId": job_id})
+    try:
+        STATES.start_execution(
+            stateMachineArn=ASSEMBLY_STATE_MACHINE_ARN,
+            name=execution_name,
+            input=json.dumps({"jobId": job_id}, separators=(",", ":")))
+    except STATES.exceptions.ExecutionAlreadyExists:
+        return response(202, {"status": "ALREADY_REQUESTED", "jobId": job_id})
+    except Exception:
+        LOG.exception("Assembly handoff uncertain")
+        return response(503, {"status": "HANDOFF_UNKNOWN",
+                              "error": "Check status; do not retry"})
+    return response(202, {"status": "QUEUED", "jobId": job_id})
+
+
 def start_assembly(job_id):
     """Reserve one assembly, verify all three actual files, then start workflow."""
     if not ASSEMBLY_STATE_MACHINE_ARN:
@@ -502,7 +540,8 @@ def start_assembly(job_id):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
-    if job.get("assembly"):
+    assembly = job.get("assembly") or {}
+    if assembly and assembly.get("status") != "QUEUED":
         return response(200, {"jobId": job_id, "assembly": assembly_public(job)})
     for scene in VIDEO_SCENES:
         video = job.get("realVideos", {}).get(scene, {})
@@ -515,28 +554,23 @@ def start_assembly(job_id):
                 return response(409, {"error": "A scene MP4 is empty"})
         except ClientError:
             return response(409, {"error": "A scene MP4 is not available in S3"})
-    try:
-        DDB.update_item(
-            Key={"jobId": job_id},
-            UpdateExpression="SET assembly = :record",
-            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(assembly)",
-            ExpressionAttributeValues={":record": {
-                "status": "QUEUED", "createdAt": datetime.now(timezone.utc).isoformat()}})
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-            return response(202, {"status": "ALREADY_REQUESTED", "jobId": job_id})
-        raise
-    try:
-        STATES.start_execution(
-            stateMachineArn=ASSEMBLY_STATE_MACHINE_ARN,
-            name="final-" + job_id,
-            input=json.dumps({"jobId": job_id}, separators=(",", ":")))
-    except STATES.exceptions.ExecutionAlreadyExists:
-        return response(202, {"status": "ALREADY_REQUESTED", "jobId": job_id})
-    except Exception:
-        LOG.exception("Assembly handoff uncertain")
-        return response(503, {"status": "HANDOFF_UNKNOWN", "error": "Check status; do not retry"})
-    return response(202, {"status": "QUEUED", "jobId": job_id})
+    if not assembly:
+        try:
+            DDB.update_item(
+                Key={"jobId": job_id},
+                UpdateExpression="SET assembly = :record",
+                ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(assembly)",
+                ExpressionAttributeValues={":record": {
+                    "status": "QUEUED", "createdAt": datetime.now(timezone.utc).isoformat()}})
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+                raise
+            # A racing caller may have already reserved (or started) assembly.
+            # Re-read before deciding whether it is safe to reconcile.
+            winner = get_job(job_id) or {}
+            if (winner.get("assembly") or {}).get("status") != "QUEUED":
+                return response(202, {"status": "ALREADY_REQUESTED", "jobId": job_id})
+    return ensure_assembly_execution(job_id)
 
 
 def video_scene_public(job, scene_id):
@@ -1288,6 +1322,16 @@ def google_auth_check():
 
 
 def lambda_handler(event, context):
+    # Internal IAM-authorised watchdog invocation only. Public API Gateway
+    # wraps caller JSON inside "body", not the top-level Lambda event.
+    if event.get("op") == "reconcile_assembly":
+        job_id = event.get("jobId")
+        if not isinstance(job_id, str) or not re.fullmatch(r"[0-9a-f]{32}", job_id):
+            return {"status": "IGNORED_INVALID_JOB_ID"}
+        job = get_job(job_id)
+        if not job or (job.get("assembly") or {}).get("status") != "QUEUED":
+            return {"status": "IGNORED_NOT_QUEUED"}
+        return start_assembly(job_id)
     # AWS EventBridge cannot be invoked through the public API Gateway path.
     # This branch uses only AWS IAM-protected Lambda event delivery.
     if event.get("source") == "aws.states":

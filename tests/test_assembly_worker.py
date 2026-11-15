@@ -40,7 +40,49 @@ class AssemblyContractTests(unittest.TestCase):
         self.assertIn("readyForAssembly = realStates.every", front_js)
         self.assertIn("st.mode === 'REAL' && st.status === 'COMPLETED'", front_js)
         self.assertIn("POST", front_js)
-        self.assertIn("Download Final Video MP4", front)
+        self.assertIn('id="downloadFinal"', front)
+
+    def test_queued_handoff_reconciles_named_execution_without_google(self):
+        api = API.read_text(encoding="utf-8")
+        ast.parse(api)
+        self.assertIn("def ensure_assembly_execution(job_id):", api)
+        self.assertIn('execution_name = "final-" + job_id', api)
+        self.assertIn("STATES.describe_execution(executionArn=execution_arn)", api)
+        self.assertIn('"ExecutionDoesNotExist"', api)
+        self.assertIn("return ensure_assembly_execution(job_id)", api)
+        self.assertIn('assembly.get("status") != "QUEUED"', api)
+        self.assertIn("attribute_not_exists(assembly)", api)
+        self.assertNotIn("start_video_sequence(job_id)", api[api.index("def ensure_assembly_execution"):api.index("def video_scene_public")])
+
+    def test_confirmed_failure_only_stitch_retry_is_bounded(self):
+        worker = WORKER.read_text(encoding="utf-8")
+        infra = (ROOT / "infrastructure/app/assembly.yaml").read_text(encoding="utf-8")
+        ast.parse(worker)
+        self.assertIn('def assemble(job_id, retry=False):', worker)
+        self.assertIn('status != "FAILED" or assembly.get("retryCount", 0) != 0', worker)
+        self.assertIn('raise AssemblyError("ASSEMBLY_RETRY_NOT_SAFE")', worker)
+        self.assertIn('set_status(job_id, "FAILED", "PROCESSING", retryCount=1', worker)
+        self.assertIn('retry=event.get("retry") is True', worker)
+        self.assertIn('"retry": true', infra)
+        self.assertIn('"WaitBeforeConfirmedRetry"', infra)
+        self.assertIn('"AssemblyNeedsReview"', infra)
+        self.assertNotIn('GoogleWorker', infra)
+
+    def test_step_functions_retry_definition_is_valid_and_bounded(self):
+        import json
+        import textwrap
+        infra = (ROOT / "infrastructure/app/assembly.yaml").read_text(encoding="utf-8")
+        definition = infra.split("      DefinitionString: !Sub |", 1)[1].split("\nOutputs:", 1)[0]
+        definition = json.loads(textwrap.dedent(definition))
+        states = definition["States"]
+        self.assertEqual(definition["StartAt"], "Stitch")
+        self.assertNotIn("Retry", states["Stitch"])
+        self.assertEqual(states["Stitch"]["Catch"][0]["Next"], "WaitBeforeConfirmedRetry")
+        self.assertEqual(states["WaitBeforeConfirmedRetry"]["Seconds"], 15)
+        self.assertEqual(states["RetryConfirmedAssemblyFailure"]["Parameters"]["Payload"]["retry"], True)
+        self.assertEqual(states["RetryConfirmedAssemblyFailure"]["Catch"][0]["Next"], "AssemblyNeedsReview")
+        self.assertEqual(states["AssemblyNeedsReview"]["Type"], "Fail")
+        self.assertNotIn("Retry", states["RetryConfirmedAssemblyFailure"])
 
     def test_existing_scene_download_contract_preserved(self):
         api = API.read_text(encoding="utf-8")

@@ -29,7 +29,8 @@ class WatchdogTests(unittest.TestCase):
              "GOOGLE_STATE_MACHINE_ARN":MACHINE+"afl-app-dev-google-omni",
              "API_LAMBDA_ARN":"arn:aws:lambda:ap-southeast-2:123456789012:function:afl-app-dev-api",
              "WATCHDOG_ACTIVATED_AT":(NOW-timedelta(days=1)).isoformat(),
-             "WATCHDOG_MACHINE_ARN":MACHINE+"afl-app-dev-handoff-watchdog"}
+             "WATCHDOG_MACHINE_ARN":MACHINE+"afl-app-dev-handoff-watchdog",
+             "ASSEMBLY_STATE_MACHINE_ARN":MACHINE+"afl-app-dev-assembly"}
         with patch.dict(os.environ,env),patch.object(boto3,"client",side_effect=client),patch.object(boto3,"resource",side_effect=resource):
             spec=importlib.util.spec_from_file_location("isolated_watchdog",ROOT)
             self.w=importlib.util.module_from_spec(spec); spec.loader.exec_module(self.w)
@@ -146,6 +147,66 @@ class WatchdogTests(unittest.TestCase):
         self.assertTrue(result["continue"])
         self.assertEqual(result["status"],"SKIP_UNAUTHORISED")
         self.ddb.scan.assert_not_called()
+
+    def test_queued_assembly_reconciliation_uses_existing_api_only(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"QUEUED",
+                              "createdAt":(NOW-timedelta(minutes=4)).isoformat()}
+        self.api.invoke.return_value={"Payload":io.BytesIO(b'{"statusCode":202,"body":"{}"}')}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result["status"],"ASSEMBLY_RECONCILED")
+        self.assertTrue(result["continue"])
+        payload=self.api.invoke.call_args.kwargs["Payload"]
+        self.assertEqual(__import__("json").loads(payload)["op"],"reconcile_assembly")
+        self.assertEqual(__import__("json").loads(payload)["jobId"],ID)
+        self.states.start_execution.assert_not_called()
+        self.ddb.update_item.assert_not_called()
+
+    def test_recent_queued_assembly_is_not_restarted(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"QUEUED","createdAt":NOW.isoformat()}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result["status"],"WAIT_ASSEMBLY_SETTLEMENT")
+        self.api.invoke.assert_not_called()
+
+    def test_failed_assembly_waits_during_one_bounded_retry(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"FAILED",
+                              "updatedAt":(NOW-timedelta(minutes=4)).isoformat()}
+        self.states.describe_execution.return_value={"status":"RUNNING"}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result,{"continue":True,"status":"WAIT_ASSEMBLY_RETRY_SETTLEMENT"})
+        self.api.invoke.assert_not_called()
+        self.states.start_execution.assert_not_called()
+
+    def test_failed_assembly_reports_terminal_after_retry(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"FAILED",
+                              "updatedAt":(NOW-timedelta(minutes=4)).isoformat()}
+        self.states.describe_execution.return_value={"status":"FAILED"}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result,{"continue":False,"status":"REVIEW_ASSEMBLY_FAILED"})
+        self.api.invoke.assert_not_called()
+
+    def test_processing_assembly_timeout_never_resubmits(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"PROCESSING",
+                              "updatedAt":(NOW-timedelta(minutes=4)).isoformat()}
+        self.states.describe_execution.return_value={"status":"TIMED_OUT"}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result,{"continue":False,"status":"REVIEW_ASSEMBLY_TIMED_OUT"})
+        self.states.start_execution.assert_not_called()
+        self.api.invoke.assert_not_called()
+
+    def test_processing_assembly_active_does_not_restart(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["assembly"]={"status":"PROCESSING",
+                              "updatedAt":(NOW-timedelta(minutes=4)).isoformat()}
+        self.states.describe_execution.return_value={"status":"RUNNING"}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertTrue(result["continue"])
+        self.assertEqual(result["status"],"WAIT_ASSEMBLY_PROCESSING")
+        self.api.invoke.assert_not_called()
 
     def test_ambiguous_video_check_stops_without_retry(self):
         self.ddb.get_item.return_value={"Item":self.job}
