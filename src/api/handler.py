@@ -168,6 +168,96 @@ def public_job(item):
     }
 
 
+
+def overall_job_progress(job):
+    """Read-only end-to-end progress derived from existing per-stage job records.
+
+    Keep job.status as the image pipeline status for backwards compatibility.
+    Do not persist an independently maintained overall status or start any work.
+    """
+    scenes = job.get("scenes") or {}
+    image_statuses = [scenes.get(scene, {}).get("status", "PENDING")
+                      for scene in VIDEO_SCENES]
+    images_completed = image_statuses.count("COMPLETED")
+    videos = job.get("realVideos") or {}
+    videos_completed = sum(
+        videos.get(scene, {}).get("status") == "COMPLETED"
+        and videos[scene].get("resultKey") == f"videos/{job['jobId']}/{scene}.mp4"
+        for scene in VIDEO_SCENES
+    )
+
+    progress = {
+        "currentStage": "IMAGES",
+        "stageStatus": "PENDING",
+        "imagesCompleted": images_completed,
+        "imagesTotal": len(VIDEO_SCENES),
+        "videosCompleted": videos_completed,
+        "videosTotal": len(VIDEO_SCENES),
+        "finalVideoReady": False,
+    }
+
+    if images_completed != len(VIDEO_SCENES):
+        if job.get("status") in ("FAILED", "PARTIAL_SUCCESS"):
+            progress["stageStatus"] = "FAILED"
+        elif "RETRY_WAIT" in image_statuses:
+            progress["stageStatus"] = "RETRYING"
+        elif job.get("status") == "GENERATING_IMAGES":
+            progress["stageStatus"] = "PROCESSING"
+        elif job.get("status") == "AWAITING_IMAGE_PIPELINE":
+            progress["stageStatus"] = "PENDING"
+        else:
+            progress["stageStatus"] = "REVIEW_REQUIRED"
+        return progress
+
+    # All three *image* scenes are complete. The legacy job.status alone
+    # cannot say whether the videos or stitched final output have finished.
+    for index, scene in enumerate(VIDEO_SCENES, start=1):
+        video = videos.get(scene) or {}
+        expected = f"videos/{job['jobId']}/{scene}.mp4"
+        if video.get("status") == "COMPLETED" and video.get("resultKey") == expected:
+            continue
+
+        progress["currentStage"] = f"VIDEO_{index}"
+        if not job.get("videoSequence") and not job.get("paidVideoApprovals", {}).get(scene):
+            progress["stageStatus"] = "WAITING_FOR_ACTION"
+            return progress
+
+        # Reuse the existing video status projection; it already detects
+        # failed/timed-out/missing Step Functions executions without mutation.
+        reported = video_scene_public(job, scene)
+        state = reported["status"]
+        if state == "REVIEW_REQUIRED":
+            progress["stageStatus"] = "REVIEW_REQUIRED"
+        elif state == "FAILED":
+            progress["stageStatus"] = "FAILED"
+        elif state == "NOT_REQUESTED":
+            progress["stageStatus"] = "PENDING"
+        else:
+            # REQUESTED, PREPARED, SUBMISSION_UNKNOWN and PROCESSING are all
+            # in-flight from the customer's perspective. SUBMISSION_UNKNOWN
+            # is normal briefly before the interaction ID is persisted;
+            # video_scene_public() raises REVIEW_REQUIRED if AWS fails.
+            progress["stageStatus"] = "PROCESSING"
+        return progress
+
+    progress["currentStage"] = "STITCHING"
+    assembly = assembly_public(job)
+    state = assembly["status"]
+    if state == "COMPLETED" and "url" in assembly:
+        progress["currentStage"] = "COMPLETED"
+        progress["stageStatus"] = "COMPLETED"
+        progress["finalVideoReady"] = True
+    elif state == "READY":
+        progress["stageStatus"] = "WAITING_FOR_ACTION"
+    elif state in ("QUEUED", "PROCESSING"):
+        progress["stageStatus"] = "PROCESSING"
+    elif state in ("FAILED", "REVIEW_REQUIRED"):
+        progress["stageStatus"] = state
+    else:
+        progress["stageStatus"] = "REVIEW_REQUIRED"
+    return progress
+
+
 def validate_personal_message(value):
     """Optional on-video message; guard FFmpeg text rendering and readable output."""
     if value is None:
@@ -1176,7 +1266,7 @@ def lambda_handler(event, context):
                 return response(404, {"error": "Job not found"})
             if match.group(2):
                 return images_for_job(job)
-            return response(200, {"job": public_job(job)})
+            return response(200, {"job": {**public_job(job), "progress": overall_job_progress(job)}})
         return response(404, {"error": "Unknown endpoint"})
     except ValueError as exc:
         return response(400, {"error": str(exc)})
