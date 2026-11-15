@@ -88,7 +88,7 @@ function setup(options = {}) {
   els.startNewJob.hidden = true;
   els.resumeNotice.hidden = true;
   els.jobIdPanel.hidden = true;
-  els.key.value = 'test-api-key';
+  els.key.value = options.noKey ? '' : 'test-api-key';
   els.team.value = 'geelong';
   els.firstName.value = 'Alex';
   els.lastName.value = 'Tonelli';
@@ -1325,14 +1325,11 @@ test('reload resumes the same image job via GET only and preserves scene progres
   assert.equal(h.els.firstName.value,'Alex');
   assert.equal(h.els.team.value,'geelong');
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0,'Recovery cannot start model calls');
-  assert.equal(h.els.imageCard1?.hidden,undefined);
+  assert.equal(h.imageCount(),1);
 });
 test('saved job needs key after a full browser session ends; no duplicate generation', async () => {
   const localMap=new Map([['afl-video-active-job-v1','a'.repeat(32)]]);
-  const h=setup({localMap,sessionMap:new Map()});
-  h.els.key.value='';
-  // Explicitly clear the key fixture before testing the no-key resume action.
-  h.els.key.value='';
+  const h=setup({localMap,sessionMap:new Map(),noKey:true});
   await h.flush();
   assert.equal(h.els.generate.disabled,true);
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
