@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Isolated one-minute conservative missed-handoff watchdog (no Google model access).
+Description: Per-job watchdog triggered by image workflow starts, with bounded wait/check loop.
 Parameters:
   ArtifactBucket:
     Type: String
@@ -30,7 +30,7 @@ Resources:
             Statement:
               - Sid: ReadJobsOnly
                 Effect: Allow
-                Action: dynamodb:Scan
+                Action: dynamodb:GetItem
                 Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/afl-app-dev-jobs'
               - Sid: DescribeExistingExecutionsOnly
                 Effect: Allow
@@ -38,6 +38,10 @@ Resources:
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:afl-app-dev-scene1-pilot:*'
                   - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:afl-app-dev-google-omni:real-*'
+              - Sid: StartOwnWatchdogOnly
+                Effect: Allow
+                Action: states:StartExecution
+                Resource: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-handoff-watchdog'
               - Sid: ReplayVerifiedCompletionToExistingApiOnly
                 Effect: Allow
                 Action: lambda:InvokeFunction
@@ -67,24 +71,98 @@ Resources:
       Environment:
         Variables:
           JOBS_TABLE: afl-app-dev-jobs
+          WATCHDOG_MACHINE_ARN: !Ref WatchdogMachine
           IMAGE_STATE_MACHINE_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-scene1-pilot'
           GOOGLE_STATE_MACHINE_ARN: !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-google-omni'
           API_LAMBDA_ARN: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-api'
           WATCHDOG_ACTIVATED_AT: !Ref ActivatedAt
     DependsOn: WatchdogLogs
+  WatchdogMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: afl-app-dev-handoff-watchdog-sfn-role
+      PermissionsBoundary: !Ref PermissionsBoundaryArn
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeOnlyOwnWatchdog
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt WatchdogLambda.Arn
+  WatchdogMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: afl-app-dev-handoff-watchdog
+      StateMachineType: STANDARD
+      RoleArn: !GetAtt WatchdogMachineRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "One isolated monitor per authorised video job; no idle polling",
+          "StartAt": "WaitOneMinute",
+          "TimeoutSeconds": 7200,
+          "States": {
+            "WaitOneMinute": {
+              "Type": "Wait",
+              "Seconds": 60,
+              "Next": "CheckSingleJob"
+            },
+            "CheckSingleJob": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${WatchdogLambda.Arn}",
+                "Payload": {
+                  "op": "check",
+                  "input.$": "$"
+                }
+              },
+              "ResultPath": "$.check",
+              "Next": "KeepWatching"
+            },
+            "KeepWatching": {
+              "Type": "Choice",
+              "Choices": [{
+                "Variable": "$.check.Payload.continue",
+                "BooleanEquals": true,
+                "Next": "WaitOneMinute"
+              }],
+              "Default": "Finished"
+            },
+            "Finished": {
+              "Type": "Succeed"
+            }
+          }
+        }
   EveryMinute:
     Type: AWS::Events::Rule
     Properties:
-      Name: afl-app-dev-handoff-watchdog-minute
-      Description: Check for genuinely missed AWS stage completion events every minute
+      Name: afl-app-dev-handoff-watchdog-image-start
+      Description: Start one bounded monitoring workflow when a new image job starts
       State: ENABLED
-      ScheduleExpression: rate(1 minute)
+      EventPattern:
+        source:
+          - aws.states
+        detail-type:
+          - Step Functions Execution Status Change
+        detail:
+          stateMachineArn:
+            - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:stateMachine:afl-app-dev-scene1-pilot'
+          status:
+            - RUNNING
       Targets:
-        - Id: HandoffWatchdog
+        - Id: StartJobWatchdog
           Arn: !GetAtt WatchdogLambda.Arn
           RetryPolicy:
-            MaximumEventAgeInSeconds: 300
-            MaximumRetryAttempts: 2
+            MaximumEventAgeInSeconds: 3600
+            MaximumRetryAttempts: 12
   InvokeFromEventBridge:
     Type: AWS::Lambda::Permission
     Properties:
@@ -97,3 +175,5 @@ Outputs:
     Value: !GetAtt WatchdogLambda.Arn
   WatchdogSchedule:
     Value: !GetAtt EveryMinute.Arn
+  WatchdogStateMachineArn:
+    Value: !Ref WatchdogMachine
