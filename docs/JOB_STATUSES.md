@@ -24,7 +24,7 @@ All these routes currently sit behind the API Gateway developer `x-api-key`; the
 | Status | Meaning | Notes |
 | --- | --- | --- |
 | `AWAITING_IMAGE_PIPELINE` | Job exists, generation not launched | Initial status after `POST /jobs` |
-| `GENERATING_IMAGES` | Image Step Functions has prepared/started processing | Map iterates three scenes with **MaxConcurrency: 1** |
+| `GENERATING_IMAGES` | Image Step Functions has prepared/started processing | Map can run all three scenes concurrently with **MaxConcurrency: 3** |
 | `COMPLETED` | All three image scenes completed | Image job status, **not** evidence final MP4 is ready |
 | `PARTIAL_SUCCESS` | At least one but not all reference images completed | Does not mean a complete customer video |
 | `FAILED` | Reference image pipeline did not deliver a complete set | Image-side terminalisation may retain completed outputs |
@@ -35,7 +35,7 @@ All these routes currently sit behind the API Gateway developer `x-api-key`; the
 
 | Status | Meaning | Recovery implications |
 | --- | --- | --- |
-| `PENDING` | Scene has not begun | Next step in sequential image Map |
+| `PENDING` | Scene has not begun | Scene not yet claimed; other image scenes can be processing concurrently |
 | `SUBMITTING` | Per-scene DynamoDB claim taken; preparing/issuing Google request | Request may not yet be accepted |
 | `GENERATING` | Google generation request is in progress or waiting for its synchronous response | A timeout after POST is **ambiguous** |
 | `RETRY_WAIT` | Explicit Google HTTP 429 rejection; waiting for safe retry | `retryCount`, `maxRetries`, `nextRetryAt` may be exposed |
@@ -173,8 +173,8 @@ No original provider message, safety narratives, generated text, photo bytes,
 base64 image, prompt, token or full Google response is stored in these
 diagnostic fields. No Google request can be triggered by the diagnostic UI.
 Only explicit HTTP **429** is automatically resubmitted using the existing
-8-attempt/600-second bounded retry policy. The image map remains sequential
-(`MaxConcurrency: 1`). These are diagnostic metadata changes, not a safety
+8-attempt/600-second bounded retry policy. The image map runs up to three scene branches concurrently
+(`MaxConcurrency: 3`). Per-scene retry behaviour is unchanged. These are diagnostic metadata changes, not a safety
 filter bypass or a recovery/retry redesign.
 
 ### JSON serialization safeguard (15 November 2026)
