@@ -176,3 +176,13 @@ Only explicit HTTP **429** is automatically resubmitted using the existing
 8-attempt/600-second bounded retry policy. The image map remains sequential
 (`MaxConcurrency: 1`). These are diagnostic metadata changes, not a safety
 filter bypass or a recovery/retry redesign.
+
+### JSON serialization safeguard (15 November 2026)
+
+DynamoDB returns numeric attributes as Python `Decimal`. In `public_job()`,
+`providerCandidateCount` and `providerImageParts` must be converted to
+ordinary integers before the shared `response()` JSON serializer runs. Without
+this conversion, an image failure with these stored diagnostics can make both
+`GET /jobs/{jobId}` and `GET /jobs/{jobId}/images` return a server error,
+leaving the browser displaying stale `GENERATING` status. The existing status
+poll remains read-only; no extra paid Google request is needed to recover it.
