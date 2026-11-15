@@ -112,9 +112,10 @@ const input = document.getElementById('selfie');
     if (job.team) document.getElementById('team').value = job.team;
     if (job.firstName) document.getElementById('firstName').value = job.firstName;
     if (job.lastName) document.getElementById('lastName').value = job.lastName;
-    // The greeting remains in the existing AWS job, never duplicated locally.
-    document.getElementById('personalMessage').value = '';
-    document.getElementById('personalMessageCount').textContent = '0';
+    // Restore the committed message from AWS; never persist it in localStorage.
+    const savedMessage = typeof job.personalMessage === 'string' ? job.personalMessage : '';
+    document.getElementById('personalMessage').value = savedMessage;
+    document.getElementById('personalMessageCount').textContent = String([...savedMessage].length);
     input.value = '';
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     previewUrl = undefined;
