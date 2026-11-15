@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
+from boto3.dynamodb.conditions import Attr
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -140,7 +141,7 @@ def lambda_handler(event, context):
     exclusive = None
     for _ in range(MAX_PAGES):
         request = {"Limit": SCAN_LIMIT,
-                   "FilterExpression": __import__("boto3").dynamodb.conditions.Attr("status").eq("COMPLETED")}
+                   "FilterExpression": Attr("status").eq("COMPLETED")}
         if exclusive:
             request["ExclusiveStartKey"] = exclusive
         page = JOBS.scan(**request)
