@@ -72,6 +72,9 @@
 
 ## Change log
 
+- 2026-11-15 — Added [JOB_STATUSES.md](JOB_STATUSES.md) (commit `48e506a3`) documenting existing API states, response fields, limitations and a clearly labelled proposed unified status. Task 1.4 remains pending deployment cross-check and response tests.
+- 2026-11-15 — Decision: proceed with source-verified documentation and do not block documentation work on live AWS access. Deployed resource comparison is a later audit cross-check, not a prerequisite to drafting current endpoint/status/timeout docs.
+
 - 2026-11-15 — Step 1.1 source baseline captured in [DEPLOYMENT_BASELINE_2026-11-15.md](DEPLOYMENT_BASELINE_2026-11-15.md) (commit `892bf629`). **IN PROGRESS:** live AWS config and workflow evidence not yet accessible/verified. No application changes.
 
 - 2026-11-15 — Roadmap created. Checklist tasks are **not yet marked complete**; current source findings are preliminary and live AWS values remain unverified.
