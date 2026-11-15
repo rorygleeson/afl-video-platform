@@ -41,5 +41,5 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
           aws-region: ap-southeast-2
-      - name: Create or code-only update and verify isolated watchdog stack
+      - name: Create or guarded update of the isolated watchdog without changing any existing app stacks
         run: python -u scripts/deploy_handoff_watchdog.py
