@@ -210,6 +210,21 @@ def check_one(event):
     if assembly.get("status") == "COMPLETED":
         return {"continue": False, "status": "FINAL_VIDEO_COMPLETED"}
     if assembly.get("status") == "FAILED":
+        # The assembly SFN can be waiting 15 seconds before its one
+        # confirmed-failure retry. Do not stop its watchdog prematurely.
+        updated = when(assembly.get("updatedAt")) or when(assembly.get("createdAt"))
+        if not updated or (now - updated).total_seconds() < MIN_AGE_SECONDS:
+            return {"continue": True, "status": "WAIT_ASSEMBLY_RETRY_SETTLEMENT"}
+        try:
+            execution = STATES.describe_execution(
+                executionArn=arn_for(ASSEMBLY_ARN, "final-" + job_id))
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+                return {"continue": False, "status": "REVIEW_ASSEMBLY_EXECUTION_MISSING"}
+            LOG.exception("Cannot verify assembly failure")
+            return {"continue": True, "status": "WAIT_ASSEMBLY_EXECUTION_CHECK"}
+        if execution.get("status") == "RUNNING":
+            return {"continue": True, "status": "WAIT_ASSEMBLY_RETRY_SETTLEMENT"}
         return {"continue": False, "status": "REVIEW_ASSEMBLY_FAILED"}
     if assembly:
         if assembly.get("status") == "PROCESSING":
