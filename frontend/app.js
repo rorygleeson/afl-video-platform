@@ -26,6 +26,7 @@ const input = document.getElementById('selfie');
   const newJobButton = document.getElementById('startNewJob');
   const resumeNotice = document.getElementById('resumeNotice');
   const JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
+  let restoreInFlight = false;
   function savedJobId() {
     try {
       const id = window.localStorage.getItem(SAVED_JOB_KEY);
@@ -77,16 +78,18 @@ const input = document.getElementById('selfie');
   }
   async function restoreJob() {
     const id = savedJobId();
-    if (!id || currentJobId || uploadInProgress) return;
+    if (!id || currentJobId || uploadInProgress || restoreInFlight) return;
     if (!document.getElementById('key').value.trim()) {
       resumeNotice.hidden = false;
       resumeNotice.textContent = 'Previous video found. Enter your developer API key to resume it.';
       generate.disabled = true;
+      newJobButton.hidden = false;
       return;
     }
     resumeNotice.hidden = false;
     resumeNotice.textContent = 'Reconnecting to your existing video…';
     generate.disabled = true;
+    restoreInFlight = true;
     try {
       // GET-only recovery; no billable generation or backend writes.
       const record = await api('/jobs/' + id);
@@ -104,6 +107,8 @@ const input = document.getElementById('selfie');
         '. Check your API key or connection. Your job has not been restarted.';
       newJobButton.hidden = false;
       generate.disabled = true;
+    } finally {
+      restoreInFlight = false;
     }
   }
   newJobButton.addEventListener('click', () => {
@@ -1353,6 +1358,7 @@ const input = document.getElementById('selfie');
           : '\nReference image generation was not started.'));
     } finally {
       uploadInProgress = false;
+      document.getElementById('key').disabled = false;
       if (!currentJobId) {
         for (const field of formFields) field.disabled = false;
         removeSelfie.disabled = false;
