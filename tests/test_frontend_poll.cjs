@@ -1263,17 +1263,15 @@ test('blank optional greeting is permitted without changed generation flow', asy
 });
 
 test('failed reference image renders safely recorded Google diagnostic reasons', async () => {
-  const opts={};
+  const opts={imageScenes: {scene1: {
+    status:'FAILED', errorCode:'GOOGLE_IMAGE_SAFETY_BLOCK',
+    providerFinishReason:'IMAGE_SAFETY', providerBlockReason:'UNKNOWN',
+    providerBlockedCategories:['HARM_CATEGORY_DANGEROUS_CONTENT'],
+    providerCandidateCount:1,
+  }}};
   const h=setup(opts);
   await h.els.generate.listeners.click();
   await h.flush();
-  const scene = h.mockStatuses.scene1;
-  scene.status='FAILED';
-  scene.errorCode='GOOGLE_IMAGE_SAFETY_BLOCK';
-  scene.providerFinishReason='IMAGE_SAFETY';
-  scene.providerBlockReason='UNKNOWN';
-  scene.providerBlockedCategories=['HARM_CATEGORY_DANGEROUS_CONTENT'];
-  scene.providerCandidateCount=1;
   await h.els.refresh.listeners.click();
   await h.flush();
   assert.match(h.els.imageDiagnosticsText.textContent,/IMAGE_SAFETY/);
