@@ -512,6 +512,10 @@ def ensure_assembly_execution(job_id):
             return response(503, {"status": "HANDOFF_UNKNOWN",
                                   "error": "Check status; do not retry"})
     else:
+        if existing.get("status") in ("FAILED", "TIMED_OUT", "ABORTED"):
+            return response(409, {"status": "ASSEMBLY_WORKFLOW_NEEDS_REVIEW",
+                                  "executionStatus": existing.get("status"),
+                                  "jobId": job_id})
         return response(202, {"status": "ALREADY_REQUESTED",
                               "executionStatus": existing.get("status"),
                               "jobId": job_id})
