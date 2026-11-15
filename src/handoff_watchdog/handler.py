@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 
 import boto3
 from botocore.exceptions import ClientError
-from boto3.dynamodb.conditions import Attr
 
 LOG = logging.getLogger(__name__)
 LOG.setLevel(logging.INFO)
@@ -27,9 +26,8 @@ ACTIVATED = datetime.fromisoformat(os.environ["WATCHDOG_ACTIVATED_AT"].replace("
 JOB_ID = re.compile(r"[0-9a-f]{32}\Z")
 SCENES = ("scene1", "scene2", "scene3")
 MIN_AGE_SECONDS = 120
-MAX_PAGES = 10
-SCAN_LIMIT = 100
-MAX_HANDOFFS = 10
+WATCHDOG_MACHINE_ARN = os.environ["WATCHDOG_MACHINE_ARN"]
+MAX_LIFETIME_SECONDS = 7200
 
 
 def when(value):
@@ -137,32 +135,78 @@ def reconcile(job, now):
     return "SKIP_ALREADY_COMPLETE"
 
 
-def lambda_handler(event, context):
+def start_for_image_execution(event):
+    """Start one per-job watchdog when the image Step Functions execution starts."""
+    detail = event.get("detail") or {}
+    if (event.get("source") != "aws.states"
+            or event.get("detail-type") != "Step Functions Execution Status Change"
+            or detail.get("status") != "RUNNING"
+            or detail.get("stateMachineArn") != IMAGE_ARN):
+        return {"status": "IGNORED_EVENT"}
+    execution = detail.get("executionArn", "")
+    prefix = IMAGE_ARN.replace(":stateMachine:", ":execution:", 1) + ":"
+    if not isinstance(execution, str) or not execution.startswith(prefix):
+        return {"status": "IGNORED_EXECUTION"}
+    job_id = execution[len(prefix):]
+    if not JOB_ID.fullmatch(job_id):
+        return {"status": "IGNORED_JOB_ID"}
+    job = JOBS.get_item(Key={"jobId": job_id}, ConsistentRead=True).get("Item")
+    if not job or job.get("autoVideoConsent") is not True:
+        return {"status": "IGNORED_UNAUTHORISED"}
+    created = when(job.get("createdAt"))
+    if not created or created < ACTIVATED:
+        return {"status": "IGNORED_OLD_JOB"}
+    try:
+        STATES.start_execution(
+            stateMachineArn=WATCHDOG_MACHINE_ARN,
+            name="watch-" + job_id,
+            input=json.dumps({"jobId": job_id,
+                              "startedAt": datetime.now(timezone.utc).isoformat()},
+                             separators=(",", ":")))
+    except STATES.exceptions.ExecutionAlreadyExists:
+        return {"status": "ALREADY_MONITORING"}
+    return {"status": "MONITORING_STARTED"}
+
+
+def check_one(event):
+    """Read exactly one job. Never scan or directly start a paid workflow."""
+    job_id = event.get("jobId")
+    started = when(event.get("startedAt"))
     now = datetime.now(timezone.utc)
-    counters = {"checked": 0, "replayed": 0, "review": 0, "errors": 0}
-    exclusive = None
-    for _ in range(MAX_PAGES):
-        request = {"Limit": SCAN_LIMIT,
-                   "FilterExpression": Attr("status").eq("COMPLETED")}
-        if exclusive:
-            request["ExclusiveStartKey"] = exclusive
-        page = JOBS.scan(**request)
-        for job in page.get("Items", []):
-            counters["checked"] += 1
-            try:
-                outcome = reconcile(job, now)
-                if outcome in ("SEQUENCE_APPROVED", "ALREADY_APPROVED",
-                               "NEXT_SCENE_REQUESTED", "ASSEMBLY_REQUESTED"):
-                    counters["replayed"] += 1
-                elif outcome.startswith("REVIEW"):
-                    counters["review"] += 1
-                LOG.info("Reconciliation outcome=%s", outcome)
-            except Exception:
-                counters["errors"] += 1
-                LOG.exception("Reconciliation requires operator investigation")
-            if counters["replayed"] >= MAX_HANDOFFS:
-                return counters
-        exclusive = page.get("LastEvaluatedKey")
-        if not exclusive:
-            break
-    return counters
+    if not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id) or not started:
+        return {"continue": False, "status": "INVALID_WATCHDOG_INPUT"}
+    if (now - started).total_seconds() > MAX_LIFETIME_SECONDS:
+        LOG.warning("Watchdog deadline reached; operator review required")
+        return {"continue": False, "status": "REVIEW_WATCHDOG_DEADLINE"}
+    job = JOBS.get_item(Key={"jobId": job_id}, ConsistentRead=True).get("Item")
+    if not job:
+        return {"continue": False, "status": "JOB_NOT_FOUND"}
+    created = when(job.get("createdAt"))
+    if not created or created < ACTIVATED or job.get("autoVideoConsent") is not True:
+        return {"continue": False, "status": "NOT_AUTHORISED"}
+    if job.get("status") in ("FAILED", "PARTIAL_SUCCESS"):
+        return {"continue": False, "status": "IMAGE_JOB_TERMINAL_FAILURE"}
+    assembly = job.get("assembly") or {}
+    if assembly.get("status") == "COMPLETED":
+        return {"continue": False, "status": "FINAL_VIDEO_COMPLETED"}
+    if assembly.get("status") == "FAILED":
+        return {"continue": False, "status": "REVIEW_ASSEMBLY_FAILED"}
+    if assembly:
+        # Do not re-trigger an assembly which has already been reserved.
+        return {"continue": True, "status": "ASSEMBLY_IN_PROGRESS_OR_REVIEW"}
+    for record in (job.get("realVideos") or {}).values():
+        if record.get("status") in ("FAILED", "SUBMISSION_UNKNOWN"):
+            return {"continue": False, "status": "REVIEW_VIDEO_FAILURE_OR_UNKNOWN"}
+    outcome = reconcile(job, now)
+    if outcome.startswith("REVIEW"):
+        return {"continue": False, "status": outcome}
+    LOG.info("Job watchdog outcome=%s", outcome)
+    return {"continue": True, "status": outcome}
+
+
+def lambda_handler(event, context):
+    if event.get("source") == "aws.states":
+        return start_for_image_execution(event)
+    if event.get("op") == "check" and isinstance(event.get("input"), dict):
+        return check_one(event["input"])
+    return {"continue": False, "status": "IGNORED_INVALID_REQUEST"}
