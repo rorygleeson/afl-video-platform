@@ -5,6 +5,36 @@
 **Repository:** `rorygleeson/afl-video-platform` (`main`)  
 **Scope:** Existing selfie → three Google reference images → three Google video scenes → FFmpeg final MP4. Stripe design only until explicitly authorised later.
 
+## Current audit update — 2026-11-15 (post backend-orchestration releases)
+
+**Scope and confidence:** **SOURCE VERIFIED** against current `main` API, browser, Step Functions/CloudFormation definitions, EventBridge rules and offline tests. **LIVE DEPLOYMENT VERIFIED (limited)** by guarded GitHub Actions AWS CloudFormation/S3 readback and resource checks. **NOT END-TO-END VERIFIED** with a fresh actual selfie/Google/FFmpeg job; no paid provider generation was run as part of these releases. This update supersedes older *current source findings* below where they conflict. Historical change-log entries remain historical.
+
+### Implemented and deployed: three backend orchestration releases
+
+| Stage | Current actual behaviour | Deployment evidence | Limit |
+| --- | --- | --- | --- |
+| **1 — Images → Video 1** | `POST /jobs` records `autoVideoConsent: true` from the frontend's explicit `confirmPaidSequence: true`; image SFN successful execution EventBridge event invokes API `image_sequence_event()`. Checks named execution/job, completed overall image job + three completed scenes, consent, then reuses `start_video_sequence()` and atomic video reservations. | [43689396745](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745): API/isolated EventBridge stack and frontend verified. | **No Stripe gate yet.** This is developer-mode Google-cost consent, not a customer payment. Failure to deliver event may leave an authorised job stalled. |
+| **2 — Video 3 → stitching** | Existing successful Google SFN completion event invokes `video_sequence_event()`. Checks scene/attempt ownership, completed scene 3 MP4 and S3, then uses existing `start_assembly()`, which validates **all three** S3 MP4s and conditionally reserves assembly; named `final-{jobId}` execution. Duplicates do not initiate another assembly. | [43689754297](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297): API Lambda update, existing EventBridge rules verified; tests passed. | An uncertain assembly StartExecution leaves a reserved record requiring reconciliation; no assembly-only automated retry/watchdog. |
+| **3 — browser display-only after job submission** | Frontend still presigns/uploads selfie, creates job and explicitly POSTs `/jobs/{jobId}/generate` once. After that, the browser **does not POST** `/real-videos/sequence` or `/assembly`. It reads image/video/assembly status, displays progress and final download, retains explicit scene-specific manual retry and free diagnostics. | [43690121205](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205): frontend test suite passed, S3 byte readback and CloudFront invalidation verified. | Browser close *after starting image SFN* no longer blocks video progression or stitching, provided AWS events/workflows work. Browser close **before** image start still can interrupt setup. No same-job resume across browser/device yet. |
+
+### Existing status API — preserved, not replaced
+
+`GET /jobs/{jobId}` returns `job.progress` derived **read-only** from existing image, `realVideos` and assembly state: `currentStage` = `IMAGES`, `VIDEO_1`, `VIDEO_2`, `VIDEO_3`, `STITCHING`, `COMPLETED`; `stageStatus`; `imagesCompleted/imagesTotal`; `videosCompleted/videosTotal`; `finalVideoReady`. Legacy `job.status` **continues to mean the image-pipeline status**. The developer diagnostics panel polls this GET **every 2 seconds while open and visible**; normal image/video UI status polling is **5 seconds**, with **15-second** error backoff. The backend does not persist a new single mutable overall-stage field. Deployment evidence for API + diagnostics: [43678843432](https://github.com/rorygleeson/afl-video-platform/actions/runs/43678843432). Existing responses, stage names and compatibility **must remain intact**.
+
+### Remaining high-priority resiliency gaps (verified source; not fixed by orchestration)
+
+1. **Critical — Stripe/payment admission missing.** The frontend records `confirmPaidSequence:true` at job creation and starts image generation without a verified payment. Never expose this developer-mode flow to paying anonymous consumers without server-verified entitlement and a bounded free-test bypass.
+2. **High — missed or unacknowledged AWS EventBridge handoff.** Both image- and video-success rules use `MaximumEventAgeInSeconds:3600`, `MaximumRetryAttempts:24`; **no explicit DLQ** exists in these two rule templates and no periodic video/assembly handoff reconciler is present. An execution can finish with its next stage unstarted. Add a read-only reconciliation/watchdog that checks named executions and durable S3/DynamoDB evidence before *any* new provider POST. In particular, distinguish `assembly:QUEUED` with absent `final-{jobId}` workflow from actual running assembly.
+3. **High — no secure anonymous job recovery.** The frontend holds current `jobId` in page runtime; no supported resume after browser reload, new device or emailing a link. Developer `x-api-key` is not a customer entitlement.
+4. **High — ambiguous paid Google submissions.** Video `SUBMISSION_UNKNOWN` and image network/provider acceptance uncertainty must be reconciled using recorded IDs/outputs; **do not blindly retry billable POSTs**. Manual video retry (up to 10 attempts) remains available only after confirmed terminal failure and guarded previous execution.
+5. **High — failure of FFmpeg itself.** Stitching now **starts on AWS**, but assembly Lambda/SFN still has **no bounded retry/Catch or assembly-only reconciler**. Retain completed scene MP4s and recover stitching without re-generating videos.
+6. **Medium — signed sharing URLs and retention.** Final `url`/`downloadUrl` are **300-second presigned S3 GETs**, not durable email links. Authenticated GET can issue new ones. Seven-day job TTL/object retention must be verified; a future expiring capability-link endpoint must enforce access and retention.
+7. **Medium — live e2e/monitoring proof missing.** Deployment/test success demonstrates source+AWS resource installation, **not** a complete unattended generation, missed-event recovery, multiclient admission, provider billing or delivery SLO. Build offline fault-injection and one explicitly authorised live full-run validation.
+
+### Updated acceptance test for orchestration
+
+Given an authorised job, after `POST /jobs/{jobId}/generate` succeeds the user may close the browser. AWS must complete three images (Map `MaxConcurrency:3`), start original Video 1 once, advance Video 2 then 3 only after verified successful MP4 checkpoints, start `final-{jobId}` assembly once and expose `job.progress.finalVideoReady:true` after the final file is available. Repeated/disordered events, slow S3, workflow missing, Google terminal failure and ambiguous submission must not result in a duplicate paid Google submission. **This full test has not yet been run live.**
+
 ## Ground rules
 
 - Work through numbered tasks in order; update this checklist with dates, evidence, test outcomes, and commit links as tasks finish.
@@ -35,10 +65,10 @@
 - [ ] **2.3 Idempotency and race control:** verify upload/job creation, start-image, sequence start, per-scene retry, completion events, and assembly; conditional writes and stable execution names; handle duplicate EventBridge events and multiple concurrent customers.
 - [ ] **2.4 Google ambiguous submission reconciliation:** guard unknown image POST and video `SUBMISSION_UNKNOWN` outcomes; reconcile provider operation IDs and output before any new model call; define safe escalation if provider cannot be queried.
 - [ ] **2.5 Automatic transient recovery:** classified 429/5xx/network/provider failure rules, bounded exponential backoff + jitter, no nested retry explosions or indefinite waits. Preserve developer retry controls and never blindly retry unknown paid submissions.
-- [ ] **2.6 Server-side final stitching trigger:** initiate exactly once from durable completion of video 3, not frontend refresh; add bounded retry for transient FFmpeg/S3/DynamoDB failures, retain all three completed clips.
+- [ ] **2.6 Server-side final stitching trigger:** **Trigger deployed** (run 43689754297), from verified video 3 completion, independent of browser. **Still open:** bounded FFmpeg/S3/DynamoDB retry, lost-handoff recovery and live end-to-end verification. Retain all three completed clips.
 - [ ] **2.7 Persistent watchdog and stalled-job reconciliation:** recover or explicitly mark cases needing review without false failures/refunds. Define job-wide deadline and cost limits.
 - [ ] **2.8 Anonymous job recovery and security:** future-ready unguessable per-job capability token, hashed server-side, expiry/revocation, rate limits, safe cross-device/email option, and restricted media access. Developer `x-api-key` remains testing-only, not a consumer credential.
-- [ ] **2.9 Frontend integration:** preserve current layout/progress bars; use backend source of truth, restore safely after browser refresh/close, hide raw errors from customers, keep diagnostics in developer panel.
+- [ ] **2.9 Frontend integration:** **Frontend-only backend-owned orchestration deployed** (run 43690121205), with progress bars, retry controls and developer diagnostics retained. **Still open:** secure same-job restore after refresh/close/device change and consumer-safe diagnostics.
 
 ## Step 3 — Controlled failure tests and observability
 
@@ -65,8 +95,8 @@
 - Direct Google image model `gemini-3-pro-image`; Step Functions Map `MaxConcurrency: 3`; image Lambda 600s; Google image HTTP socket 240s; explicit 429 only: maximum 8 attempts within 600s retry window.
 - Google video model `gemini-omni-1.2-flash`; Google Lambda configured 300s; Step Functions 3600s; wait/poll 20s; PollVideo TaskFailed retry 3 times (10s base, ×2). No automatic paid Submit retries.
 - Video sequence progresses through AWS EventBridge on successful completed scene; eligible manual scene retry max 10 attempts.
-- Assembly Lambda configured 600s, and assembly workflow contains no automatic Retry; frontend currently requests assembly when all three scenes appear complete.
-- Frontend job polling 5s; on poll error 15s. Frontend stores current job ID in runtime memory and does not yet implement anonymous secure recovery.
+- Assembly Lambda configured 600s, and assembly workflow contains no automatic Retry. **Updated:** AWS now initiates assembly on verified Scene 3 success via EventBridge; frontend no longer requests assembly.
+- Frontend image/video polling 5s; on poll error 15s. **Separate** developer overall-job-status polling 2s while expanded and visible. Frontend stores current job ID in runtime memory and does not yet implement anonymous secure recovery.
 - Image worker retains completed images on error but its recovery may terminalise unfinished stages. The image watchdog runs every 5 min and marks long-stalled jobs failed.
 - Existing `docs/ARCHITECTURE.md`, `docs/API_ENDPOINTS.md`, `docs/DEPLOYMENT.md` and some stale API strings include obsolete parallel/Replicate/assembly claims.
 
