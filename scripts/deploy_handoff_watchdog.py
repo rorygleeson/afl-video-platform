@@ -1,98 +1,157 @@
 #!/usr/bin/env python3
-"""Create isolated watchdog stack only. No application stack mutations or Google calls."""
+"""Migrate ONLY the isolated watchdog stack from idle cron to per-job monitoring.
+
+Fail closed on unexpected CloudFormation changes. No application stack changes,
+paid Google calls, or DynamoDB mutations.
+"""
+import base64
 import hashlib
 import io
+import json
 import os
 import zipfile
-from datetime import datetime, timezone
 from pathlib import Path
+
 import boto3
-from botocore.exceptions import ClientError
 
-REGION="ap-southeast-2"
-ACCOUNT="134387458447"
-STACK="afl-app-dev-handoff-watchdog"
-ROLE=f"arn:aws:iam::{ACCOUNT}:role/afl-video-cfn-execution-role"
-ARTIFACT_BUCKET="afl-video-bootstrap-artifactbucket-xiuriidgyft4"
-EXPECTED={
-    "WatchdogRole":"AWS::IAM::Role",
-    "WatchdogLogs":"AWS::Logs::LogGroup",
-    "WatchdogLambda":"AWS::Lambda::Function",
-    "EveryMinute":"AWS::Events::Rule",
-    "InvokeFromEventBridge":"AWS::Lambda::Permission",
+REGION = "ap-southeast-2"
+ACCOUNT = "134387458447"
+STACK = "afl-app-dev-handoff-watchdog"
+ROLE = f"arn:aws:iam::{ACCOUNT}:role/afl-video-cfn-execution-role"
+ARTIFACT_BUCKET = "afl-video-bootstrap-artifactbucket-xiuriidgyft4"
+EXISTING = {
+    "WatchdogRole": "AWS::IAM::Role",
+    "WatchdogLogs": "AWS::Logs::LogGroup",
+    "WatchdogLambda": "AWS::Lambda::Function",
+    "EveryMinute": "AWS::Events::Rule",
+    "InvokeFromEventBridge": "AWS::Lambda::Permission",
 }
+NEW = {
+    "WatchdogMachineRole": "AWS::IAM::Role",
+    "WatchdogMachine": "AWS::StepFunctions::StateMachine",
+}
+ALLOWED = {**EXISTING, **NEW}
+
+
 def main():
-    session=boto3.session.Session(region_name=REGION)
-    identity=session.client("sts").get_caller_identity()
-    assert identity["Account"]==ACCOUNT
-    assert ":assumed-role/afl-video-github-deploy-role/" in identity["Arn"]
-    cf=session.client("cloudformation")
-    try:
-        existing=cf.describe_stacks(StackName=STACK)["Stacks"][0]
-    except ClientError as e:
-        if e.response.get("Error",{}).get("Code")!="ValidationError" or "does not exist" not in e.response.get("Error",{}).get("Message",""):
-            raise
-    else:
-        assert existing["StackStatus"]=="CREATE_COMPLETE"
-        resources=cf.describe_stack_resources(StackName=STACK)["StackResources"]
-        assert {x["LogicalResourceId"]:x["ResourceType"] for x in resources}==EXPECTED
-        print("WATCHDOG_ALREADY_DEPLOYED_VERIFIED", flush=True)
-        return
+    session = boto3.session.Session(region_name=REGION)
+    ident = session.client("sts").get_caller_identity()
+    assert ident["Account"] == ACCOUNT
+    assert ":assumed-role/afl-video-github-deploy-role/" in ident["Arn"]
 
-    source=Path("src/handoff_watchdog/handler.py").read_bytes()
-    packed=io.BytesIO()
-    with zipfile.ZipFile(packed,"w",zipfile.ZIP_DEFLATED) as z:
-        z.writestr("handler.py",source)
-    blob=packed.getvalue()
-    key="releases/handoff-watchdog/"+hashlib.sha256(blob).hexdigest()+".zip"
-    s3=session.client("s3")
-    s3.put_object(Bucket=ARTIFACT_BUCKET,Key=key,Body=blob,
-                  ContentType="application/zip",ServerSideEncryption="AES256")
-    assert s3.get_object(Bucket=ARTIFACT_BUCKET,Key=key)["Body"].read()==blob
-    print("WATCHDOG_PACKAGE_S3_VERIFIED",flush=True)
+    cf = session.client("cloudformation")
+    stack = cf.describe_stacks(StackName=STACK)["Stacks"][0]
+    assert stack["StackStatus"] == "CREATE_COMPLETE"
+    assert stack["RoleARN"] == ROLE
+    for name, kind in EXISTING.items():
+        item = cf.describe_stack_resource(
+            StackName=STACK, LogicalResourceId=name)["StackResourceDetail"]
+        assert item["ResourceType"] == kind
+        assert item["ResourceStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
 
-    backend=cf.describe_stacks(StackName="afl-app-dev-backend")["Stacks"][0]
-    assert backend["StackStatus"]=="UPDATE_COMPLETE"
-    boundary=next(x["ParameterValue"] for x in backend["Parameters"]
-                  if x["ParameterKey"]=="PermissionsBoundaryArn")
-    activated=datetime.now(timezone.utc).isoformat()
-    template=Path("infrastructure/app/handoff-watchdog.yaml").read_text()
-    assert "rate(1 minute)" in template and "ReservedConcurrentExecutions: 1" in template
-    assert "states:StartExecution" not in template and "dynamodb:UpdateItem" not in template
-    name="watchdog-"+os.environ["GITHUB_RUN_ID"]
+    src = Path("src/handoff_watchdog/handler.py").read_bytes()
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("handler.py", src)
+    body = payload.getvalue()
+    checksum = hashlib.sha256(body).digest()
+    key = "releases/handoff-watchdog/" + hashlib.sha256(body).hexdigest() + ".zip"
+    s3 = session.client("s3")
+    s3.put_object(Bucket=ARTIFACT_BUCKET, Key=key, Body=body,
+                  ServerSideEncryption="AES256", ContentType="application/zip")
+    assert s3.get_object(Bucket=ARTIFACT_BUCKET, Key=key)["Body"].read() == body
+    print("ISOLATED_WATCHDOG_PACKAGE_VERIFIED", flush=True)
+
+    template = Path("infrastructure/app/handoff-watchdog.yaml").read_text()
+    assert "ScheduleExpression:" not in template
+    assert "status:" in template and "- RUNNING" in template
+    assert 'StateMachineType: STANDARD' in template
+    assert '"Seconds": 60' in template
+    assert "ReservedConcurrentExecutions: 1" in template
+    assert "dynamodb:Scan" not in template
+    assert "dynamodb:GetItem" in template
+    assert "afl-app-dev-handoff-watchdog-image-start" in template
+    assert "afl-app-dev-handoff-watchdog-minute" not in template
+    assert "StartExecution" in template  # To launch ONLY the watchdog workflow.
+    assert "stateMachine:afl-app-dev-handoff-watchdog" in template
+
+    # Never reset the activation cutoff, even on redeployment.
+    parameters = [{"ParameterKey": "ArtifactKey", "ParameterValue": key}]
+    parameters += [{"ParameterKey": p, "UsePreviousValue": True}
+                   for p in ("ArtifactBucket", "PermissionsBoundaryArn", "ActivatedAt")]
+    name = "per-job-watchdog-" + os.environ["GITHUB_RUN_ID"]
     cf.create_change_set(
-        StackName=STACK,ChangeSetName=name,ChangeSetType="CREATE",
-        TemplateBody=template,RoleARN=ROLE,
-        Parameters=[{"ParameterKey":k,"ParameterValue":v} for k,v in (
-            ("ArtifactBucket",ARTIFACT_BUCKET),("ArtifactKey",key),
-            ("PermissionsBoundaryArn",boundary),("ActivatedAt",activated))],
+        StackName=STACK, ChangeSetName=name, ChangeSetType="UPDATE",
+        TemplateBody=template, RoleARN=ROLE, Parameters=parameters,
         Capabilities=["CAPABILITY_NAMED_IAM"],
-        Description="Isolated 1-minute watchdog; no paid calls, no existing stack updates")
+        Description="Only isolated watchdog update; remove idle timer and add per-job wait-loop")
     cf.get_waiter("change_set_create_complete").wait(
-        StackName=STACK,ChangeSetName=name,WaiterConfig={"Delay":5,"MaxAttempts":36})
-    result=cf.describe_change_set(StackName=STACK,ChangeSetName=name)
-    assert not result.get("NextToken"),"Paginated changeset requires manual review"
-    resources={x["ResourceChange"]["LogicalResourceId"]:x["ResourceChange"]
-               for x in result["Changes"]}
-    assert set(resources)==set(EXPECTED),f"Unexpected resource changes: {list(resources)}"
-    for logical,kind in EXPECTED.items():
-        change=resources[logical]
-        assert change["Action"]=="Add" and change["ResourceType"]==kind
-        assert change.get("Replacement") in (None,False,"False")
-    print("SAFE_ISOLATED_WATCHDOG_CHANGESET",sorted(resources),flush=True)
-    cf.execute_change_set(StackName=STACK,ChangeSetName=name)
-    cf.get_waiter("stack_create_complete").wait(
-        StackName=STACK,WaiterConfig={"Delay":10,"MaxAttempts":60})
-    actual=cf.describe_stacks(StackName=STACK)["Stacks"][0]
-    assert actual["StackStatus"]=="CREATE_COMPLETE"
-    for logical,kind in EXPECTED.items():
-        r=cf.describe_stack_resource(StackName=STACK,LogicalResourceId=logical)["StackResourceDetail"]
-        assert r["ResourceType"]==kind and r["ResourceStatus"]=="CREATE_COMPLETE"
-    lam=session.client("lambda").get_function_configuration(FunctionName="afl-app-dev-handoff-watchdog")
-    assert lam["LastUpdateStatus"]=="Successful"
-    assert lam["Environment"]["Variables"]["WATCHDOG_ACTIVATED_AT"]==activated
-    print("WATCHDOG_DEPLOYED_VERIFIED",activated,flush=True)
-    print("WATCHDOG_ISOLATED_RELEASE_COMPLETE",flush=True)
+        StackName=STACK, ChangeSetName=name,
+        WaiterConfig={"Delay": 5, "MaxAttempts": 36})
+    desc = cf.describe_change_set(StackName=STACK, ChangeSetName=name)
+    assert not desc.get("NextToken"), "Unreviewed paged changeset"
+    changes = {x["ResourceChange"]["LogicalResourceId"]: x["ResourceChange"]
+               for x in desc["Changes"]}
+    print("ISOLATED_WATCHDOG_CHANGESET", json.dumps(
+        {n: {"type": v["ResourceType"], "action": v["Action"],
+             "replacement": v.get("Replacement"),
+             "details": [{"name": (x.get("Target") or {}).get("Name"),
+                          "attribute": (x.get("Target") or {}).get("Attribute"),
+                          "evaluation": x.get("Evaluation")}
+                         for x in v.get("Details", [])]}
+         for n, v in changes.items()}, sort_keys=True), flush=True)
+    assert changes, "Empty changeset; require explicit verification"
+    assert set(changes).issubset(set(ALLOWED)), "Unexpected non-watchdog resource"
+    assert set(NEW).issubset(changes), "Missing two new per-job SFN resources"
+    assert {"WatchdogRole", "WatchdogLambda", "EveryMinute", "InvokeFromEventBridge"}.issubset(changes)
+    assert "WatchdogLogs" not in changes, "Existing log retention must be unchanged"
+    for logical, change in changes.items():
+        assert change["ResourceType"] == ALLOWED[logical]
+        assert change["Action"] == ("Add" if logical in NEW else "Modify")
+        # Rule name/schedule replacement and LambdaPermission SourceArn changes
+        # may replace ONLY those isolated resources.
+        if logical not in ("EveryMinute", "InvokeFromEventBridge"):
+            assert change.get("Replacement") in (None, False, "False"), (
+                "Unexpected replacement: " + logical)
+        # IAM, Lambda and state machine roles are never silently replaced.
+        if logical == "WatchdogRole":
+            assert change.get("Replacement") in (None, False, "False")
+        if logical == "WatchdogLambda":
+            assert change.get("Replacement") in (None, False, "False")
+        if logical in NEW:
+            assert change.get("Replacement") in (None, False, "False")
+    print("ISOLATED_WATCHDOG_REVIEW_APPROVED", sorted(changes), flush=True)
 
-if __name__=="__main__":
+    cf.execute_change_set(StackName=STACK, ChangeSetName=name)
+    cf.get_waiter("stack_update_complete").wait(
+        StackName=STACK, WaiterConfig={"Delay": 10, "MaxAttempts": 60})
+    after = cf.describe_stacks(StackName=STACK)["Stacks"][0]
+    assert after["StackStatus"] == "UPDATE_COMPLETE"
+    for logical, kind in ALLOWED.items():
+        item = cf.describe_stack_resource(StackName=STACK,
+                                          LogicalResourceId=logical)["StackResourceDetail"]
+        assert item["ResourceType"] == kind
+        assert item["ResourceStatus"] in ("CREATE_COMPLETE", "UPDATE_COMPLETE")
+
+    lam = session.client("lambda").get_function_configuration(
+        FunctionName="afl-app-dev-handoff-watchdog")
+    assert lam["LastUpdateStatus"] == "Successful"
+    assert lam["CodeSha256"] == base64.b64encode(checksum).decode()
+    assert "WATCHDOG_ACTIVATED_AT" in lam["Environment"]["Variables"]
+    assert lam["Environment"]["Variables"]["WATCHDOG_MACHINE_ARN"].endswith(
+        ":stateMachine:afl-app-dev-handoff-watchdog")
+    sf = session.client("stepfunctions")
+    state = sf.describe_state_machine(
+        stateMachineArn=lam["Environment"]["Variables"]["WATCHDOG_MACHINE_ARN"])
+    assert state["status"] == "ACTIVE"
+    assert state["type"] == "STANDARD"
+    rule = session.client("events").describe_rule(
+        Name="afl-app-dev-handoff-watchdog-image-start")
+    assert rule["State"] == "ENABLED" and "RUNNING" in rule["EventPattern"]
+    assert not rule.get("ScheduleExpression"), "Old idle schedule still active"
+    print("PER_JOB_WATCHDOG_DEPLOYED_VERIFIED", flush=True)
+    print("NO_IDLE_SCHEDULE_VERIFIED", flush=True)
+
+
+if __name__ == "__main__":
     main()
