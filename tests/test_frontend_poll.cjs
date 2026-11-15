@@ -853,30 +853,11 @@ test('final download fetches existing MP4 only and saves a timestamped filename'
   assert.equal(h.calls.filter(c => /\/real-videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0);
   for (const n of [1, 2, 3]) {
     const player = h.els['videoPlayer' + n];
-    assert.equal(player.children.length, 1, 'Only the scene player is shown');
-    const wrapper = player.children[0];
-    const preview = wrapper.querySelector('video');
-    const button = wrapper.querySelector('button');
-    assert.ok(preview && button);
-    assert.equal(preview.controls, false, 'Scene previews have no native controls');
-    assert.equal(preview.muted, true, 'Scene previews must always be silent');
-    assert.equal(preview.defaultMuted, true);
-    assert.equal(preview.autoplay, false, 'Explicit autoplay runs only on first completion');
-    assert.equal(preview.loop, false, 'No continuous looping');
-    assert.equal(preview.playsInline, true);
-    assert.equal(preview.getAttribute('muted'), '');
-    assert.equal(preview.getAttribute('autoplay'), null);
-    assert.equal(preview.getAttribute('loop'), null);
-    assert.equal(preview.getAttribute('playsinline'), '');
-    assert.equal(preview.getAttribute('controls'), null);
-    assert.equal(preview.playCalls, 1, 'Autoplays exactly once on first completion');
-    assert.equal(typeof button.listeners.click, 'function', 'Every scene has one replay action');
-    preview.listeners.ended();
-    assert.equal(button.hidden, false, 'Single Play button appears after clip ends');
-    await button.listeners.click();
-    assert.equal(preview.muted, true);
-    await h.flush();
-    assert.equal(preview.playCalls, 2, 'Replay is user initiated');
+    assert.equal(h.els['videoPanel' + n].hidden, true,
+      'Final video hides completed temporary scenes');
+    assert.equal(player.children.length, 0,
+      'Final view does not need a temporary player');
+
   }
 });
 
@@ -1071,7 +1052,7 @@ test('observed S3 HTTP error is not automatically retried', async () => {
 
 
 test('video section uses simple user-friendly generation heading without AWS explanation', () => {
-  assert.match(html, /<h2 style="margin-bottom:6px">Generating Video<\/h2>/);
+  assert.match(html, /<h2 id="generationVideosHeading" style="margin-bottom:6px">Generating Video<\/h2>/);
   assert.doesNotMatch(html, /id="realVideoGate"/);
   assert.doesNotMatch(script, /AWS is generating scenes in sequence/);
   assert.doesNotMatch(script, /Video status updated — see each scene above/);
