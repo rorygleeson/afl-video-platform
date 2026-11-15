@@ -1383,6 +1383,8 @@ const input = document.getElementById('selfie');
       latestJobProgress = null;
       lastVideoSnapshot = null;
       lockJobFields(true);
+      showCurrentJobSelfie(true);
+      savedSelfieNote.textContent = 'Selfie uploaded — generation in progress.';
       if (developerDiagnostics.open) void refreshOverallStatus();
       results.replaceChildren();
       document.getElementById('referenceImagesHeading').hidden = false;
