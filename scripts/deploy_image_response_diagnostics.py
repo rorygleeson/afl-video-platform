@@ -56,7 +56,7 @@ def change_set(cf,stack,updates,run):
     cf.create_change_set(StackName=BACKEND,ChangeSetName=name,
         ChangeSetType="UPDATE",UsePreviousTemplate=True,RoleARN=CFN_ROLE,
         Parameters=[{"ParameterKey":p["ParameterKey"],
-                     **({"ParameterValue":updates[p["ParameterKey"]]}
+                     **({"ParameterValue":updates[p["ParameterKey"]]["key"]}
                         if p["ParameterKey"] in updates
                         else {"UsePreviousValue":True})}
                     for p in stack["Parameters"]],
