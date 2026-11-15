@@ -175,3 +175,18 @@ x-api-key: <developer-key>
 - [ ] Verify `frontend/app.js` callers including hidden developer controls and browser reload behaviour.
 - [ ] Implement future customer recovery authorisation and paid entitlement only after audit completion and approval.
 - [ ] When unified `progress` status becomes implemented, document its actual schema rather than describing proposed fields as current.
+
+## Additive reference-image diagnostic fields (15 November 2026)
+
+`GET /jobs/{jobId}` and `GET /jobs/{jobId}/images` retain their existing
+response shapes. For an image scene whose `status` is `FAILED`, its
+`scenes.sceneN` object can now additionally contain
+`providerFinishReason`, `providerBlockReason`,
+`providerBlockedCategories` (array of approved category names),
+`providerCandidateCount`, `providerImageParts` and `providerTextOnly`.
+These fields are optional: historic jobs, prep errors, HTTP errors and
+non-provider failures may not have them. Only the existing status endpoints
+are queried; there is **no new HTTP endpoint**, extra Google call, or paid
+diagnostic POST. The developer UI reads them from the existing job-status GET.
+The metadata is strictly allowlisted: no raw Google response body, safety
+explanation strings or user media is returned.
