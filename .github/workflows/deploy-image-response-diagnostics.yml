@@ -1,4 +1,4 @@
-name: Deploy read-only Google image response diagnostics (atomic CFN fix)
+name: Deploy image diagnostics (verified EventBridge dependency)
 on:
   push:
     branches: [main]
