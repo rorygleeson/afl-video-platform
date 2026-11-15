@@ -1,4 +1,4 @@
-name: Deploy image diagnostics (verified EventBridge dependency)
+name: Repair image status polling JSON (DynamoDB Decimal)
 on:
   push:
     branches: [main]
