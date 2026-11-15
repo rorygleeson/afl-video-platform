@@ -27,6 +27,7 @@ JOB_ID = re.compile(r"[0-9a-f]{32}\Z")
 SCENES = ("scene1", "scene2", "scene3")
 MIN_AGE_SECONDS = 120
 WATCHDOG_MACHINE_ARN = os.environ["WATCHDOG_MACHINE_ARN"]
+ASSEMBLY_ARN = os.environ["ASSEMBLY_STATE_MACHINE_ARN"]
 MAX_LIFETIME_SECONDS = 7200
 
 
@@ -211,6 +212,26 @@ def check_one(event):
     if assembly.get("status") == "FAILED":
         return {"continue": False, "status": "REVIEW_ASSEMBLY_FAILED"}
     if assembly:
+        if assembly.get("status") == "PROCESSING":
+            # A Lambda hard timeout can leave DynamoDB PROCESSING forever.
+            # Observe the named execution, but NEVER launch an ambiguous
+            # second FFmpeg writer while it could still be running.
+            updated = when(assembly.get("updatedAt")) or when(assembly.get("createdAt"))
+            if not updated or (now - updated).total_seconds() < MIN_AGE_SECONDS:
+                return {"continue": True, "status": "WAIT_ASSEMBLY_PROCESSING"}
+            try:
+                execution = STATES.describe_execution(
+                    executionArn=arn_for(ASSEMBLY_ARN, "final-" + job_id))
+            except ClientError as exc:
+                if exc.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+                    return {"continue": False, "status": "REVIEW_ASSEMBLY_EXECUTION_MISSING"}
+                LOG.exception("Cannot inspect assembly execution")
+                return {"continue": True, "status": "WAIT_ASSEMBLY_EXECUTION_CHECK"}
+            if execution.get("status") in ("FAILED", "TIMED_OUT", "ABORTED"):
+                return {"continue": False, "status": "REVIEW_ASSEMBLY_" + execution["status"]}
+            if execution.get("status") == "SUCCEEDED":
+                return {"continue": False, "status": "REVIEW_ASSEMBLY_STATUS_MISMATCH"}
+            return {"continue": True, "status": "WAIT_ASSEMBLY_PROCESSING"}
         if assembly.get("status") == "QUEUED":
             queued_at = when(assembly.get("createdAt"))
             if not queued_at or (now - queued_at).total_seconds() < MIN_AGE_SECONDS:
