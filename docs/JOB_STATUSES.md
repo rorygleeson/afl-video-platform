@@ -1,16 +1,24 @@
 # AFL Video Platform — Job and Stage Status Contract
 
 **Verified against repository source:** 2026-11-15.  
-**Verification level:** SOURCE VERIFIED (not independently compared against deployed Lambda or DynamoDB).  
+**Verification level:** SOURCE VERIFIED; guarded API, EventBridge and frontend AWS deployment logs verified for 15 November releases. Not independently verified with a live end-to-end customer job or full DynamoDB drift inspection.  
 **Key implementations:** `src/api/handler.py`, `src/image_worker/handler.py`, `src/image_worker/google_direct.py`, `src/google_video_worker/handler.py`, `src/assembly_worker/handler.py`, `frontend/app.js`, `infrastructure/app/backend.yaml`, `infrastructure/app/google-video.yaml`, `infrastructure/app/assembly.yaml`.
 
-> **Important:** There is not yet one authoritative *end-to-end* `currentStage` field exposed in a single GET. Callers currently combine image job state with the videos endpoint; the latter also includes assembly. Proposed improvements below are NOT implemented.
+> **Current implementation:** `GET /jobs/{jobId}` already provides an **end-to-end read-only** `job.progress.currentStage` and `stageStatus` projection derived from image, real-video and assembly state. This is **not** a new persistent global DynamoDB field, and existing `job.status` is still the image-job status. Additional operation-level status and anonymous recovery improvements below remain proposals.
+
+## Backend-owned progression added 15 November 2026
+
+- Initial `POST /jobs` records `autoVideoConsent` from `confirmPaidSequence:true`; it is **not Stripe payment validation**. `POST /jobs/{jobId}/generate` is still browser-initiated once.
+- Successful *image* Step Functions completion triggers AWS EventBridge → `image_sequence_event()` → existing `start_video_sequence()`, after image success and recorded consent checks.
+- Successful *video* Step Functions completion triggers AWS EventBridge → `video_sequence_event()`, verifying attempt ownership and S3 MP4 then starting the next scene. After Scene 3, it calls `start_assembly()`, with one conditional reservation and stable `final-{jobId}` workflow name.
+- Browser video/assembly polling is read-only; manual scene retry remains a **separate explicit** POST. Normal image/video status polls use 5 seconds (15 after errors); **developer overall status** uses 2 seconds while open/visible.
+- Source verified; deployment evidence: [Stage 1](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745), [Stage 2](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297), [Stage 3](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205). A full live paid end-to-end generation has not been re-run for this documentation review.
 
 ## Existing status GET endpoints
 
 | Method / route | Returns | Source |
 | --- | --- | --- |
-| `GET /jobs/{jobId}` | `{job: {jobId, scenarioId, team, firstName, lastName, status, createdAt, imageCount, sceneCount, completedScenes, failedScenes, scenes}}` | `public_job()` |
+| `GET /jobs/{jobId}` | `{job: {jobId, scenarioId, team, firstName, lastName, status, createdAt, imageCount, sceneCount, completedScenes, failedScenes, scenes, progress}}`; `progress` has current stage, stage status, completed/total image/video counts and `finalVideoReady` | `public_job()` plus `overall_job_progress()` (read-only) |
 | `GET /jobs/{jobId}/images` | `{jobId, status, scenes, images}` where `images` contains completed `sceneId` and signed `url` | `images_for_job()` |
 | `GET /jobs/{jobId}/videos` | `{jobId, videoGenerationMode, realVideoMode, scene1PaidApproved, sequence, paidScenes, videos, assembly}` | `video_status()` |
 | `GET /jobs/{jobId}/videos/{scene}` | `{jobId, video}` with one video scene's fields | `video_status()` |
@@ -93,7 +101,7 @@ For each video in `GET /jobs/{jobId}/videos`, the handler supplies:
 
 `assembly.ready` indicates all 3 real scene status records/keys are complete, not that final stitching finished. `assembly.enabled` reflects a configured state-machine ARN. Completed assembly returns a temporary `url` and `downloadUrl` signed for five minutes. Current final S3 key: `videos/{jobId}/final.mp4`; download filename: `afl-grand-final.mp4`.
 
-**Current risk:** The frontend `refreshVideos()` calls `POST /jobs/{jobId}/assembly` after detecting `READY`. The backend protects against duplicate reservation but **does not independently initiate assembly when the browser is closed**. Source assembly Step Functions has one `Stitch` task with no retry. The estimate shown in the UI is **frontend-only**, initially based on ten seconds, not FFmpeg-reported percentage.
+**Current behaviour:** The **AWS EventBridge Scene 3 completion handler** starts assembly by calling the existing conditional `start_assembly()` logic; frontend `refreshVideos()` reads status only and does not POST assembly. The assembly Step Functions still has one `Stitch` task with **no retry/Catch**, no separate assembly-only recovery watchdog, and no secure anonymous page-reload recovery. The UI percentage is a **frontend-only** ten-second estimate, not FFmpeg progress.
 
 ## What the frontend can presently tell you
 
@@ -101,9 +109,9 @@ For each video in `GET /jobs/{jobId}/videos`, the handler supplies:
 2. Each real video scene's independent processing/failure/completion status and optional diagnostic Google operation ID.
 3. Stitching readiness, active processing, completion and download availability.
 
-**Cannot fully guarantee today:** a unified and persistent job-wide stage field; granular pre-/post-Google operation distinction for every request; anonymous recovery after reload; server-triggered stitching if no client is present; fully automatic recovery from every transient video failure.
+**Cannot fully guarantee today:** a **persisted** unified job-wide stage field (the read-only projection exists); granular pre-/post-Google operation distinction for every request; anonymous recovery after reload; **lost AWS event/assembly handoff** recovery; fully automatic reconciliation or recovery from every transient video/FFmpeg failure.
 
-## Proposed future unified status (NOT implemented)
+## Proposed richer persistent status and action model (NOT implemented)
 
 Preserve all existing GET responses for compatibility. Add a backward-compatible `progress` object, preferably to `GET /jobs/{jobId}`, containing:
 
@@ -154,16 +162,16 @@ The `GET /jobs/{jobId}` response now includes **`job.progress`**. This is the co
 
 Pre-job selfie upload is **not a job stage** because a job ID is only created by `POST /jobs`. Payment is not yet implemented; do not include `AWAITING_PAYMENT` in active statuses.
 
-For concurrent images, `IMAGES` remains the overall stage and `job.scenes.scene1/scene2/scene3` remain the independent source of truth. If any branch has an explicit 429 `RETRY_WAIT`, overall `stageStatus` is `RETRYING`, even when the other branches continue. A failed image job remains `IMAGES / FAILED`; all scene records must be complete and the image workflow finalised before advancing. For video scenes, the first scene not durably marked `COMPLETED` with the expected key determines the stage; the existing video status projection may report a workflow requiring review. When video 3 completes, `STITCHING` is next; before server-owned orchestration it can be `WAITING_FOR_ACTION` until the browser requests assembly.
+For concurrent images, `IMAGES` remains the overall stage and `job.scenes.scene1/scene2/scene3` remain the independent source of truth. If any branch has an explicit 429 `RETRY_WAIT`, overall `stageStatus` is `RETRYING`, even when the other branches continue. A failed image job remains `IMAGES / FAILED`; all scene records must be complete and the image workflow finalised before advancing. For video scenes, the first scene not durably marked `COMPLETED` with the expected key determines the stage; the existing video status projection may report a workflow requiring review. When video 3 completes, `STITCHING` is next; AWS now starts assembly on a successful Scene 3 event. `WAITING_FOR_ACTION` may still occur if the backend has not recorded an expected reservation or handoff; it does not automatically prove customer action is required.
 
-The original **proposed** eight-milestone contract below is historical design context; the six-stage `currentStage` and `stageStatus` fields above describe the new source implementation. This feature is not confirmed live-deployed; offline test cases have been committed but no test-run evidence has been captured.
+The original **proposed** eight-milestone contract below is historical design context; the six-stage `currentStage` and `stageStatus` fields above describe the implemented API projection. API/status deployment and offline tests were verified in [43678843432](https://github.com/rorygleeson/afl-video-platform/actions/runs/43678843432). Full real-job end-to-end status progression remains unverified.
 
 ## Documentation changes pending
 
 - [ ] Validate deployed version, environment flags and source/CloudFormation drift.
 - [ ] Cross-check response fields with mock handler tests; add fixtures for each status.
 - [ ] Revise older `docs/API_ENDPOINTS.md` and `docs/ARCHITECTURE.md` so they point here.
-- [ ] After later implementation, add and test the unified status contract; update this document without mislabeling proposals as current behavior.
+- [x] Document and test the existing read-only `job.progress` status contract. [ ] Future: document any richer persistent operation status only after its implementation and deployment.
 
 ## Google reference-image failure diagnostics (15 November 2026)
 
