@@ -1,5 +1,5 @@
 name: Deploy video Preparing status text (frontend only)
-# Frontend-only release: Update selfie opens replacement picker before generation; no backend changes.
+# Frontend-only release: Update selfie replacement and lock after job start; no backend changes.
 # Includes refresh/reopen and no-duplicate-submission regression tests.
 # Regression fixture covers selfie reselect and AWS-owned video/stitching UI progression.
 # Validate cleared image src and publish only the three UI files.
