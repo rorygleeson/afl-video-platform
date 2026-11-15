@@ -27,6 +27,56 @@ const input = document.getElementById('selfie');
   const resumeNotice = document.getElementById('resumeNotice');
   const JOB_ID_PATTERN = /^[0-9a-f]{32}$/;
   let restoreInFlight = false;
+  let latestJobProgress = null;
+  let restoredSelfieJobId = null;
+  const selfieUploadLabel = document.getElementById('selfieLabel');
+  const savedSelfieNote = document.getElementById('savedSelfieNote');
+  // Prefer confirmed terminal outcomes rather than the image-only job.status.
+  function updateNewJobAvailability() {
+    const progress = latestJobProgress;
+    const videos = lastVideoSnapshot?.videos || {};
+    const assembly = lastVideoSnapshot?.assembly || {};
+    const completed = progress?.finalVideoReady === true ||
+      (assembly.status === 'COMPLETED' && !!assembly.url);
+    const imageFailed = progress?.currentStage === 'IMAGES' &&
+      progress.stageStatus === 'FAILED';
+    const exhaustedVideo = [1, 2, 3].some(n => {
+      const item = videos['scene' + n] || {};
+      return item.mode === 'REAL' && item.status === 'FAILED' &&
+        item.retryAvailable === false &&
+        item.retryBlockedReason === 'MAX_ATTEMPTS_REACHED';
+    });
+    const assemblyFailed = assembly.status === 'FAILED';
+    newJobButton.hidden = !currentJobId ||
+      !(completed || imageFailed || exhaustedVideo || assemblyFailed);
+  }
+  function showCurrentJobSelfie(visible) {
+    input.hidden = visible;
+    removeSelfie.hidden = true;
+    selfieUploadLabel.hidden = visible;
+    savedSelfieNote.hidden = !visible;
+  }
+  async function restoreSelfie(id) {
+    if (!id || restoredSelfieJobId === id) return;
+    restoredSelfieJobId = id;
+    savedSelfieNote.textContent = 'Loading your uploaded selfie…';
+    try {
+      const data = await api('/jobs/' + id + '/selfie');
+      if (id !== currentJobId) return;
+      if (!data.url || data.jobId !== id) throw new Error('Invalid selfie preview.');
+      preview.src = data.url;
+      preview.hidden = false;
+      savedSelfieNote.textContent =
+        'Your previously uploaded selfie is stored with this job.';
+    } catch {
+      if (id !== currentJobId) return;
+      preview.removeAttribute('src');
+      preview.hidden = true;
+      savedSelfieNote.textContent =
+        'Selfie preview unavailable. Your existing job continues in AWS.';
+      restoredSelfieJobId = null;
+    }
+  }
   function savedJobId() {
     try {
       const id = window.localStorage.getItem(SAVED_JOB_KEY);
@@ -53,6 +103,7 @@ const input = document.getElementById('selfie');
     stopPolling();
     resetVideoUi();
     currentJobId = id;
+    latestJobProgress = job.progress || null;
     rememberJob(id);
     lockJobFields(true);
     if (job.scenarioId) document.getElementById('scenario').value = job.scenarioId;
@@ -67,13 +118,13 @@ const input = document.getElementById('selfie');
     previewUrl = undefined;
     preview.removeAttribute('src');
     preview.hidden = true;
-    removeSelfie.hidden = true;
+    showCurrentJobSelfie(true);
     results.replaceChildren();
     document.getElementById('referenceImagesHeading').hidden = false;
     generate.hidden = true;
     generate.disabled = true;
     refresh.hidden = true;
-    newJobButton.hidden = false;
+    updateNewJobAvailability();
     videoTestSection.hidden = true;
   }
   async function restoreJob() {
@@ -83,7 +134,7 @@ const input = document.getElementById('selfie');
       resumeNotice.hidden = false;
       resumeNotice.textContent = 'Previous video found. Enter your developer API key to resume it.';
       generate.disabled = true;
-      newJobButton.hidden = false;
+      newJobButton.hidden = true;
       return;
     }
     resumeNotice.hidden = false;
@@ -96,6 +147,7 @@ const input = document.getElementById('selfie');
       if (!record.job || record.job.jobId !== id) throw new Error('Job record did not match.');
       if (currentJobId || savedJobId() !== id) return;
       selectExistingJob(id, record.job);
+      void restoreSelfie(id);
       resumeNotice.textContent = 'Resumed your previous video. Progress is saved in AWS.';
       rememberSessionKey();
       startPolling();
@@ -105,17 +157,19 @@ const input = document.getElementById('selfie');
       if (currentJobId || savedJobId() !== id) return;
       resumeNotice.textContent = 'Could not reconnect: ' + error.message +
         '. Check your API key or connection. Your job has not been restarted.';
-      newJobButton.hidden = false;
+      newJobButton.hidden = true;
       generate.disabled = true;
     } finally {
       restoreInFlight = false;
     }
   }
   newJobButton.addEventListener('click', () => {
-    if (uploadInProgress) return;
+    if (uploadInProgress || newJobButton.hidden) return;
     stopPolling();
     resetVideoUi();
     currentJobId = null;
+    latestJobProgress = null;
+    restoredSelfieJobId = null;
     forgetJob();
     lockJobFields(false);
     newJobButton.hidden = true;
@@ -131,6 +185,7 @@ const input = document.getElementById('selfie');
     preview.removeAttribute('src');
     preview.hidden = true;
     removeSelfie.hidden = true;
+    showCurrentJobSelfie(false);
     showStatus('Ready to start a new video. Your previous job remains in AWS.');
   });
 
@@ -462,6 +517,7 @@ const input = document.getElementById('selfie');
       if (jobId !== currentJobId) return;
       const approvals = data.paidScenes || {};
       lastVideoSnapshot = data;
+      updateNewJobAvailability();
       if (data.sequence?.status === "APPROVED") videoSequenceAttemptUncertain = false;
       availablePaidScenes = [1, 2, 3].filter(n => {
         const id = 'scene' + n;
@@ -803,6 +859,9 @@ const input = document.getElementById('selfie');
     if (currentJobId) {
       stopPolling();
       forgetJob();
+      latestJobProgress = null;
+      restoredSelfieJobId = null;
+      showCurrentJobSelfie(false);
       newJobButton.hidden = true;
       resumeNotice.hidden = true;
       currentJobId = null;
@@ -945,6 +1004,8 @@ const input = document.getElementById('selfie');
       ]);
       if (requestedJobId !== currentJobId || generation !== pollGeneration) return;
       pollErrors = 0;
+      latestJobProgress = record.job.progress || null;
+      updateNewJobAvailability();
       const scenes = record.job.scenes || {};
       lastImageScenes = scenes;
       // Read-only, allowlisted diagnostic values from the existing status GET.
@@ -1321,7 +1382,9 @@ const input = document.getElementById('selfie');
       currentJobId = created.job.jobId;
       rememberJob(currentJobId);
       rememberSessionKey();
-      newJobButton.hidden = false;
+      newJobButton.hidden = true;
+      latestJobProgress = null;
+      lastVideoSnapshot = null;
       lockJobFields(true);
       if (developerDiagnostics.open) void refreshOverallStatus();
       results.replaceChildren();
