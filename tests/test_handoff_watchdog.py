@@ -151,7 +151,7 @@ class WatchdogTests(unittest.TestCase):
         self.ddb.get_item.return_value={"Item":self.job}
         self.job["realVideos"]={"scene1":{"status":"SUBMISSION_UNKNOWN"}}
         result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
-        self.assertEqual(result,{"continue":False,"status":"REVIEW_VIDEO_FAILURE_OR_UNKNOWN"})
+        self.assertEqual(result,{"continue":True,"status":"WAIT_UNKNOWN_PAID_SUBMISSION"})
         self.api.invoke.assert_not_called()
 
     def test_expired_job_watchdog_stops_without_api_call(self):
