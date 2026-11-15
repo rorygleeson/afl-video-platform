@@ -226,6 +226,14 @@ def overall_job_progress(job):
             continue
 
         progress["currentStage"] = f"VIDEO_{index}"
+        if video.get("status") == "COMPLETED":
+            # A COMPLETED marker with a missing/unexpected S3 key is not
+            # a safely delivered clip. Never advance to the next stage.
+            progress["stageStatus"] = "REVIEW_REQUIRED"
+            return progress
+        if job.get("videoSequence") and job["videoSequence"].get("status") != "APPROVED":
+            progress["stageStatus"] = "REVIEW_REQUIRED"
+            return progress
         if not job.get("videoSequence") and not job.get("paidVideoApprovals", {}).get(scene):
             progress["stageStatus"] = "WAITING_FOR_ACTION"
             return progress
