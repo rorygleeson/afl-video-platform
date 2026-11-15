@@ -1249,7 +1249,7 @@ test('optional greeting is sent to job creation and displayed character count up
   const h=setup();
   h.els.personalMessage.value='Happy Birthday Dad, from Mary';
   h.els.personalMessage.listeners.input();
-  assert.equal(h.els.personalMessageCount.textContent, '29');
+  assert.equal(String(h.els.personalMessageCount.textContent), '29');
   await h.els.generate.listeners.click();await h.flush();
   const post=h.calls.find(c=>c.url.endsWith('/jobs') && c.opts.method==='POST');
   assert.equal(JSON.parse(post.opts.body).personalMessage,'Happy Birthday Dad, from Mary');
