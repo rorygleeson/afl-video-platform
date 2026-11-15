@@ -80,40 +80,58 @@ def set_status(job_id, old, new, **extras):
 
 
 def render_personal_message(source, destination, message, duration, directory):
-    """Overlay a final-half-second greeting and hold the last picture for 2s.
+    """Pillow renders text into PNG; existing FFmpeg overlays and holds it.
 
-    The user text is a textfile, never interpolated into FFmpeg filter syntax.
-    FFmpeg's built-in tpad extends the video; the original scene MP4s stay intact.
+    This works with the deployed FFmpeg static build, which has overlay/tpad
+    but lacks drawtext. User text NEVER enters FFmpeg filter arguments.
     """
     if not isinstance(message, str) or len(message) > 80 or any(
             ord(ch) < 32 or ord(ch) == 127 for ch in message):
         raise AssemblyError("INVALID_PERSONAL_MESSAGE")
-    font = Path(GREETING_FONT)
-    if not font.is_file():
+    font_path = Path(GREETING_FONT)
+    if not font_path.is_file():
         raise AssemblyError("GREETING_FONT_UNAVAILABLE")
     lines = textwrap.wrap(message, width=28, break_long_words=True,
                           break_on_hyphens=False)
     if not lines or len(lines) > 3:
         raise AssemblyError("INVALID_PERSONAL_MESSAGE")
-    text_file = directory / "greeting.txt"
-    text_file.write_text("\n".join(lines), encoding="utf-8")
-    # 0.5 seconds before the original finish, fade in the text; then hold it.
+
+    from PIL import Image, ImageDraw, ImageFont
+
+    overlay_path = directory / "greeting.png"
+    card = Image.new("RGBA", (720, 1280), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(card)
+    draw.rounded_rectangle((24, 1040, 696, 1235), radius=18,
+                           fill=(0, 0, 0, 188))
+    font = ImageFont.truetype(str(font_path), size=35)
+    text = "\n".join(lines)
+    bounds = draw.multiline_textbbox((0, 0), text, font=font,
+                                     spacing=9, align="center")
+    width = bounds[2] - bounds[0]
+    height = bounds[3] - bounds[1]
+    if width > 630 or height > 170:
+        raise AssemblyError("GREETING_LAYOUT_TOO_LARGE")
+    draw.multiline_text(((720 - width) / 2 - bounds[0],
+                         1040 + (195 - height) / 2 - bounds[1]),
+                        text, font=font, fill=(255, 255, 255, 255),
+                        spacing=9, align="center")
+    card.save(overlay_path, format="PNG")
+
     start = max(0, duration - 0.5)
+    # Fade the transparent PNG in during Scene 3's last half-second.
+    # tpad clones the final frame for two additional seconds.
     filter_graph = (
-        "tpad=stop_mode=clone:stop_duration=2,"
-        "drawbox=x=24:y=1040:w=672:h=195:color=black@0.70:t=fill:"
-        f"enable='gte(t,{start:.3f})',"
-        f"drawtext=fontfile={font}:textfile={text_file}:expansion=none:"
-        "fontcolor=white:fontsize=35:line_spacing=9:"
-        "x=(w-text_w)/2:y=1040+(195-text_h)/2:"
-        f"alpha='min(1,max(0,(t-{start:.3f})/0.5))'"
+        "[0:v]tpad=stop_mode=clone:stop_duration=2[base];"
+        f"[1:v]format=rgba,fade=t=in:st={start:.3f}:d=0.5:alpha=1[card];"
+        "[base][card]overlay=0:0:shortest=1:format=auto[v]"
     )
     run(FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
-        "-i", str(source), "-vf", filter_graph,
-        "-map", "0:v:0", "-map", "0:a:0?",
+        "-i", str(source), "-loop", "1", "-framerate", "30",
+        "-i", str(overlay_path), "-filter_complex", filter_graph,
+        "-map", "[v]", "-map", "0:a:0?",
         "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
-        "-crf", "22", "-c:a", "copy", "-movflags", "+faststart",
-        str(destination), timeout=180)
+        "-crf", "22", "-c:a", "copy", "-t", f"{duration + 2:.3f}",
+        "-movflags", "+faststart", str(destination), timeout=180)
 
 
 def assemble(job_id):
