@@ -1,4 +1,5 @@
 name: Read-only comparison of published AFL video prompts
+# Verify Scene 2 dialogue duplication investigation against actual S3.
 on:
   push:
     branches: [main]
