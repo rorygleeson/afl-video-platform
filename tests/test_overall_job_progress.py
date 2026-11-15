@@ -113,6 +113,10 @@ class ProgressTests(unittest.TestCase):
         self.video_responses["scene1"] = "REQUESTED"
         self.check(job, "VIDEO_1", "PROCESSING", 3, 0)
 
+    def test_individually_started_scene_without_sequence(self):
+        job = make_job(videos={"scene1": {"status": "PROCESSING"}})
+        self.check(job, "VIDEO_1", "PROCESSING", 3, 0)
+
     def test_video_submission_needs_review(self):
         job = make_job(sequence={"status": "APPROVED"},
                        videos={"scene1": {"status": "SUBMISSION_UNKNOWN"}})
