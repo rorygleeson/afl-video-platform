@@ -238,7 +238,7 @@ function setup(options = {}) {
       statusPolls++;
       const status = statusPolls >= 3 ? 'COMPLETED' : 'GENERATING_IMAGES';
       return {ok: true, async json() { return {
-        job: {jobId: 'a'.repeat(32), scenarioId:'afl-grand-final-winning-kick', team:'geelong', firstName:'Alex', lastName:'Tonelli', status, completedScenes: Math.min(statusPolls, 3), failedScenes: 0,
+        job: {jobId: 'a'.repeat(32), scenarioId:'afl-grand-final-winning-kick', team:'geelong', firstName:'Alex', lastName:'Tonelli', personalMessage:options.savedMessage ?? '', status, completedScenes: Math.min(statusPolls, 3), failedScenes: 0,
           progress: options.progress || {currentStage:'IMAGES',stageStatus:status==='COMPLETED'?'PROCESSING':'PROCESSING',finalVideoReady:false},
           scenes: {
             scene1: {status: 'COMPLETED'},
@@ -1392,4 +1392,29 @@ test('job with terminal image failure can start a new video', async () => {
     progress:{currentStage:'IMAGES',stageStatus:'FAILED',finalVideoReady:false}});
   await h.flush();
   assert.equal(h.els.startNewJob.hidden,false);
+});
+
+test('restoring an existing job retains saved greeting and count without new submissions', async () => {
+  const message = 'Happy birthday';
+  const h = setup({
+    localMap: new Map([['afl-video-active-job-v1', 'a'.repeat(32)]]),
+    sessionMap: new Map([['afl-video-dev-key-v1', 'test-api-key']]),
+    savedMessage: message,
+  });
+  await h.flush();
+  assert.equal(h.els.personalMessage.value, message);
+  assert.equal(h.els.personalMessageCount.textContent, String(message.length));
+  assert.equal(h.els.personalMessage.disabled, true);
+  assert.equal(h.calls.filter(c => c.opts.method === 'POST').length, 0);
+  assert.equal(h.localStorage.getItem('afl-video-personal-message'), null);
+});
+
+test('restoring legacy job without greeting keeps field blank rather than placeholder value', async () => {
+  const h = setup({
+    localMap: new Map([['afl-video-active-job-v1', 'a'.repeat(32)]]),
+    sessionMap: new Map([['afl-video-dev-key-v1', 'test-api-key']]),
+  });
+  await h.flush();
+  assert.equal(h.els.personalMessage.value, '');
+  assert.equal(h.els.personalMessageCount.textContent, '0');
 });
