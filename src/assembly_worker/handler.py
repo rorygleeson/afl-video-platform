@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import tempfile
+import textwrap
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +27,7 @@ MAX_INPUT_BYTES = 75 * 1024 * 1024
 MAX_OUTPUT_BYTES = 250 * 1024 * 1024
 FFMPEG = os.environ.get("FFMPEG_PATH", "/opt/bin/ffmpeg")
 FFPROBE = os.environ.get("FFPROBE_PATH", "/opt/bin/ffprobe")
+GREETING_FONT = os.environ.get("GREETING_FONT_PATH", "/var/task/DejaVuSans.ttf")
 
 
 class AssemblyError(RuntimeError):
@@ -51,6 +53,7 @@ def inspect(path):
     if float(metadata.get("format", {}).get("duration", 0)) <= 0:
         raise AssemblyError("INVALID_VIDEO_DURATION")
     return {
+        "duration": float(metadata["format"]["duration"]),
         "width": video["width"],
         "height": video["height"],
         "codec": video.get("codec_name"),
@@ -74,6 +77,43 @@ def set_status(job_id, old, new, **extras):
         ExpressionAttributeNames=names,
         ExpressionAttributeValues=values,
     )
+
+
+def render_personal_message(source, destination, message, duration, directory):
+    """Overlay a final-half-second greeting and hold the last picture for 2s.
+
+    The user text is a textfile, never interpolated into FFmpeg filter syntax.
+    FFmpeg's built-in tpad extends the video; the original scene MP4s stay intact.
+    """
+    if not isinstance(message, str) or len(message) > 80 or any(
+            ord(ch) < 32 or ord(ch) == 127 for ch in message):
+        raise AssemblyError("INVALID_PERSONAL_MESSAGE")
+    font = Path(GREETING_FONT)
+    if not font.is_file():
+        raise AssemblyError("GREETING_FONT_UNAVAILABLE")
+    lines = textwrap.wrap(message, width=28, break_long_words=True,
+                          break_on_hyphens=False)
+    if not lines or len(lines) > 3:
+        raise AssemblyError("INVALID_PERSONAL_MESSAGE")
+    text_file = directory / "greeting.txt"
+    text_file.write_text("\\n".join(lines), encoding="utf-8")
+    # 0.5 seconds before the original finish, fade in the text; then hold it.
+    start = max(0, duration - 0.5)
+    filter_graph = (
+        "tpad=stop_mode=clone:stop_duration=2,"
+        "drawbox=x=24:y=1040:w=672:h=195:color=black@0.70:t=fill:"
+        f"enable='gte(t,{start:.3f})',"
+        f"drawtext=fontfile={font}:textfile={text_file}:expansion=none:"
+        "fontcolor=white:fontsize=35:line_spacing=9:"
+        "x=(w-text_w)/2:y=1040+(195-text_h)/2:"
+        f"alpha='min(1,max(0,(t-{start:.3f})/0.5))'"
+    )
+    run(FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(source), "-vf", filter_graph,
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "veryfast",
+        "-crf", "22", "-c:a", "copy", "-movflags", "+faststart",
+        str(destination), timeout=180)
 
 
 def assemble(job_id):
@@ -125,7 +165,15 @@ def assemble(job_id):
             run(FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error", "-y",
                 "-f", "concat", "-safe", "0", "-i", str(manifest),
                 "-c", "copy", "-movflags", "+faststart", str(final), timeout=60)
-            inspect(final)
+            final_info = inspect(final)
+            message = item.get("personalMessage", "")
+            if message:
+                overlaid = root / "final-with-message.mp4"
+                render_personal_message(final, overlaid, message, final_info["duration"], root)
+                overlaid_info = inspect(overlaid)
+                if overlaid_info["duration"] < final_info["duration"] + 1.7:
+                    raise AssemblyError("GREETING_HOLD_MISSING")
+                final = overlaid
             size = final.stat().st_size
             if not 128 <= size <= MAX_OUTPUT_BYTES:
                 raise AssemblyError("FINAL_VIDEO_SIZE_INVALID")
