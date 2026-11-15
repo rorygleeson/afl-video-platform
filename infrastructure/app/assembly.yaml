@@ -125,7 +125,38 @@ Resources:
                 "Payload": { "jobId.$": "$.jobId" }
               },
               "ResultPath": "$.result",
-              "End": true
+              "Next": "AssemblySucceeded",
+              "Catch": [{
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.firstFailure",
+                "Next": "WaitBeforeConfirmedRetry"
+              }]
+            },
+            "WaitBeforeConfirmedRetry": {
+              "Type": "Wait",
+              "Seconds": 15,
+              "Next": "RetryConfirmedAssemblyFailure"
+            },
+            "RetryConfirmedAssemblyFailure": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${AssemblyWorker.Arn}",
+                "Payload": {"jobId.$": "$.jobId", "retry": true}
+              },
+              "ResultPath": "$.retryResult",
+              "Next": "AssemblySucceeded",
+              "Catch": [{
+                "ErrorEquals": ["States.ALL"],
+                "ResultPath": "$.retryFailure",
+                "Next": "AssemblyNeedsReview"
+              }]
+            },
+            "AssemblySucceeded": {"Type": "Succeed"},
+            "AssemblyNeedsReview": {
+              "Type": "Fail",
+              "Error": "ASSEMBLY_NEEDS_REVIEW",
+              "Cause": "Only a confirmed FAILED worker may be retried; ambiguous processing timeouts require review"
             }
           }
         }
