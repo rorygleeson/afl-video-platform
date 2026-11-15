@@ -1318,6 +1318,16 @@ def google_auth_check():
 
 
 def lambda_handler(event, context):
+    # Internal IAM-authorised watchdog invocation only. Public API Gateway
+    # wraps caller JSON inside "body", not the top-level Lambda event.
+    if event.get("op") == "reconcile_assembly":
+        job_id = event.get("jobId")
+        if not isinstance(job_id, str) or not re.fullmatch(r"[0-9a-f]{32}", job_id):
+            return {"status": "IGNORED_INVALID_JOB_ID"}
+        job = get_job(job_id)
+        if not job or (job.get("assembly") or {}).get("status") != "QUEUED":
+            return {"status": "IGNORED_NOT_QUEUED"}
+        return start_assembly(job_id)
     # AWS EventBridge cannot be invoked through the public API Gateway path.
     # This branch uses only AWS IAM-protected Lambda event delivery.
     if event.get("source") == "aws.states":
