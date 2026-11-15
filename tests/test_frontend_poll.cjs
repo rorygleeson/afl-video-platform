@@ -45,7 +45,7 @@ function setup(options = {}) {
       pause() { this.pauseCalls = (this.pauseCalls || 0) + 1; this.paused = true; this.listeners.pause?.(); },
     };
   }
-  for (const name of ['selfie', 'preview', 'removeSelfie', 'generate', 'testApi', 'refresh',
+  for (const name of ['selfie', 'selfieLabel', 'savedSelfieNote', 'preview', 'removeSelfie', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
                       'referenceImagesHeading', 'startNewJob', 'resumeNotice',
@@ -95,6 +95,7 @@ function setup(options = {}) {
   els.scenario.value = 'afl-grand-final-winning-kick';
   els.selfie.files = [{name: 'selfie.png', type: 'image/png', size: 1200}];
   els.removeSelfie.hidden = true;
+  els.savedSelfieNote.hidden = true;
   els.results = el();
   els.results.children = [];
   function imageCount() { return els.results.children.flatMap(c => c.children || []).filter(c => c.tagName === 'img').length; }
@@ -222,6 +223,10 @@ function setup(options = {}) {
     if (/\/videos\/scene[123]$/.test(url) && opts.method === 'POST') return {
       ok: true, async json() { return {status: 'MOCK_REQUESTED'}; },
     };
+    if (url.endsWith('/selfie')) return {
+      ok:true, async json() { return {jobId:'a'.repeat(32),
+        url:'https://s3.example.com/previous-selfie.jpg',expiresInSeconds:300}; },
+    };
     if (url.endsWith('/images')) return {
       ok: true, async json() { return {
         images: Array.from({length: Math.min(statusPolls, 3)},
@@ -233,6 +238,7 @@ function setup(options = {}) {
       const status = statusPolls >= 3 ? 'COMPLETED' : 'GENERATING_IMAGES';
       return {ok: true, async json() { return {
         job: {jobId: 'a'.repeat(32), scenarioId:'afl-grand-final-winning-kick', team:'geelong', firstName:'Alex', lastName:'Tonelli', status, completedScenes: Math.min(statusPolls, 3), failedScenes: 0,
+          progress: options.progress || {currentStage:'IMAGES',stageStatus:status==='COMPLETED'?'PROCESSING':'PROCESSING',finalVideoReady:false},
           scenes: {
             scene1: {status: 'COMPLETED'},
             scene2: {status: statusPolls >= 2 ? 'COMPLETED' : 'GENERATING'},
@@ -1311,7 +1317,7 @@ test('created job is stored without persisting the API key in localStorage', asy
   assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),'a'.repeat(32));
   assert.equal(h.localStorage.getItem('afl-video-dev-key-v1'),null);
   assert.equal(h.sessionStorage.getItem('afl-video-dev-key-v1'),'test-api-key');
-  assert.equal(h.els.startNewJob.hidden,false);
+  assert.equal(h.els.startNewJob.hidden,true);
 });
 test('reload resumes the same image job via GET only and preserves scene progress', async () => {
   const localMap=new Map([['afl-video-active-job-v1','a'.repeat(32)]]);
@@ -1320,7 +1326,11 @@ test('reload resumes the same image job via GET only and preserves scene progres
   await h.flush();
   assert.equal(h.els.generate.hidden,true);
   assert.equal(h.els.referenceImagesHeading.hidden,false);
-  assert.equal(h.els.startNewJob.hidden,false);
+  assert.equal(h.els.startNewJob.hidden,true);
+  assert.equal(h.els.selfie.hidden,true);
+  assert.equal(h.els.selfieLabel.hidden,true);
+  assert.equal(h.els.savedSelfieNote.hidden,false);
+  assert.equal(h.els.preview.src,'https://s3.example.com/previous-selfie.jpg');
   assert.match(h.els.resumeNotice.textContent,/Resumed your previous video/);
   assert.equal(h.els.firstName.value,'Alex');
   assert.equal(h.els.team.value,'geelong');
@@ -1337,11 +1347,42 @@ test('saved job needs key after a full browser session ends; no duplicate genera
 test('start new video clears saved job without deleting AWS state', async () => {
   const localMap=new Map([['afl-video-active-job-v1','a'.repeat(32)]]);
   const sessionMap=new Map([['afl-video-dev-key-v1','test-api-key']]);
-  const h=setup({localMap,sessionMap});
+  const h=setup({localMap,sessionMap,progress:{currentStage:'COMPLETED',stageStatus:'COMPLETED',finalVideoReady:true}});
   await h.flush();
+  assert.equal(h.els.startNewJob.hidden,false);
   h.els.startNewJob.listeners.click();
   assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),null);
   assert.equal(h.els.generate.hidden,false);
   assert.equal(h.els.team.disabled,false);
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
+});
+
+test('new-job button stays hidden during videos and stitching, including browser refresh', async () => {
+  for (const stage of ['VIDEO_1','VIDEO_2','VIDEO_3','STITCHING']) {
+    const h=setup({localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+      sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+      progress:{currentStage:stage,stageStatus:'PROCESSING',finalVideoReady:false},
+      sequence:{status:'APPROVED'},
+      realVideos:{scene1:{mode:'REAL',status:'PROCESSING'}}});
+    await h.flush();
+    assert.equal(h.els.startNewJob.hidden,true,stage);
+    h.els.startNewJob.listeners.click();
+    assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),'a'.repeat(32),stage);
+    assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0,stage);
+  }
+});
+test('failed video with retry available never offers abandon button', async () => {
+  const h=setup({localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    progress:{currentStage:'VIDEO_2',stageStatus:'FAILED',finalVideoReady:false},
+    realVideos:{scene2:{mode:'REAL',status:'FAILED',retryAvailable:true}}});
+  await h.flush();
+  assert.equal(h.els.startNewJob.hidden,true);
+});
+test('job with terminal image failure can start a new video', async () => {
+  const h=setup({localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    progress:{currentStage:'IMAGES',stageStatus:'FAILED',finalVideoReady:false}});
+  await h.flush();
+  assert.equal(h.els.startNewJob.hidden,false);
 });
