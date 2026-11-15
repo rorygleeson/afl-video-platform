@@ -1,0 +1,42 @@
+name: Deploy optional personal MP4 greeting (guarded)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-personal-greeting.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  greeting:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate greeting safety, FFmpeg and existing frontend regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 -m py_compile scripts/deploy_personal_greeting.py src/api/handler.py src/assembly_worker/handler.py
+          python3 -m unittest discover -s tests -p 'test_personal_greeting.py' -v
+          node --check frontend/app.js
+          node --test tests/test_frontend_poll.cjs
+          test -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+      - name: Authenticate existing GitHub AWS deploy role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Preflight live FFmpeg layer and CFN change sets; update only code and UI
+        shell: bash
+        run: python3 -u scripts/deploy_personal_greeting.py
