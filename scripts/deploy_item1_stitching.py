@@ -120,7 +120,17 @@ def validate(changes, allowed, required, kind):
 
 def inline_definition(template):
     match = re.search(r"(?ms)^      DefinitionString: !Sub \\|\\n(?P<definition>.*?)(?=^Outputs:|\\Z)", template)
-    assert match, "Assembly template definition not found"
+    if not match:
+        # Safe diagnostic: show only formatting around the CFN key, never
+        # parameters, secrets, complete template, or customer content.
+        line = next((line for line in template.splitlines()
+                     if "DefinitionString" in line), "<absent>")
+        print("ASSEMBLY_TEMPLATE_FORMAT", {
+            "firstCharacter": template.lstrip()[:1],
+            "definitionKeyLine": line[:140],
+            "lineCount": len(template.splitlines()),
+        }, flush=True)
+        raise RuntimeError("Assembly template definition format unsupported; no deployment")
     raw = match.group("definition")
     assert raw.strip().endswith("}"), "Unexpected assembly definition structure"
     return match, raw
