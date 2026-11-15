@@ -125,7 +125,9 @@ def reconcile(job, now):
                 return replay(VIDEO_ARN, name)
             following = SCENES[index + 1]
             if approved.get(following) or videos.get(following):
-                return "SKIP_NEXT_ALREADY_RESERVED"
+                # Continue inspection of the next stage; it might already
+                # have completed and be missing its own successor handoff.
+                continue
             return replay(VIDEO_ARN, name)
         # The next video may already be paid, in flight, failed or ambiguous.
         # No replay in any of those states, including stale reservations.
