@@ -111,6 +111,18 @@ def validate(changes, allowed, required, kind):
             print("REVIEW_CFN_DETAIL", kind, c["LogicalResourceId"],
                   detail.get("Evaluation"), detail.get("ChangeSource"),
                   target.get("Attribute"), target.get("Name"), flush=True)
+            if kind == "watchdog" and c["LogicalResourceId"] in (
+                    "WatchdogMachine", "WatchdogMachineRole",
+                    "EveryMinute", "InvokeFromEventBridge"):
+                # Dependent resource references can be recalculated when the
+                # Lambda package/env changes. Never alter their own settings.
+                assert detail.get("Evaluation") == "Dynamic"
+                assert detail.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
+                assert target.get("Attribute") == "Properties"
+            if kind == "watchdog" and c["LogicalResourceId"] == "WatchdogRole":
+                assert target.get("Name") == "Policies"
+            if kind == "watchdog" and c["LogicalResourceId"] == "WatchdogLambda":
+                assert target.get("Name") in ("Code", "Environment", "Role")
             if c["LogicalResourceId"] == "AssemblyStateMachineRole":
                 assert kind == "assembly-worker"
                 assert detail.get("Evaluation") == "Dynamic"
@@ -251,7 +263,8 @@ def main():
             "assembly-worker": {"AssemblyWorker", "AssemblyStateMachine",
                                 "AssemblyStateMachineRole"},
             "assembly-sfn": {"AssemblyStateMachine"},
-            "watchdog": {"WatchdogRole", "WatchdogLambda", "WatchdogMachine"},
+            "watchdog": {"WatchdogRole", "WatchdogLambda", "WatchdogMachine",
+                         "WatchdogMachineRole", "EveryMinute", "InvokeFromEventBridge"},
         }[p["kind"]]
         required = {
             "api": {"ApiLambda"},
