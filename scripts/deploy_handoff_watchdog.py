@@ -83,17 +83,22 @@ def main():
         lam = session.client("lambda").get_function_configuration(
             FunctionName="afl-app-dev-handoff-watchdog")
         assert lam["LastUpdateStatus"] == "Successful"
-        expected_sha = base64.b64encode(checksum).decode()
         current_key = next((p["ParameterValue"] for p in stack["Parameters"]
                             if p["ParameterKey"] == "ArtifactKey"), "")
+        assert current_key.startswith("releases/handoff-watchdog/")
+        deployed_zip = s3.get_object(Bucket=ARTIFACT_BUCKET, Key=current_key)["Body"].read()
+        with zipfile.ZipFile(io.BytesIO(deployed_zip)) as z:
+            assert z.read("handler.py") == src, (
+                "Deployed watchdog source differs from repository source")
+        deployed_sha = base64.b64encode(hashlib.sha256(deployed_zip).digest()).decode()
         print("WATCHDOG_CODE_VERIFICATION", {
-            "expectedSHA": expected_sha[:16],
-            "deployedSHA": lam["CodeSha256"][:16],
-            "stackArtifactMatches": current_key == key,
+            "deployedSourceMatches": True,
+            "deployedArtifactSHA": deployed_sha[:16],
+            "lambdaSHA": lam["CodeSha256"][:16],
             "status": stack["StackStatus"],
         }, flush=True)
-        assert lam["CodeSha256"] == expected_sha, (
-            "Watchdog Lambda code mismatch; review the isolated deployment artifact")
+        assert lam["CodeSha256"] == deployed_sha, (
+            "Lambda does not match its configured CloudFormation S3 artifact")
         assert "WATCHDOG_ACTIVATED_AT" in lam["Environment"]["Variables"]
         machine_arn = lam["Environment"]["Variables"]["WATCHDOG_MACHINE_ARN"]
         assert machine_arn.endswith(":stateMachine:afl-app-dev-handoff-watchdog")
