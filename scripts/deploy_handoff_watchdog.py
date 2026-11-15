@@ -93,16 +93,27 @@ def main():
     assert not result.get("NextToken"),"Paginated changeset requires manual review"
     resources={x["ResourceChange"]["LogicalResourceId"]:x["ResourceChange"]
                for x in result["Changes"]}
-    allowed={"WatchdogLambda"} if existing else set(EXPECTED)
+    allowed=({"WatchdogLambda","EveryMinute","InvokeFromEventBridge"}
+             if existing else set(EXPECTED))
     assert set(resources)==allowed,f"Unexpected resource changes: {list(resources)}"
-    for logical,kind in ({"WatchdogLambda":EXPECTED["WatchdogLambda"]} if existing else EXPECTED).items():
-        change=resources[logical]
+    for logical,change in resources.items():
+        kind=EXPECTED[logical]
         assert change["Action"]==("Modify" if existing else "Add") and change["ResourceType"]==kind
         assert change.get("Replacement") in (None,False,"False")
         if existing:
-            assert all(x.get("Target",{}).get("Name")=="Code"
+            permitted={"WatchdogLambda":{"Code"},
+                       "EveryMinute":{"Targets"},
+                       "InvokeFromEventBridge":{"FunctionName"}}[logical]
+            assert all(x.get("Target",{}).get("Name") in permitted
                        for x in change.get("Details",[])), (
-                "Watchdog update may modify only Lambda Code")
+                "Existing watchdog update includes an unsafe field: "+logical)
+            if logical!="WatchdogLambda":
+                assert all(x.get("Evaluation")=="Dynamic"
+                           for x in change.get("Details",[])), (
+                    "Dependent watchdog resource has a static change: "+logical)
+    print("WATCHDOG_REVIEWED_CHANGE_DETAILS",
+          {n:[(x.get("Target") or {}).get("Name") for x in r.get("Details",[])]
+           for n,r in resources.items()},flush=True)
     print("SAFE_ISOLATED_WATCHDOG_CHANGESET",sorted(resources),flush=True)
     cf.execute_change_set(StackName=STACK,ChangeSetName=name)
     cf.get_waiter("stack_update_complete" if existing else "stack_create_complete").wait(
