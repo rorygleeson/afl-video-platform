@@ -14,6 +14,7 @@ import zipfile
 
 import boto3
 from botocore.exceptions import ClientError
+from validate_change_set import dependency_only
 
 ACCOUNT = "134387458447"
 REGION = "ap-southeast-2"
@@ -53,6 +54,13 @@ def assert_api_only_change_set(change_set):
         change = item["ResourceChange"]
         print("PREVIEW_CHANGE", change["LogicalResourceId"], change["Action"],
               change.get("Replacement"), flush=True)
+        if change["LogicalResourceId"] == "ProxyAny":
+            # Existing verified CloudFormation dependency: API Gateway
+            # Integration dynamically references ApiLambda.Arn, with
+            # RequiresRecreation=Never and no actual integration settings edit.
+            assert dependency_only(change), (
+                "Refusing any independent API Gateway integration update")
+            continue
         assert change["LogicalResourceId"] == "ApiLambda", (
             "Refusing unrelated CloudFormation resource changes")
         assert change["ResourceType"] == "AWS::Lambda::Function"
@@ -63,7 +71,8 @@ def assert_api_only_change_set(change_set):
             assert target.get("Attribute") == "Properties"
             assert target.get("Name") == "Code", (
                 "Refusing changes to Lambda environment, role, permissions or other configuration")
-    assert len(changes) == 1, "Expected only API Lambda Code change"
+    assert sum(c["ResourceChange"]["LogicalResourceId"] == "ApiLambda"
+               for c in changes) == 1, "Expected exactly one API Lambda Code change"
     print("API_ONLY_CHANGESET_VALIDATED", flush=True)
 
 
