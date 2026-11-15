@@ -41,6 +41,7 @@ function setup(options = {}) {
       querySelectorAll(tag) { return this.children.filter(c => c.tagName === tag); },
       replaceChildren(...children) { this.children = [...children]; },
       addEventListener(name, fn) { this.listeners[name] = fn; },
+      click() { this.clickCalls = (this.clickCalls || 0) + 1; },
       play() { this.playCalls = (this.playCalls || 0) + 1; this.paused = false; return Promise.resolve(); },
       pause() { this.pauseCalls = (this.pauseCalls || 0) + 1; this.paused = true; this.listeners.pause?.(); },
     };
@@ -414,23 +415,29 @@ test('rapid double click does not create another upload, job, or paid image requ
   assert.equal(h.calls.filter(c => c.url.endsWith('/generate')).length, 1);
 });
 
-test('remove selfie clears file and preview, then permits reselecting without API calls', async () => {
+test('Update selfie opens picker and preserves the selected photo when cancelled', async () => {
+  assert.match(html, /id="removeSelfie"[^>]*>Update selfie<\/button>/);
   const h = setup();
   h.els.selfie.listeners.change();
   assert.equal(h.els.preview.hidden, false);
   assert.equal(h.els.removeSelfie.hidden, false);
   assert.equal(h.els.preview.src, 'blob:test');
+  const previous = h.els.selfie.files[0];
   h.els.removeSelfie.listeners.click();
-  assert.equal(h.els.selfie.value, '');
-  assert.equal(h.els.preview.hidden, true);
-  assert.equal(h.els.removeSelfie.hidden, true);
-  assert.equal(h.els.preview.src, '');
-  assert.equal(h.calls.length, 0, 'Clearing a photo never calls AWS');
+  assert.equal(h.els.selfie.clickCalls, 1);
+  assert.equal(h.els.selfie.files[0], previous);
+  assert.equal(h.els.preview.src, 'blob:test');
+  assert.equal(h.els.preview.hidden, false);
+  assert.equal(h.calls.length, 0, 'Choosing or cancelling a replacement never calls AWS');
   h.els.selfie.files = [{name: 'correct-selfie.jpg', type: 'image/jpeg', size: 2400}];
   h.els.selfie.listeners.change();
   assert.equal(h.els.preview.hidden, false);
   assert.equal(h.els.removeSelfie.hidden, false);
   assert.equal(h.els.preview.src, 'blob:test');
+  await h.els.generate.listeners.click(); await h.flush();
+  assert.equal(h.els.removeSelfie.hidden, true, 'No replacement once generation has begun');
+  h.els.removeSelfie.listeners.click();
+  assert.equal(h.els.selfie.clickCalls, 1, 'Cannot reopen picker during a job');
 });
 
 test('failed selfie upload stops before job creation or Google generation', async () => {
