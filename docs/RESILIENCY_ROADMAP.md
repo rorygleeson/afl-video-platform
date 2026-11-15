@@ -72,6 +72,8 @@
 
 ## Change log
 
+- 2026-11-15 — **LIVE VERIFIED**: overall job progress API + 2-second Developer diagnostics UI deployed through guarded release workflow run [43678843432](https://github.com/rorygleeson/afl-video-platform/actions/runs/43678843432), commit `f37b4aaf`. 17 API unit tests and 60 frontend regression tests passed; CloudFormation preview changed `ApiLambda` Code and verified dynamic `ProxyAny` dependency only. AWS API Lambda CodeSha256 matched, image worker and image state-machine definition unchanged; S3 readback matched published `app.js` and `index.html`; CloudFront invalidation submitted `I60QG5W70WKQYCE1F8XYRDXPB2`. No billable Google tests performed; in-browser live request using an actual job ID not yet observed.
+
 - 2026-11-15 — Added **developer diagnostics-only** overall job stage line (frontend `index.html` and `app.js`), using read-only `GET /jobs/{jobId}` every 2 seconds while panel open/tab visible, with request single-flight and pause on tab hide. Commits `75c02280`, `578717d8`. No changes to image/video/frontend generation polling or orchestration. Feature requires deployment alongside API progress handler; **not yet verified live**.
 
 - 2026-11-15 — First bounded **API-only implementation** after user-approved scope: add read-only `job.progress` to `GET /jobs/{jobId}` from existing scene/video/assembly fields, preserving existing `job.status`. Code changes limited to `src/api/handler.py` (latest feature commit `00ec4239`), plus `tests/test_overall_job_progress.py` with 16 offline cases (commit `15224169`). **No AWS deployment, generation changes, database schema or frontend changes.** Tests committed but execution not verified. Backend-controlled transitions are the explicitly separate *next* change.
