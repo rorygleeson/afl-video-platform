@@ -72,6 +72,9 @@
 
 ## Change log
 
+- 2026-11-15 — First bounded **API-only implementation** after user-approved scope: add read-only `job.progress` to `GET /jobs/{jobId}` from existing scene/video/assembly fields, preserving existing `job.status`. Code changes limited to `src/api/handler.py` (latest feature commit `00ec4239`), plus `tests/test_overall_job_progress.py` with 16 offline cases (commit `15224169`). **No AWS deployment, generation changes, database schema or frontend changes.** Tests committed but execution not verified. Backend-controlled transitions are the explicitly separate *next* change.
+
+
 - 2026-11-15 — Image concurrency restored to **3** in source `infrastructure/app/backend.yaml` (`MaxConcurrency: 3`), with a guarded deployment-intent commit `5ec4cb8f`. Updated architecture, infrastructure, API, status and retry docs to match; per-scene 429 retries are unchanged. Source verified; independently checking live deployed state is still open.
 
 - 2026-11-15 — Updated [ARCHITECTURE.md](ARCHITECTURE.md) to current sequential image Map, direct Google model, server-side per-scene video orchestration, frontend-triggered assembly, detailed state/data flow (commit `e0829cd7`). Task 1.2 source documentation drafted; live comparison pending.
