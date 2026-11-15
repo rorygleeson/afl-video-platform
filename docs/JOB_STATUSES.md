@@ -140,3 +140,39 @@ This is an **example proposal, not an existing response**. The eight completion 
 - [ ] Cross-check response fields with mock handler tests; add fixtures for each status.
 - [ ] Revise older `docs/API_ENDPOINTS.md` and `docs/ARCHITECTURE.md` so they point here.
 - [ ] After later implementation, add and test the unified status contract; update this document without mislabeling proposals as current behavior.
+
+## Google reference-image failure diagnostics (15 November 2026)
+
+Image-scene records in DynamoDB retain `errorCode` and, when Google returned
+a parseable image-less HTTP 200 response, additional **allowlisted** fields:
+
+- `providerFinishReason`: approved Google `candidates[0].finishReason`, otherwise `UNKNOWN`.
+- `providerBlockReason`: approved `promptFeedback.blockReason`, otherwise `UNKNOWN`.
+- `providerBlockedCategories`: at most five names from blocked candidate `safetyRatings`; no probabilities, severity or provider text.
+- `providerCandidateCount`: bounded 0–10 count.
+- `providerImageParts`: bounded 0–10 count of inline image parts in the first candidate.
+- `providerTextOnly`: boolean that indicates the presence of a text part (the text itself is never retained).
+
+The API exposes those optional fields only on failed scenes through **both**
+`GET /jobs/{jobId}` and `GET /jobs/{jobId}/images` via `public_job()`.
+The existing developer diagnostics panel displays these already-stored fields
+without a separate read or paid model call. Earlier failures without the
+fields will show *Not recorded*. Absence of a declared safety block is not
+proof that the child's photo was accepted or rejected for another reason.
+
+`GOOGLE_PROMPT_BLOCKED` means Google declared a recognised prompt block reason.
+`GOOGLE_IMAGE_SAFETY_BLOCK` means an allowlisted safety finish reason or a
+blocked safety rating was returned. `GOOGLE_NO_IMAGE_CONTENT` means the
+response contained candidates but no usable inline image and no recognised
+block signal; it **does not itself imply a safety rejection**.
+`GOOGLE_NO_CANDIDATES` means the response contained no candidates and no
+recognised prompt block. The existing image validation and conversion errors
+remain unchanged.
+
+No original provider message, safety narratives, generated text, photo bytes,
+base64 image, prompt, token or full Google response is stored in these
+diagnostic fields. No Google request can be triggered by the diagnostic UI.
+Only explicit HTTP **429** is automatically resubmitted using the existing
+8-attempt/600-second bounded retry policy. The image map remains sequential
+(`MaxConcurrency: 1`). These are diagnostic metadata changes, not a safety
+filter bypass or a recovery/retry redesign.
