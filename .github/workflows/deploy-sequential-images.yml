@@ -1,4 +1,4 @@
-name: Deploy sequential reference image generation (guarded)
+name: Restore 3 concurrent reference images (guarded)
 on:
   push:
     branches: [main]
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Verify image workflow sequential and existing retry handling unchanged
+      - name: Verify 3 concurrent image scenes and existing retry handling unchanged
         shell: bash
         run: |
           set -euo pipefail
@@ -28,8 +28,8 @@ jobs:
           from pathlib import Path
           import yaml
           src=Path('infrastructure/app/backend.yaml').read_text()
-          assert src.count('MaxConcurrency: 1')==1
-          assert 'MaxConcurrency: 3' not in src
+          assert src.count('MaxConcurrency: 3')==1
+          assert 'MaxConcurrency: 1' not in src
           assert 'WaitForGoogleCapacity' in src
           assert 'retryAfterSeconds' in src
           assert 'MarkSceneFailed' in src and 'RecoverJob' in src and 'Finalize' in src
@@ -47,13 +47,13 @@ jobs:
           segments=source.split('          ParallelScenes:',1)
           assert len(segments)==2
           map_yaml=segments[1].split('          Finalize:',1)[0]
-          for required in ('MaxConcurrency: 1','ItemsPath: $.prepared.Payload.scenes',
+          for required in ('MaxConcurrency: 3','ItemsPath: $.prepared.Payload.scenes',
                            'Next: WaitForGoogleCapacity','SecondsPath: $.attemptResult.Payload.retryAfterSeconds',
                            'Next: Generate','Next: MarkSceneFailed','op: failed',
                            'Next: SceneCompleted','Next: Finalize'):
               assert required in map_yaml,required
           assert 'ParallelScenes' in source
-          print('SEQUENTIAL_WORKFLOW_RETRY_AND_FAILURE_PATHS_VERIFIED')
+          print('CONCURRENT_WORKFLOW_RETRY_AND_FAILURE_PATHS_VERIFIED')
           PY
           node --check frontend/app.js
           node --test tests/test_frontend_poll.cjs
