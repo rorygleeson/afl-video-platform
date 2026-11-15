@@ -10,6 +10,8 @@ from pathlib import Path
 
 import boto3
 from botocore.exceptions import ClientError
+from preview_release_change_set import verify_reconcile_permission
+from validate_change_set import expected_reconcile_permission, dependency_only
 
 REGION="ap-southeast-2"
 ACCOUNT="134387458447"
@@ -50,7 +52,7 @@ def active_images(states):
     assert not result.get("executions"), "Image generation is currently running; abort deployment"
 
 
-def change_set(cf,stack,updates,run):
+def change_set(cf,lam,events,stack,updates,run):
     """Single atomic backend CFN change set for both Lambda packages."""
     name="image-response-diag-"+run
     cf.create_change_set(StackName=BACKEND,ChangeSetName=name,
@@ -68,6 +70,8 @@ def change_set(cf,stack,updates,run):
     page=cf.describe_change_set(StackName=BACKEND,ChangeSetName=name)
     assert not page.get("NextToken")
     changes=[c["ResourceChange"] for c in page["Changes"]]
+    verified_permission=verify_reconcile_permission(
+        cf,lam,events,BACKEND,page["Changes"])
     logicals={"ImageWorkerLambda","ApiLambda"}
     ids={c["LogicalResourceId"] for c in changes}
     assert ids & logicals == {p["logical"] for p in updates.values()}, (
@@ -79,6 +83,12 @@ def change_set(cf,stack,updates,run):
     for c in changes:
         rid=c["LogicalResourceId"]
         print("CHANGE",rid,c["Action"],c.get("Replacement"),c.get("Details"),flush=True)
+        if expected_reconcile_permission(c, verified_permission):
+            print("EXISTING_EVENTBRIDGE_PERMISSION_LIVE_VERIFIED",flush=True)
+            continue
+        if dependency_only(c):
+            print("DEPENDENCY_ONLY_RESOURCE_VERIFIED",rid,flush=True)
+            continue
         assert c["Action"]=="Modify" and c.get("Replacement") in ("False",False)
         for detail in c.get("Details",[]):
             target=detail.get("Target",{})
@@ -151,7 +161,7 @@ def main():
     executed=False
     try:
         if prepared:
-            name=change_set(cf,stack,updates,run)
+            name=change_set(cf,lam,session.client("events"),stack,updates,run)
             active_images(sf)
             current_machine=sf.describe_state_machine(stateMachineArn=IMAGE_MACHINE)
             assert json.loads(current_machine["definition"])==before
