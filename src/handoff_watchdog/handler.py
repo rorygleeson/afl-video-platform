@@ -195,8 +195,12 @@ def check_one(event):
         # Do not re-trigger an assembly which has already been reserved.
         return {"continue": True, "status": "ASSEMBLY_IN_PROGRESS_OR_REVIEW"}
     for record in (job.get("realVideos") or {}).values():
-        if record.get("status") in ("FAILED", "SUBMISSION_UNKNOWN"):
-            return {"continue": False, "status": "REVIEW_VIDEO_FAILURE_OR_UNKNOWN"}
+        if record.get("status") == "FAILED":
+            return {"continue": False, "status": "REVIEW_VIDEO_FAILED"}
+        if record.get("status") == "SUBMISSION_UNKNOWN":
+            # Worker records this BEFORE its paid POST, so it may be a normal
+            # transient in-flight state. Keep monitoring but never resubmit.
+            return {"continue": True, "status": "WAIT_UNKNOWN_PAID_SUBMISSION"}
     outcome = reconcile(job, now)
     if outcome.startswith("REVIEW"):
         return {"continue": False, "status": outcome}
