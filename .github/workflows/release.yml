@@ -42,6 +42,43 @@ concurrency:
   group: afl-dev-deploy
   cancel-in-progress: false
 jobs:
+  deploy_overall_progress:
+    name: Deploy only overall job progress API and diagnostics UI
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-overall-job-progress]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate API and read-only frontend changes
+        run: |
+          set -euo pipefail
+          python3 -m py_compile src/api/handler.py scripts/deploy_overall_job_progress.py
+          python3 -m unittest discover -s tests -p 'test_overall_job_progress.py' -v
+          node --check frontend/app.js
+          node --test tests/test_frontend_poll.cjs
+          grep -q 'id="overallJobStatus"' frontend/index.html
+          grep -q 'const OVERALL_STATUS_POLL_MS = 2000' frontend/app.js
+          grep -q 'async function refreshOverallStatus()' frontend/app.js
+          grep -q 'MaxConcurrency: 3' infrastructure/app/backend.yaml
+          python3 scripts/check_deployment_ownership.py --enforce
+      - name: Install AWS SDK and authenticate existing deployment role
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: deploy-overall-progress
+      - name: Guarded API-only CloudFormation update and diagnostics publication
+        env:
+          DEPLOY_PROGRESS_CHANGE: DEPLOY_JOB_PROGRESS_ONLY
+        run: python3 -u scripts/deploy_overall_job_progress.py
+
   baseline:
     if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[deploy-google-stagger-10s]') && !contains(github.event.head_commit.message, '[deploy-google-failure-audit]') }}
     runs-on: ubuntu-latest
