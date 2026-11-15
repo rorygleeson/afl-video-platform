@@ -1,4 +1,4 @@
-name: Deploy optional personal MP4 greeting (guarded)
+name: Deploy optional personal MP4 greeting (guarded, retry validation)
 on:
   push:
     branches: [main]
