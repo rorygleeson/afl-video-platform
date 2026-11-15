@@ -171,3 +171,12 @@ No change to provider requests, prompts, model, Step Functions transitions,
 timeouts, number of image scenes, backoff, 8-attempt / 600-second budget, 429
 retry-only policy, or the rule that ambiguous submissions must never be
 blindly retried. This does not recover response details missing from older jobs.
+
+## Per-job missed-handoff watchdog (reviewed 2026-11-16)
+
+| Mechanism | Frequency / bound | Allowed action | What it does **not** do |
+| --- | --- | --- | --- |
+| Isolated handoff watchdog | EventBridge image-workflow `RUNNING` starts one named SFN; **60-second Wait** between Lambda checks; **2-hour** total deadline | Read one DDB job, describe named execution, and replay a **verified** successful completion event (only after **120 seconds** since stop) into existing guarded API | No idle cron, no scan, no paid Google retry, no automatic restart of an in-flight image/video, no stage-age timeout |
+| Pre-existing image reconciliation | Scheduled **every 5 minutes**, regardless of active jobs; approximately **45-minute** stalled image threshold | Terminalise unfinished image jobs as defined by existing image worker | Does not restart paid image submissions; is **not** the isolated handoff watchdog |
+
+**Do not confuse three independent numbers:** 60 seconds = watchdog check cadence; 120 seconds = successful-execution settlement age before potential handoff replay; 7,200 seconds = overall watchdog monitoring lifetime. A Google video taking eight minutes is not failed simply for remaining in progress across several checks. Monitoring ends or requires review if a failure/uncertain paid submission/unknown reserved assembly occurs; no automatic safe recovery is claimed for all those cases. Source: `infrastructure/app/handoff-watchdog.yaml` and `src/handoff_watchdog/handler.py`. No fresh live AWS deployment or end-to-end test accompanied this documentation amendment.
