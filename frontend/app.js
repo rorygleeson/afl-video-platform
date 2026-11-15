@@ -903,15 +903,10 @@ const input = document.getElementById('selfie');
   });
 
   removeSelfie.addEventListener('click', () => {
-    if (uploadInProgress || input.disabled) return;
-    invalidateJobSelection();
-    input.value = '';
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    previewUrl = undefined;
-    preview.removeAttribute('src');
-    preview.hidden = true;
-    removeSelfie.hidden = true;
-    showStatus('Selfie removed. Choose the correct photo, then upload it.');
+    if (uploadInProgress || input.disabled || currentJobId) return;
+    // Open the picker without clearing the existing selfie. Cancelling
+    // keeps the original file and preview; selecting a new one updates both.
+    input.click();
   });
 
   async function api(path, options = {}) {
