@@ -72,7 +72,7 @@ class AssemblyContractTests(unittest.TestCase):
         import json
         import textwrap
         infra = (ROOT / "infrastructure/app/assembly.yaml").read_text(encoding="utf-8")
-        definition = infra.split("      DefinitionString: !Sub |", 1)[1].split("\\nOutputs:", 1)[0]
+        definition = infra.split("      DefinitionString: !Sub |", 1)[1].split("\nOutputs:", 1)[0]
         definition = json.loads(textwrap.dedent(definition))
         states = definition["States"]
         self.assertEqual(definition["StartAt"], "Stitch")
