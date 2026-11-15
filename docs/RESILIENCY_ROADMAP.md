@@ -72,4 +72,6 @@
 
 ## Change log
 
+- 2026-11-15 — Step 1.1 source baseline captured in [DEPLOYMENT_BASELINE_2026-11-15.md](DEPLOYMENT_BASELINE_2026-11-15.md) (commit `892bf629`). **IN PROGRESS:** live AWS config and workflow evidence not yet accessible/verified. No application changes.
+
 - 2026-11-15 — Roadmap created. Checklist tasks are **not yet marked complete**; current source findings are preliminary and live AWS values remain unverified.
