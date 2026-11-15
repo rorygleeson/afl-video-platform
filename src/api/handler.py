@@ -296,6 +296,7 @@ def create_job(event):
     last_name = validate_name(data.get("lastName"), "Surname")
     personal_message = validate_personal_message(data.get("personalMessage"))
     upload_key = data.get("uploadKey")
+    auto_video_consent = data.get("confirmPaidSequence") is True
     if scenario_id != SCENARIO_ID:
         raise ValueError("Unsupported scenario")
     if not isinstance(team, str) or team not in TEAMS:
@@ -313,7 +314,8 @@ def create_job(event):
         json.dumps(
             {"scenarioId": scenario_id, "team": team, "uploadKey": upload_key,
              "firstName": first_name, "lastName": last_name,
-              "personalMessage": personal_message},
+              "personalMessage": personal_message,
+              "confirmPaidSequence": auto_video_consent},
             sort_keys=True, separators=(",", ":"),
         ).encode()
     ).hexdigest()
@@ -345,6 +347,7 @@ def create_job(event):
         "personalMessage": personal_message,
         "uploadKey": upload_key,
         "requestFingerprint": fingerprint,
+        "autoVideoConsent": auto_video_consent,
         "status": "AWAITING_IMAGE_PIPELINE",
         "createdAt": now,
         "expiresAt": int(time.time()) + 7 * 86400,
@@ -911,6 +914,42 @@ def start_video_sequence(job_id, event):
                           "sequence": {"status": "APPROVED", "mode": "AWS_EVENT_DRIVEN"}})
 
 
+def image_sequence_event(event):
+    """Advance only consented jobs with three successfully finished images.
+
+    Uses the existing atomic paid-video reservations; retries of this AWS event
+    cannot create another paid Google attempt.
+    """
+    detail = event.get("detail") or {}
+    if (event.get("source") != "aws.states" or
+            event.get("detail-type") != "Step Functions Execution Status Change" or
+            detail.get("status") != "SUCCEEDED" or
+            detail.get("stateMachineArn") != IMAGE_STATE_MACHINE_ARN):
+        return {"status": "IGNORED"}
+    arn = detail.get("executionArn", "")
+    prefix = IMAGE_STATE_MACHINE_ARN.replace(":stateMachine:", ":execution:", 1) + ":"
+    if not isinstance(arn, str) or not arn.startswith(prefix):
+        return {"status": "IGNORED"}
+    job_id = arn[len(prefix):]
+    if not JOB_RE.fullmatch(job_id):
+        return {"status": "IGNORED"}
+    job = get_job(job_id)
+    if not job or job.get("autoVideoConsent") is not True:
+        return {"status": "IGNORED_NOT_AUTHORISED"}
+    if job.get("status") != "COMPLETED" or any(
+            job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
+            for scene in VIDEO_SCENES):
+        return {"status": "IGNORED_IMAGES_NOT_COMPLETE"}
+    result = start_video_sequence(job_id, {
+        "body": json.dumps({"confirmPaidSequence": True}),
+        "headers": {"Idempotency-Key": "seq-" + job_id + "-image-complete"},
+    })
+    status = json.loads(result["body"]).get("status", "UNKNOWN")
+    if result["statusCode"] != 202:
+        raise RuntimeError("Authorised image-to-video handoff needs review: " + status)
+    return {"status": status, "jobId": job_id}
+
+
 def video_sequence_event(event):
     """EventBridge only: advance after the existing Step Functions execution SUCCEEDED.
 
@@ -1214,6 +1253,8 @@ def lambda_handler(event, context):
     # AWS EventBridge cannot be invoked through the public API Gateway path.
     # This branch uses only AWS IAM-protected Lambda event delivery.
     if event.get("source") == "aws.states":
+        if (event.get("detail") or {}).get("stateMachineArn") == IMAGE_STATE_MACHINE_ARN:
+            return image_sequence_event(event)
         return video_sequence_event(event)
     method = (event.get("httpMethod") or "").upper()
     path = event.get("path") or ""
