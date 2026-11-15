@@ -975,8 +975,6 @@ def video_sequence_event(event):
     if not match:
         return {"status": "IGNORED"}
     job_id, scene_id = match.groups()
-    if scene_id == "scene3":
-        return {"status": "ALL_SCENES_FINISHED"}
     job = get_job(job_id)
     if not job or job.get("videoSequence", {}).get("status") != "APPROVED" or job.get("assembly"):
         return {"status": "IGNORED_NO_SEQUENCE"}
@@ -987,10 +985,26 @@ def video_sequence_event(event):
     key = f"videos/{job_id}/{scene_id}.mp4"
     if video.get("status") != "COMPLETED" or video.get("resultKey") != key:
         return {"status": "WAITING_FOR_MANUAL_RETRY_OR_REVIEW"}
-    # The prior MP4 must exist before starting the next chargeable scene.
+    # The completed MP4 must be durable before any downstream handoff.
     object_head = S3.head_object(Bucket=UPLOAD_BUCKET, Key=key)
     if object_head.get("ContentLength", 0) < 128:
         raise RuntimeError("Completed scene MP4 not yet verifiable")
+    if scene_id == "scene3":
+        # Final assembly does not submit paid Google requests. Reuse the existing
+        # atomic DynamoDB reservation and stable final-{jobId} execution.
+        # start_assembly independently verifies all three real MP4s in S3.
+        result = start_assembly(job_id)
+        body = json.loads(result["body"])
+        if result["statusCode"] == 202:
+            return {"status": "ASSEMBLY_REQUESTED" if body.get("status") == "QUEUED"
+                    else "ASSEMBLY_ALREADY_REQUESTED"}
+        if result["statusCode"] == 200:
+            return {"status": "ASSEMBLY_ALREADY_REQUESTED"}
+        if body.get("status") == "HANDOFF_UNKNOWN":
+            return {"status": "ASSEMBLY_HANDOFF_NEEDS_REVIEW"}
+        # Transiently missing preceding MP4s may be retried by EventBridge;
+        # neither retries nor duplicate events can reserve another assembly.
+        raise RuntimeError("Completed video assembly preflight not ready")
     next_scene = VIDEO_SCENES[VIDEO_SCENES.index(scene_id) + 1]
     if (job.get("paidVideoApprovals", {}).get(next_scene) or
             job.get("realVideos", {}).get(next_scene)):
