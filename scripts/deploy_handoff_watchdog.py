@@ -37,8 +37,10 @@ def main():
     if existing:
         assert existing["StackStatus"] in ("CREATE_COMPLETE","UPDATE_COMPLETE")
         assert existing["RoleARN"]==ROLE
-        resources=cf.describe_stack_resources(StackName=STACK)["StackResources"]
-        assert {x["LogicalResourceId"]:x["ResourceType"] for x in resources}==EXPECTED
+        for logical, kind in EXPECTED.items():
+            resource=cf.describe_stack_resource(StackName=STACK,LogicalResourceId=logical)["StackResourceDetail"]
+            assert resource["ResourceType"]==kind
+            assert resource["ResourceStatus"] in ("CREATE_COMPLETE","UPDATE_COMPLETE")
 
     source=Path("src/handoff_watchdog/handler.py").read_bytes()
     packed=io.BytesIO()
