@@ -384,6 +384,28 @@ def start_images(job_id):
                           "message": "Three parallel scene edits started; these may incur Replicate charges"})
 
 
+
+def selfie_for_job(job):
+    """Read-only short-lived preview of this job's uploaded selfie.
+
+    Reuses the existing developer API key gate and S3 uploads/* GetObject IAM.
+    Never exposes uploadKey in the job's public status projection, and never
+    starts provider work or creates a new upload.
+    """
+    key = job.get("uploadKey")
+    if not isinstance(key, str) or not UPLOAD_KEY_RE.fullmatch(key):
+        return response(404, {"error": "Selfie not available"})
+    return response(200, {
+        "jobId": job["jobId"],
+        "url": S3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": UPLOAD_BUCKET, "Key": key},
+            ExpiresIn=300,
+        ),
+        "expiresInSeconds": 300,
+    })
+
+
 def images_for_job(job):
     images = []
     for scene_id in ("scene1", "scene2", "scene3"):
@@ -1333,6 +1355,12 @@ def lambda_handler(event, context):
         generate_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/generate", path)
         if method == "POST" and generate_match:
             return start_images(generate_match.group(1))
+        selfie_match = re.fullmatch(r"/jobs/([0-9a-f]{32})/selfie", path)
+        if method == "GET" and selfie_match:
+            job = get_job(selfie_match.group(1))
+            if not job:
+                return response(404, {"error": "Job not found"})
+            return selfie_for_job(job)
         match = re.fullmatch(r"/jobs/([0-9a-f]{32})(/images)?", path)
         if method == "GET" and match:
             job = get_job(match.group(1))
