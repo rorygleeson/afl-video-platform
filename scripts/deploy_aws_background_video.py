@@ -174,6 +174,64 @@ def install_completion_rule(cf, run):
     print("AWS_VIDEO_COMPLETION_EVENTS_CREATED_AND_VERIFIED",flush=True)
 
 
+def install_image_completion_rule(cf, run):
+    """Create the isolated EventBridge rule stack only after live API code verifies.
+
+    No changes to Google model, SFN, IAM roles, DynamoDB table, existing
+    application stacks, or customer media. Reject surprises in the changeset.
+    """
+    stack_name="afl-app-dev-image-video-start-events"
+    expected={"CompletedImageExecution":"AWS::Events::Rule",
+              "AllowImageCompletionToApi":"AWS::Lambda::Permission"}
+    template=Path("infrastructure/app/image-video-start-events.yaml").read_text()
+    assert "aws.states" in template and "SUCCEEDED" in template
+    assert "afl-app-dev-scene1-pilot" in template and "afl-app-dev-api" in template
+    try:
+        current=cf.describe_stacks(StackName=stack_name)["Stacks"][0]
+    except ClientError as exc:
+        code=exc.response.get("Error",{}).get("Code")
+        message=exc.response.get("Error",{}).get("Message","")
+        if code!="ValidationError" or "does not exist" not in message:
+            raise
+    else:
+        assert current["StackStatus"] in ("CREATE_COMPLETE","UPDATE_COMPLETE")
+        live_template=cf.get_template(StackName=stack_name)["TemplateBody"]
+        assert isinstance(live_template,str) and live_template.strip()==template.strip(), (
+            "EventBridge stack source changed; require isolated reviewed change")
+        for logical,resource_type in expected.items():
+            res=cf.describe_stack_resource(StackName=stack_name,LogicalResourceId=logical)["StackResourceDetail"]
+            assert res["ResourceType"]==resource_type
+            assert res["ResourceStatus"] in ("CREATE_COMPLETE","UPDATE_COMPLETE")
+        print("AWS_IMAGE_TO_VIDEO_EVENTS_ALREADY_INSTALLED_VERIFIED",flush=True)
+        return
+    name="images-to-video-events-"+run
+    cf.create_change_set(
+        StackName=stack_name,ChangeSetName=name,ChangeSetType="CREATE",
+        TemplateBody=template,RoleARN=ROLE,Capabilities=["CAPABILITY_NAMED_IAM"],
+        Description="Only Step Functions SUCCEEDED completion events to existing AWS API Lambda")
+    cf.get_waiter("change_set_create_complete").wait(
+        StackName=stack_name,ChangeSetName=name,WaiterConfig={"Delay":5,"MaxAttempts":36})
+    plan=cf.describe_change_set(StackName=stack_name,ChangeSetName=name)
+    assert not plan.get("NextToken"),"Paginated event stack changeset refused"
+    changes={x["ResourceChange"]["LogicalResourceId"]:x["ResourceChange"]
+             for x in plan["Changes"]}
+    assert set(changes)==set(expected),f"Unexpected EventBridge resources {sorted(changes)}"
+    for logical,kind in expected.items():
+        change=changes[logical]
+        assert change["Action"]=="Add" and change["ResourceType"]==kind
+        assert change.get("Replacement") in (None,False,"False")
+    print("SAFE_IMAGE_TO_VIDEO_EVENT_CHANGESET",sorted(changes),flush=True)
+    cf.execute_change_set(StackName=stack_name,ChangeSetName=name)
+    cf.get_waiter("stack_create_complete").wait(
+        StackName=stack_name,WaiterConfig={"Delay":10,"MaxAttempts":60})
+    result=cf.describe_stacks(StackName=stack_name)["Stacks"][0]
+    assert result["StackStatus"]=="CREATE_COMPLETE"
+    for logical,kind in expected.items():
+        res=cf.describe_stack_resource(StackName=stack_name,LogicalResourceId=logical)["StackResourceDetail"]
+        assert res["ResourceType"]==kind and res["ResourceStatus"]=="CREATE_COMPLETE"
+    print("AWS_IMAGE_TO_VIDEO_EVENTS_CREATED_AND_VERIFIED",flush=True)
+
+
 def main():
     from datetime import datetime, timezone
     sess=boto3.session.Session(region_name=REGION)
@@ -277,6 +335,7 @@ def main():
 
     # The live API must be ready before the completion event rule can invoke it.
     install_completion_rule(cf,run)
+    install_image_completion_rule(cf,run)
 
     # Release frontend only after the API and completion rule are verified. Existing
     # versioned S3 bucket and CloudFront distribution remain under IaC.
