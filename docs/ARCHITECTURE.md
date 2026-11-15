@@ -14,7 +14,7 @@ flowchart TD
   Browser --> API["API Gateway REST /dev → API Lambda"]
   Browser -->|presigned POST| Uploads[("Private S3 uploads/")]
   API --> Jobs[("DynamoDB afl-app-dev-jobs")]
-  API -->|StartExecution once per job| ImageSFN["Image Step Functions — sequential Map (1)"]
+  API -->|StartExecution once per job| ImageSFN["Image Step Functions — concurrent Map (up to 3)"]
   ImageSFN --> ImageWorker["Image Lambda: Google direct image adapter"]
   ImageWorker -->|template / prompts| Assets[("Private versioned S3 scenario assets")]
   ImageWorker -->|selfie| Uploads
@@ -47,7 +47,7 @@ The diagram is a logical model. The browser invokes `POST /jobs/{jobId}/assembly
 
 ### 2. Reference images
 
-`POST /jobs/{jobId}/generate` starts named STANDARD Step Functions execution `jobId`. Source image workflow `afl-app-dev-scene1-pilot` (historical name) has `Prepare → ParallelScenes [Map MaxConcurrency:1] → Finalize`, with Catch to `RecoverJob`. The name `ParallelScenes` is historical; execution is now **sequential**.
+`POST /jobs/{jobId}/generate` starts named STANDARD Step Functions execution `jobId`. Source image workflow `afl-app-dev-scene1-pilot` (historical name) has `Prepare → ParallelScenes [Map MaxConcurrency:3] → Finalize`, with Catch to `RecoverJob`. All three image branches can run concurrently **within a job**, with independent per-scene 429 retry waits; this is not an account-wide Google/API concurrency limit.
 
 For each scene, image worker reads job/selfie and versioned team template/prompt from S3, authenticates using AWS→Google Workload Identity Federation (WIF), and POSTs directly to Vertex `gemini-3-pro-image:generateContent`. Google responds synchronously with image content; worker validates/converts to PNG and writes `results/{jobId}/sceneN.png`, then persists per-scene `COMPLETED`.
 
@@ -97,7 +97,7 @@ Full inventory: [INFRASTRUCTURE.md](INFRASTRUCTURE.md). Retry matrix: [RETRIES_A
 6. Final assembly initiation depends on browser polling; assembly workflow has no automatic recovery.
 7. Seven-day upload/results/job TTL is not coordinated with paying customer support/refund retention; `videos/` lifecycle requires review.
 8. Developer API key not customer authorisation; API status must be guarded per job.
-9. Historical doc/source strings still mention parallel image generation/Replicate and need eventual code cleanup.
+9. Some historical API messages still mention Replicate; `parallelScenes:true` now correctly reflects the image Map concurrency but should not be interpreted as unrestricted provider throughput.
 10. Configured AWS values must be checked against active live resources before production sign-off.
 
 **No prompt, model, code, infrastructure or payment changes are made by this documentation revision.**
