@@ -227,14 +227,22 @@ def image_response_diagnostic(result):
         allowed_enum(r.get("category"), SAFETY_CATEGORIES)
         for r in ratings if isinstance(r, dict) and r.get("blocked") is True
     })[:5]
-    # Avoid showing "UNKNOWN" as a specific explanation.
+    parts = (candidate.get("content") or {}).get("parts", []) if isinstance(
+        candidate.get("content"), dict) else []
+    parts = parts if isinstance(parts, list) else []
+    text_only = any(isinstance(p, dict) and isinstance(p.get("text"), str)
+                    for p in parts)
+    # No returned text, safety narratives, personal images or prompts are stored.
     return {
         "providerFinishReason": finish,
         "providerBlockReason": block,
         "providerBlockedCategories": blocked_categories,
         "providerCandidateCount": min(10, len(candidates)),
-        "providerImageParts": 0,
-        "providerTextOnly": False,
+        "providerImageParts": min(10, sum(
+            1 for p in parts if isinstance(p, dict)
+            and isinstance(p.get("inlineData"), dict)
+            and bool(p["inlineData"].get("data")))),
+        "providerTextOnly": text_only,
     }
 
 
