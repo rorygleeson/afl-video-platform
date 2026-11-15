@@ -244,6 +244,7 @@ const input = document.getElementById('selfie');
     videoSubmissionLog.clear();
     preflightCheckedJobId = null;
     lastImageScenes = {};
+    document.getElementById('imageDiagnosticsText').textContent = 'No image failure diagnostics recorded.';
     syncImageRetryCountdown();
     videoTestSection.hidden = true;
     videoTestMessage.textContent = '';
@@ -759,6 +760,27 @@ const input = document.getElementById('selfie');
       pollErrors = 0;
       const scenes = record.job.scenes || {};
       lastImageScenes = scenes;
+      // Read-only, allowlisted diagnostic values from the existing status GET.
+      // Never show raw Google response text, prompts, identity images or tokens.
+      const imageFailures = ['scene1', 'scene2', 'scene3']
+        .filter(id => scenes[id]?.status === 'FAILED')
+        .map(id => {
+          const scene = scenes[id];
+          const categories = Array.isArray(scene.providerBlockedCategories)
+            ? scene.providerBlockedCategories.join(', ') || 'None reported' : 'Not recorded';
+          return [
+            id + ': ' + (scene.errorCode || 'GOOGLE_IMAGE_FAILED'),
+            '  Google finish reason: ' + (scene.providerFinishReason || 'Not recorded'),
+            '  Google prompt block reason: ' + (scene.providerBlockReason || 'Not recorded'),
+            '  Blocked safety categories: ' + categories,
+            '  Candidate count: ' + (scene.providerCandidateCount ?? 'Not recorded'),
+            '  Automatic retry: No (only confirmed HTTP 429 responses retry)',
+          ].join('\n');
+        });
+      document.getElementById('imageDiagnosticsText').textContent =
+        imageFailures.length ? imageFailures.join('\n\n') :
+          'No image failure diagnostics recorded.';
+
       // Only show video controls after all three reference images are complete.
       const referenceImagesReady = ['scene1', 'scene2', 'scene3']
         .every(id => scenes[id]?.status === 'COMPLETED' && (sceneResults.images || []).some(image => image.sceneId === id && image.url));
