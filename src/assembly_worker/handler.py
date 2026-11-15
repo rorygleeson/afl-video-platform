@@ -96,7 +96,7 @@ def render_personal_message(source, destination, message, duration, directory):
     if not lines or len(lines) > 3:
         raise AssemblyError("INVALID_PERSONAL_MESSAGE")
     text_file = directory / "greeting.txt"
-    text_file.write_text("\\n".join(lines), encoding="utf-8")
+    text_file.write_text("\n".join(lines), encoding="utf-8")
     # 0.5 seconds before the original finish, fade in the text; then hold it.
     start = max(0, duration - 0.5)
     filter_graph = (
