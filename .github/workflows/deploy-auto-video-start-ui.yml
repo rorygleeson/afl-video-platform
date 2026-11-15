@@ -1,6 +1,7 @@
 name: Deploy video Preparing status text (frontend only)
 # Frontend-only release: selfie removal control; no backend or paid-generation changes.
 # Regression fixture now covers removing and reselecting a local selfie.
+# Validate cleared image src and publish only the three UI files.
 on:
   push:
     branches: [main]
