@@ -55,6 +55,12 @@ class WatchdogTests(unittest.TestCase):
         self.states.describe_execution.return_value["stopDate"]=NOW-timedelta(seconds=80)
         self.assertEqual(self.w.reconcile(self.job,NOW),"WAIT_IMAGE_EXECUTION")
         self.api.invoke.assert_not_called()
+    def test_approved_sequence_with_missing_first_reservation_replays_image_success(self):
+        self.job["videoSequence"]={"status":"APPROVED","mode":"AWS_EVENT_DRIVEN"}
+        self.assertEqual(self.w.reconcile(self.job,NOW),"NEXT_SCENE_REQUESTED")
+        self.assertIn(b"afl-app-dev-scene1-pilot",self.api.invoke.call_args.kwargs["Payload"])
+        self.ddb.update_item.assert_not_called()
+
     def test_skips_when_paid_reservation_exists(self):
         self.job["videoSequence"]={"status":"APPROVED"}
         self.job["paidVideoApprovals"]={"scene1":{"executionName":f"real-{ID}-scene1"}}
