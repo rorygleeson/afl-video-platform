@@ -30,14 +30,15 @@ jobs:
           grep -q 'personal-message-hint' frontend/index.html
           grep -q '#personalMessage{display:block;box-sizing:border-box;width:100%' frontend/styles.css
           node --test tests/test_frontend_poll.cjs
-          grep -q 'async function submitVideoSequence(jobId)' frontend/app.js
-          grep -q 'autoSequenceAttemptedJobs.add(jobId)' frontend/app.js
+          # Job creation still records consent, but video/stitching POSTs are AWS-owned.
           grep -q 'confirmPaidSequence: true' frontend/app.js
-          grep -q 'autoAssemblyAttemptedJobs.add(jobId)' frontend/app.js
+          ! grep -q 'submitVideoSequence(' frontend/app.js
+          ! grep -q 'submitFinalAssembly(' frontend/app.js
+          ! grep -q "autoSequenceAttemptedJobs.add" frontend/app.js
+          ! grep -q "autoAssemblyAttemptedJobs.add" frontend/app.js
           grep -q 'VIDEO_AVERAGE_SECONDS' frontend/app.js
           grep -q 'scene1ProgressBar' frontend/index.html
           grep -q 'assemblyProgressBar' frontend/index.html
-          grep -q 'async function submitFinalAssembly(jobId)' frontend/app.js
           grep -q 'retryVideoScene1' frontend/index.html
           grep -q 'retryVideoScene2' frontend/index.html
           grep -q 'retryVideoScene3' frontend/index.html
