@@ -209,8 +209,16 @@ def overall_job_progress(job):
             progress["stageStatus"] = "REVIEW_REQUIRED"
         return progress
 
-    # All three *image* scenes are complete. The legacy job.status alone
-    # cannot say whether the videos or stitched final output have finished.
+    # Scene writes can finish just before the image workflow's Finalize task.
+    # Keep reporting IMAGES until the overall image job is terminal-success.
+    if job.get("status") != "COMPLETED":
+        progress["stageStatus"] = (
+            "PROCESSING" if job.get("status") == "GENERATING_IMAGES"
+            else "REVIEW_REQUIRED"
+        )
+        return progress
+
+    # All three images and the image workflow have completed successfully.
     for index, scene in enumerate(VIDEO_SCENES, start=1):
         video = videos.get(scene) or {}
         expected = f"videos/{job['jobId']}/{scene}.mp4"
