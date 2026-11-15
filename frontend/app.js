@@ -71,10 +71,7 @@ const input = document.getElementById('selfie');
     updateImageRetryCountdowns();
   }
   let preflightCheckedJobId = null;
-  // Never auto-submit a paid sequence twice for the same job in this page.
-  const autoSequenceAttemptedJobs = new Set();
-  // Assembly starts at most once per job in this page; never retry an uncertain POST.
-  const autoAssemblyAttemptedJobs = new Set();
+  // Generation and stitching progression are owned by AWS, not browser polling.
   const SCENE_LABELS = ['Run-up', 'Winning kick', 'Celebration'];
   let activeScenePreview = null;
   // Historical successful run averages measured in DynamoDB (seconds).
@@ -365,22 +362,10 @@ const input = document.getElementById('selfie');
         return prior.mode === 'REAL' && prior.status === 'COMPLETED' &&
           !!prior.url && !prior.mock;
       });
-      // A fresh job automatically starts its first paid sequence once all
-      // three reference images and the backend's paid-scene approvals exist.
-      // Do not auto-resubmit approved, failed, or uncertain sequences.
+      // Backend owns the paid sequence after the job's recorded consent.
+      // This GET only renders state: never submit a paid video from polling.
       generateAllVideos.hidden = true;
       generateAllVideos.disabled = true;
-      const sequenceNotStarted = !data.sequence?.status ||
-        data.sequence.status === 'NOT_REQUESTED';
-      const noRealAttempts = [1, 2, 3].every(n =>
-        data.videos?.['scene' + n]?.mode !== 'REAL');
-      if (availablePaidScenes.length === 3 && sequenceNotStarted &&
-          noRealAttempts && !videoBatchSubmitting &&
-          !videoSequenceAttemptUncertain &&
-          !autoSequenceAttemptedJobs.has(jobId)) {
-        autoSequenceAttemptedJobs.add(jobId);
-        void submitVideoSequence(jobId);
-      }
       for (const n of [1, 2, 3]) {
         // Render only the current stage and already completed stages.
         // A failed stage remains visible for diagnostics/manual retry.
@@ -552,14 +537,9 @@ const input = document.getElementById('selfie');
         assemblyProgressJobId = jobId;
         assemblyProgressStartedAt = Date.now();
       }
-      // The former Stitch button gate is now the automatic assembly trigger.
+      // Backend owns Scene 3 -> FFmpeg. This page only displays assembly state.
       assembleButton.hidden = true;
       assembleButton.disabled = true;
-      if (readyForAssembly && assembly.enabled && assembly.status === 'READY' &&
-          !autoAssemblyAttemptedJobs.has(jobId)) {
-        autoAssemblyAttemptedJobs.add(jobId);
-        void submitFinalAssembly(jobId);
-      }
       const display = {READY:'Generating final video…', QUEUED:'Generating final video…',
         PROCESSING:'Generating final video…', COMPLETED:'Your final video is ready!',
         FAILED:'Final video generation failed', REVIEW_REQUIRED:'Final video needs review'};
@@ -951,50 +931,6 @@ const input = document.getElementById('selfie');
   });
 
 
-  async function submitVideoSequence(jobId) {
-    if (jobId !== currentJobId || videoTestSection.hidden ||
-        videoBatchSubmitting || videoSequenceAttemptUncertain) return;
-    const count = availablePaidScenes.length;
-    if (!count || !lastVideoSnapshot) return;
-    // The user requested automatic generation after reference-image success.
-    // Preserve the existing single paid API submission and error handling.
-    videoBatchSubmitting = true;
-    videoSequenceAttemptUncertain = true;
-    generateAllVideos.hidden = true;
-    generateAllVideos.disabled = true;
-    const submission = {
-      status: 'Submitting one paid sequence approval to AWS…',
-      events: ['Automatic three-scene AWS sequence: ' + new Date().toLocaleTimeString(),
-               'POST /jobs/' + jobId + '/real-videos/sequence started']
-    };
-    videoSubmissionLog.set('scene1', submission);
-    document.getElementById('scene1PaidStatus').textContent = submission.status;
-    try {
-      const result = await api('/jobs/' + jobId + '/real-videos/sequence', {
-        method: 'POST',
-        headers: {'Idempotency-Key': crypto.randomUUID()},
-        body: JSON.stringify({confirmPaidSequence: true}),
-      });
-      submission.status = 'AWS sequential generation approved. Checking Scene 1…';
-      submission.events.push('API response: ' + (result.status || 'ACCEPTED') +
-                             ' at ' + new Date().toLocaleTimeString());
-      videoTestMessage.textContent = '';
-    } catch (error) {
-      submission.status = 'Sequence approval needs review: ' + error.message +
-        '. Check status before submitting another paid request.';
-      submission.events.push('API error: ' + error.message);
-      submission.events.push('Result may be uncertain; paid request will NOT be retried.');
-      videoTestMessage.textContent = submission.status;
-    } finally {
-      videoBatchSubmitting = false;
-      if (jobId === currentJobId) {
-        document.getElementById('scene1PaidStatus').textContent = submission.status;
-        document.getElementById('videoDebugText1').textContent = submission.events.join('\n');
-        void refreshVideos();
-      }
-    }
-  }
-
   // A retry is explicitly confirmed, charged separately and applies to only
   // one terminal failed video. Existing reference images and successful MP4s stay.
   for (const n of [1, 2, 3]) {
@@ -1084,23 +1020,6 @@ const input = document.getElementById('selfie');
         button.disabled = false;
       }
     });
-  }
-
-  async function submitFinalAssembly(jobId) {
-    if (jobId !== currentJobId) return;
-    document.getElementById('assemblyStatus').textContent = 'Generating final video…';
-    document.getElementById('assemblyStatus').classList.add('generating');
-    try {
-      await api('/jobs/' + jobId + '/assembly', {method:'POST'});
-      if (jobId === currentJobId) void refreshVideos();
-    } catch (error) {
-      if (jobId === currentJobId) {
-        document.getElementById('assemblyStatus').textContent =
-          'Assembly request uncertain: ' + error.message + '. Checking existing job; no automatic retry.';
-        document.getElementById('assemblyStatus').classList.remove('generating');
-        void refreshVideos();
-      }
-    }
   }
 
   document.getElementById('downloadFinal').addEventListener('click', async () => {
