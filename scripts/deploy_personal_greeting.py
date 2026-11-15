@@ -37,6 +37,11 @@ def digest(raw):
 
 def zip_package(kind, old, font):
     output = io.BytesIO()
+    dependencies = Path("dist/greeting-deps")
+    if kind == "assembly":
+        assert (dependencies / "PIL" / "__init__.py").is_file(), (
+            "Pillow dependency package not bundled"
+        )
     with zipfile.ZipFile(io.BytesIO(old)) as original:
         assert original.testzip() is None
         names = original.namelist()
@@ -58,17 +63,27 @@ def zip_package(kind, old, font):
                                                     original.read(member.filename)))
             if kind == "assembly":
                 z.writestr("DejaVuSans.ttf", font)
+                for local in sorted(dependencies.rglob("*")):
+                    if local.is_file() and "__pycache__" not in local.parts:
+                        key = local.relative_to(dependencies).as_posix()
+                        assert key not in names, "Worker dependency conflict: " + key
+                        z.write(local, key, compress_type=zipfile.ZIP_DEFLATED)
     payload = output.getvalue()
     with zipfile.ZipFile(io.BytesIO(payload)) as z:
         assert z.testzip() is None
         for name, value in replacements.items():
             assert z.read(name) == value
-        assert set(z.namelist()) == set(names) | ({"DejaVuSans.ttf"} if kind == "assembly" else set())
+        assert set(names).issubset(set(z.namelist()))
+        if kind == "assembly":
+            assert z.read("DejaVuSans.ttf") == font
+            assert "PIL/__init__.py" in z.namelist()
     return payload
 
 
 def check_ffmpeg_layer(s3, key, font):
-    """Use exactly the currently deployed static FFmpeg binary, not runner FFmpeg."""
+    """Test the exact live static FFmpeg against PNG overlay, fade and tpad."""
+    from PIL import Image, ImageDraw, ImageFont
+
     with tempfile.TemporaryDirectory() as location:
         root = Path(location)
         blob = s3.get_object(Bucket=BUCKET, Key=key)["Body"].read()
@@ -83,34 +98,38 @@ def check_ffmpeg_layer(s3, key, font):
         ffprobe.chmod(0o755)
         filters = subprocess.run([str(ffmpeg), "-filters"], capture_output=True,
                                  text=True, timeout=20, check=True).stdout
-        assert " drawtext " in filters and " tpad " in filters, (
-            "STOP: deployed FFmpeg lacks drawtext or tpad"
-        )
-        # Run actual representative filter using the deployed ffmpeg layer and font.
-        font_path = root / "DejaVuSans.ttf"
-        font_path.write_bytes(font)
-        message = root / "message.txt"
-        message.write_text("Happy Birthday Dad,\\nfrom Mary", encoding="utf-8")
+        for required in (" overlay ", " tpad ", " fade "):
+            assert required in filters, "STOP: deployed FFmpeg missing " + required
+        print("LIVE_FFMPEG_FILTERS_AVAILABLE: overlay, tpad, fade", flush=True)
+        card = Image.new("RGBA", (720,1280), (0,0,0,0))
+        draw = ImageDraw.Draw(card)
+        draw.rounded_rectangle((24,1040,696,1235),radius=18,fill=(0,0,0,188))
+        font_file = root / "font.ttf"
+        font_file.write_bytes(font)
+        text_font = ImageFont.truetype(str(font_file),35)
+        draw.text((70,1100),"Happy Birthday Dad",font=text_font,fill="white")
+        picture = root / "card.png"
+        card.save(picture)
         sample = root / "test.mp4"
-        vf = ("tpad=stop_mode=clone:stop_duration=2,"
-              "drawbox=x=24:y=1040:w=672:h=195:color=black@0.70:t=fill:"
-              "enable='gte(t,0.5)',"
-              f"drawtext=fontfile={font_path}:textfile={message}:expansion=none:"
-              "fontcolor=white:fontsize=35:line_spacing=9:"
-              "x=(w-text_w)/2:y=1040+(195-text_h)/2:"
-              "alpha='min(1,max(0,(t-0.5)/0.5))'")
-        subprocess.run([str(ffmpeg), "-nostdin", "-hide_banner", "-loglevel", "error",
-                        "-f", "lavfi", "-i", "color=c=blue:s=720x1280:r=15:d=1",
-                        "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast",
-                        "-pix_fmt", "yuv420p", "-y", str(sample)],
-                       capture_output=True, text=True, timeout=90, check=True)
+        vf = ("[0:v]tpad=stop_mode=clone:stop_duration=2[base];"
+              "[1:v]format=rgba,fade=t=in:st=0.500:d=0.5:alpha=1[card];"
+              "[base][card]overlay=0:0:shortest=1:format=auto[v]")
+        result = subprocess.run(
+            [str(ffmpeg), "-nostdin", "-hide_banner", "-loglevel", "error",
+             "-f", "lavfi", "-i", "color=c=blue:s=720x1280:r=15:d=1",
+             "-loop", "1", "-framerate", "30", "-i", str(picture),
+             "-filter_complex", vf, "-map", "[v]", "-c:v", "libx264",
+             "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-t", "3",
+             "-y", str(sample)], capture_output=True, text=True, timeout=90)
+        if result.returncode:
+            print("LIVE_FFMPEG_RENDER_PRECHECK_FAILED:",
+                  result.stderr[-1200:],flush=True)
+            raise RuntimeError("Deployed FFmpeg cannot composite PNG greetings")
         probe = subprocess.run([str(ffprobe), "-v", "error", "-show_entries",
                                 "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
                                 str(sample)], capture_output=True, text=True,
                                timeout=15, check=True)
-        assert float(probe.stdout.strip()) >= 2.9, (
-            "STOP: deployed FFmpeg did not extend video by two seconds"
-        )
+        assert float(probe.stdout.strip()) >= 2.9
         print("LIVE_FFMPEG_LAYER_GREETING_RENDER_VERIFIED", flush=True)
 
 
