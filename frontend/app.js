@@ -33,23 +33,22 @@ const input = document.getElementById('selfie');
   const savedSelfieNote = document.getElementById('savedSelfieNote');
   // Terminal decisions and reason are authoritative AWS job fields, never
   // inferred from a scene's retry flag or a local timer.
-  function isContentBlocked(progress) {
+  function isTerminalFailure(progress) {
     return progress?.terminal === true &&
       progress?.outcome === 'FAILED' &&
-      progress?.stageStatus === 'BLOCKED' &&
-      progress?.failureCode === 'CONTENT_BLOCKED';
+      ['CONTENT_BLOCKED', 'REFERENCE_IMAGES_FAILED',
+        'VIDEO_ATTEMPTS_EXHAUSTED', 'STITCHING_FAILED'].includes(progress.failureCode);
   }
   function renderBackendOutcome(progress) {
-    const blocked = isContentBlocked(progress);
-    document.getElementById('jobFailureScreen').hidden = !blocked;
-    document.getElementById('jobInputsSection').hidden = blocked;
-    document.getElementById('jobFailureNotice').textContent = blocked
-      ? (progress.message ||
-        'This video could not be generated because the content did not meet generation guidelines.')
+    const terminalFailed = isTerminalFailure(progress);
+    document.getElementById('jobFailureScreen').hidden = !terminalFailed;
+    document.getElementById('jobInputsSection').hidden = terminalFailed;
+    document.getElementById('jobFailureNotice').textContent = terminalFailed
+      ? (progress.message || 'We could not complete this video. The job has ended.')
       : '';
     // Do not clear stored customer inputs, S3 images, MP4s, or the saved job ID.
     // The same terminal view is restored after refreshing the browser.
-    if (blocked) {
+    if (terminalFailed) {
       document.getElementById('jobProgressSection').hidden = true;
       videoTestSection.hidden = true;
       resumeNotice.hidden = true;
@@ -181,7 +180,7 @@ const input = document.getElementById('selfie');
       if (!record.job || record.job.jobId !== id) throw new Error('Job record did not match.');
       if (currentJobId || savedJobId() !== id) return;
       selectExistingJob(id, record.job);
-      if (!isContentBlocked(latestJobProgress)) {
+      if (!isTerminalFailure(latestJobProgress)) {
         void restoreSelfie(id);
         resumeNotice.textContent = 'Resumed your previous video. Progress is saved in AWS.';
       } else {
@@ -617,7 +616,7 @@ const input = document.getElementById('selfie');
       updateNewJobAvailability();
       // Failure is already terminal in DynamoDB. No more video polls,
       // previews or customer-facing scene cards for this failed job.
-      if (isContentBlocked(latestJobProgress)) return;
+      if (isTerminalFailure(latestJobProgress)) return;
       if (data.sequence?.status === "APPROVED") videoSequenceAttemptUncertain = false;
       availablePaidScenes = [1, 2, 3].filter(n => {
         const id = 'scene' + n;
@@ -1111,7 +1110,7 @@ const input = document.getElementById('selfie');
       latestJobProgress = record.job.progress || null;
       if (latestJobProgress?.finalVideoReady === true) showFinalOnlyView(true);
       updateNewJobAvailability();
-      if (isContentBlocked(latestJobProgress)) {
+      if (isTerminalFailure(latestJobProgress)) {
         stopPolling();
         return;
       }
@@ -1143,7 +1142,7 @@ const input = document.getElementById('selfie');
         .every(id => scenes[id]?.status === 'COMPLETED' && (sceneResults.images || []).some(image => image.sceneId === id && image.url));
       videoTestSection.hidden = !(referenceImagesReady ||
         latestJobProgress?.finalVideoReady === true ||
-        latestJobProgress?.stageStatus === 'BLOCKED');
+        isTerminalFailure(latestJobProgress));
       if (!referenceImagesReady) {
         stopVideoPoll();
       }
@@ -1194,7 +1193,7 @@ const input = document.getElementById('selfie');
       }
       syncImageRetryCountdown();
       if (referenceImagesReady || latestJobProgress?.finalVideoReady === true ||
-          latestJobProgress?.stageStatus === 'BLOCKED') {
+          isTerminalFailure(latestJobProgress)) {
         void refreshVideos();
         // Run once per visible job. A manual recheck remains available if inputs change.
         if (preflightCheckedJobId !== requestedJobId) {
