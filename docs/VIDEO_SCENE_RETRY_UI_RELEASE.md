@@ -1,5 +1,7 @@
 # Isolated scene-retry UI publish after guarded backend release
 
+> **DOCUMENT STATUS — HISTORICAL / STAGE-SPECIFIC (reviewed 16 November 2026).** This records the design, release or resource assumptions at its original date; some model providers, payment gates, retries, waits, deployment commands and UI behaviour have since changed. **Do not use this file as today's operational contract or run its historical deployment instructions without a new live-state review.** Current references: [documentation index](README.md), [HTTP API](API_ENDPOINTS.md), [retry and timeout contract](RETRIES_AND_TIMEOUTS.md), [job statuses](JOB_STATUSES.md), [architecture](ARCHITECTURE.md), and [resilience audit](RESILIENCE_AUDIT_2026-11-16.md).
+
 The guarded release https://github.com/rorygleeson/afl-video-platform/actions/runs/43208416471
 verified both updated AWS Lambdas, then stopped before publishing UI because
 the frontend CloudFormation stack had not been updated since its creation.
