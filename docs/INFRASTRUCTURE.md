@@ -55,21 +55,7 @@
 
 **Type:** STANDARD; `TimeoutSeconds: 1800`; main states and links:
 
-```mermaid
-flowchart TD
-  P[Prepare] --> M["ParallelScenes Map (MaxConcurrency 3)"]
-  P -- failure --> R[RecoverJob]
-  M --> F[Finalize]
-  M -- failure --> R
-  F -- failure --> R
-  M -. each scene .-> G[Generate]
-  G --> C{AssessImageResult}
-  G -- error --> X[MarkSceneFailed]
-  C -- RETRY_WAIT --> W[WaitForGoogleCapacity]
-  W --> G
-  C -- COMPLETED --> S[SceneCompleted]
-  C -- other --> X
-```
+![Image processing and backend architecture](architecture-high-level.svg)
 
 - `Prepare` Lambda `op:prepare`, locks input assets in preflight, updates DDB.
 - Inline Map `ItemsPath: $.prepared.Payload.scenes`, three scene IDs, `MaxConcurrency:3`. This permits all three image branches to execute concurrently; each scene independently handles 429 wait/retry and completion/failure.
@@ -81,17 +67,7 @@ flowchart TD
 
 **Type:** STANDARD; `TimeoutSeconds:3600`; per-scene named execution:
 
-```mermaid
-flowchart TD
- G[PaidGate] --> C[Claim]
- C --> P[Submit]
- P --> W[WaitForVideo 20s]
- W --> L[PollVideo]
- L --> I{InspectVideo}
- I -- WAITING --> W
- I -- COMPLETED/FAILED --> F[Finalize]
- I -- other --> U[UnexpectedStatus Fail]
-```
+![Current video sequence and retry rules](generation-and-retries.svg)
 
 - `PaidGate` and `Claim` enforce current dev approval and per-scene ownership. **No Stripe payment verification exists**.
 - `Submit` is a single billable POST **without** a state-machine Retry.
