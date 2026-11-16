@@ -1,7 +1,7 @@
 name: Deploy flicker-free temporary scene preview (frontend only)
 # Frontend-only release: show stitched final video alone after completion, including refresh.
 # Backend BLOCKED terminal outcome opens a failure-only screen; old job preserved for audit.
-# Includes refresh/reopen and no-duplicate-submission regression tests.
+# Includes refresh/reopen, no-duplicate-submission and no-flicker playback regression tests.
 # Regression fixture covers selfie reselect and AWS-owned video/stitching UI progression.
 # Validate cleared image src and publish only the three UI files.
 on:
