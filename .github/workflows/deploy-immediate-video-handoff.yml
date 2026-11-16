@@ -1,4 +1,5 @@
 name: Deploy immediate sequential video handoff (backend Step Functions only)
+# Re-run after correcting fixture: PollVideo GET retries are intentionally preserved.
 on:
   push:
     branches: [main]
