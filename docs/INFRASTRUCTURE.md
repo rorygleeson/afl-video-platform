@@ -46,7 +46,7 @@
 - API: returns JSON 400, 404, 409, 500 or 503 as appropriate; 202 only means queued/requested. Conditional DDB claims protect generation submission; errors from ambiguous SFN handoff are not blindly retried.
 - Image Lambda: per-scene conditional state transitions; explicit 429 only may generate `RETRY_WAIT` and reenter via SFN Wait, with max 8 model attempts/600s retry window. Other errors cause failed stage; image watchdog only terminalises stale work.
 - Video Lambda: writes `SUBMISSION_UNKNOWN` before POST, persists Google `interactionId` when returned, polls read-only, and records provider status. **No automatic paid Submit retry**; read-only polling TaskFailed retry configured in SFN.
-- Assembly Lambda: conditionally `QUEUED → PROCESSING → COMPLETED|FAILED`, attempts failure status persistence but no SFN Retry/Catch. All three input MP4s are retained on failure.
+- Assembly Lambda: conditionally `QUEUED → PROCESSING → COMPLETED|FAILED`. Assembly SFN **catches the first task failure**, waits 15s and tries one extra FFmpeg-only task **only** when the worker durably recorded `FAILED,retryCount=0`. An ambiguous PROCESSING timeout is not retried. The API keeps first-attempt failure nonterminal until settled. All three source MP4s remain preserved.
 - Detailed retry/timeout matrix: [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md).
 
 ## Step Functions inventory
@@ -84,12 +84,7 @@ flowchart TD
 ```mermaid
 flowchart TD
  G[PaidGate] --> C[Claim]
- C --> S{SubmissionSchedule}
- S -- scene1 --> P[Submit]
- S -- scene2 --> W2[WaitScene2 10s]
- S -- scene3 --> W3[WaitScene3 20s]
- W2 --> P
- W3 --> P
+ C --> P[Submit]
  P --> W[WaitForVideo 20s]
  W --> L[PollVideo]
  L --> I{InspectVideo}
@@ -103,11 +98,11 @@ flowchart TD
 - `PollVideo` has `Retry: [{ErrorEquals:[States.TaskFailed], IntervalSeconds:10, MaxAttempts:3, BackoffRate:2}]` — initial + up to 3 extra read-only invocations.
 - Each provider `WAITING` status loops via another 20s Wait. Unknown status enters explicit Fail, not a new generation.
 - Successful image workflow completion emits an EventBridge event (dedicated `afl-app-dev-images-to-video` rule); API checks persisted consent and three completed images before starting Video 1. Successful Google video workflow emits another event (dedicated `afl-app-dev-google-video-completed` rule). API checks attempt ownership and S3/DDB completion before advancing to Video 2/3; **after verified Scene 3**, handler now calls `start_assembly()` and starts `final-{jobId}` only once, using existing conditional DDB reservation.
-- 10 total attempts per failed scene (API enforces user-confirmed retry eligibility after provider terminal failure and previous workflow safely stopped).
+- Up to 10 **total** attempts per failed scene (API enforces user-confirmed retry eligibility after provider terminal failure and previous workflow safely stopped). Immediate scene-to-scene handoff follows EventBridge verification without fixed 10/20-second staggering. 
 
 ### Final assembly — `afl-app-dev-assembly`
 
-**Type:** STANDARD; one `Stitch` Lambda Task. No explicit `TimeoutSeconds` at state-machine level, Retry or Catch in current definition. Actual Lambda timeout **600s**. Named execution `final-{jobId}` prevents second identical SFN execution; worker does not reset `FAILED` to `QUEUED` today.
+**Type:** STANDARD; `Stitch` Lambda Task with Catch → `WaitBeforeConfirmedRetry(15s)` → `RetryConfirmedAssemblyFailure`, whose own Catch ends in `AssemblyNeedsReview`. One safe FFmpeg-only retry after a persisted worker failure; the retry worker conditionally claims `FAILED,retryCount=0 → PROCESSING,retryCount=1`. Actual Lambda timeout **600s**. Stable named execution `final-{jobId}` and DynamoDB guards protect against duplicate assembly starts. API `assembly_failure_disposition` reports first failure as `RETRYING` (nonterminal), confirmed second failure as permanent only after failed named SFN.
 
 ### Legacy mock — `afl-app-dev-video`
 
@@ -195,7 +190,7 @@ Versioned scenario configuration/prompt and team master artwork under `scenarios
 - [ ] Step Functions event rule, event target retry/DLQ, provider polling/retry behavior and job-wide watchdog.
 - [ ] Verify actual S3 `videos/` lifecycle, storage duration, object-level encryption and access, backup/PITR of jobs.
 - [ ] Create genuine secure anonymous recovery and payment-entitlement controls before charging consumers; developer API key is insufficient.
-- [x] Backend-triggered stitching implemented and guarded-deployment verified (run 43689754297). [ ] Bounded assembly-only retry and lost-handoff recovery remain future work; no code, CloudFormation or model change in this documentation update.
+- [x] Backend-triggered stitching implemented (43689754297). [x] Bounded FFmpeg-only retry and reserved assembly execution reconciliation implemented and resource-verified (43775514956). [x] Premature customer terminal failure corrected and deployed (43835732389). [ ] Live injected retry-success/second-failure tests, missed-event/watchdog-start coverage and indefinite-unknown recovery remain open.
 - [ ] Confirm CloudWatch alerts, cost monitoring and runbooks. Never expose selfies, customer names, API keys or provider bearer tokens in logs or docs.
 
 This is a **documentation snapshot only**; the code, CloudFormation deployment and provider integrations have not been altered.
