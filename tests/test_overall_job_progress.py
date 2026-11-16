@@ -15,6 +15,12 @@ progress_fn = next(
     node for node in source.body
     if isinstance(node, ast.FunctionDef) and node.name == "overall_job_progress"
 )
+terminal_fns = [node for node in source.body if isinstance(node, ast.FunctionDef)
+                and node.name in ("definitive_failure", "terminal_failure_progress")]
+terminal_messages = next(node for node in source.body
+                         if isinstance(node, ast.Assign) and any(
+                             isinstance(t, ast.Name) and t.id == "TERMINAL_FAILURE_MESSAGES"
+                             for t in node.targets))
 
 
 def make_job(status="COMPLETED", images=None, videos=None, assembly=None, sequence=None, approvals=None):
@@ -61,10 +67,11 @@ class ProgressTests(unittest.TestCase):
 
         scope = {
             "VIDEO_SCENES": ("scene1", "scene2", "scene3"),
+            "MAX_VIDEO_ATTEMPTS": 10,
             "video_scene_public": video_projection,
             "assembly_public": assembly_projection,
         }
-        unit = ast.Module(body=[progress_fn], type_ignores=[])
+        unit = ast.Module(body=[terminal_messages, *terminal_fns, progress_fn], type_ignores=[])
         exec(compile(unit, filename=str(SOURCE), mode="exec"), scope)
         self.calculate = scope["overall_job_progress"]
 
@@ -95,9 +102,13 @@ class ProgressTests(unittest.TestCase):
                    "IMAGES", "RETRYING", 1, 0)
 
     def test_partially_successful_image_workflow(self):
-        self.check(make_job(status="PARTIAL_SUCCESS",
+        result = self.check(make_job(status="PARTIAL_SUCCESS",
                             images=("FAILED", "COMPLETED", "COMPLETED")),
                    "IMAGES", "FAILED", 2, 0)
+        self.assertTrue(result["terminal"])
+        self.assertEqual(result["outcome"], "FAILED")
+        self.assertEqual(result["failureCode"], "REFERENCE_IMAGES_FAILED")
+        self.assertFalse(result["retryable"])
 
     def test_image_completion_waits_for_finalize(self):
         self.check(make_job(status="GENERATING_IMAGES"),
@@ -126,7 +137,8 @@ class ProgressTests(unittest.TestCase):
     def test_failed_video_does_not_advance(self):
         job = make_job(sequence={"status": "APPROVED"},
                        videos={"scene1": {"status": "FAILED"}})
-        self.check(job, "VIDEO_1", "FAILED", 3, 0)
+        result = self.check(job, "VIDEO_1", "FAILED", 3, 0)
+        self.assertFalse(result["terminal"])
 
     def test_video_two_running(self):
         job = make_job(sequence={"status": "APPROVED"},
@@ -161,7 +173,9 @@ class ProgressTests(unittest.TestCase):
         for n in (1, 2, 3):
             complete_video(job, n)
         self.assembly_response = {"status": "FAILED"}
-        self.check(job, "STITCHING", "FAILED", 3, 3)
+        result = self.check(job, "STITCHING", "FAILED", 3, 3)
+        self.assertTrue(result["terminal"])
+        self.assertEqual(result["failureCode"], "STITCHING_FAILED")
 
     def test_final_video_ready(self):
         job = make_job(assembly={"status": "COMPLETED"})
@@ -170,6 +184,40 @@ class ProgressTests(unittest.TestCase):
         self.assembly_response = {"status": "COMPLETED", "url": "https://example.invalid/signed"}
         result = self.check(job, "COMPLETED", "COMPLETED", 3, 3)
         self.assertTrue(result["finalVideoReady"])
+        self.assertTrue(result["terminal"])
+        self.assertEqual(result["outcome"], "COMPLETED")
+
+
+    def test_exhausted_video_terminal_only_after_confirmed_provider_failure(self):
+        job = make_job(sequence={"status": "APPROVED"},
+                       approvals={"scene2": {"attemptNumber": 10}},
+                       videos={"scene2": {"status": "FAILED",
+                                         "providerFinalStatus": "failed",
+                                         "providerFailureObservedAt": "2026-11-16T00:00:00Z"}})
+        complete_video(job, 1)
+        result = self.check(job, "VIDEO_2", "FAILED", 3, 1)
+        self.assertTrue(result["terminal"])
+        self.assertEqual(result["outcome"], "FAILED")
+        self.assertEqual(result["failureCode"], "VIDEO_ATTEMPTS_EXHAUSTED")
+        self.assertEqual(result["failedScene"], "scene2")
+        job["realVideos"]["scene2"]["providerFinalStatus"] = None
+        self.assertFalse(self.calculate(job)["terminal"])
+        job["realVideos"]["scene2"]["providerFinalStatus"] = "failed"
+        job["paidVideoApprovals"]["scene2"]["attemptNumber"] = 9
+        self.assertFalse(self.calculate(job)["terminal"])
+
+    def test_content_block_takes_precedence_over_image_failure(self):
+        job = make_job(status="FAILED", images=("FAILED",)*3,
+                       sequence={"status": "BLOCKED", "failureCode": "CONTENT_BLOCKED",
+                                 "failedScene": "scene1", "terminalAt": "timestamp"})
+        result = self.check(job, "VIDEO_1", "BLOCKED", 0, 0)
+        self.assertEqual(result["failureCode"], "CONTENT_BLOCKED")
+
+    def test_partial_image_failure_while_processing_does_not_terminate(self):
+        job = make_job(status="GENERATING_IMAGES",
+                       images=("FAILED", "GENERATING", "COMPLETED"))
+        result = self.check(job, "IMAGES", "PROCESSING", 1, 0)
+        self.assertFalse(result["terminal"])
 
     def test_completed_videos_must_have_correct_result_keys(self):
         job = make_job(sequence={"status": "APPROVED"})
