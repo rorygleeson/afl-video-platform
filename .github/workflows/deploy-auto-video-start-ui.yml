@@ -1,7 +1,7 @@
-name: Deploy flicker-free temporary scene preview (frontend only)
-# Frontend-only release: show stitched final video alone after completion, including refresh.
+name: Deploy safe Start New Video from REVIEW_REQUIRED (frontend only)
+# Frontend-only release: allow fresh selfie upload from REVIEW_REQUIRED without repeating an uncertain Google POST.
 # Backend BLOCKED terminal outcome opens a failure-only screen; old job preserved for audit.
-# Includes refresh/reopen, no-duplicate-submission and no-flicker playback regression tests.
+# Includes review-state escape, confirmation, refresh/reopen, no-duplicate-submission and playback regression tests.
 # Regression fixture covers selfie reselect and AWS-owned video/stitching UI progression.
 # Validate cleared image src and publish only the three UI files.
 on:
@@ -34,6 +34,8 @@ jobs:
           grep -q 'afl-video-active-job-v1' frontend/app.js
           grep -q 'id="startNewJob"' frontend/index.html
           grep -q 'replaySceneWithFreshUrl' frontend/app.js
+          grep -q 'const reviewStuck = progress?.stageStatus ===' frontend/app.js
+          grep -q 'Starting a NEW video does not retry or cancel this job' frontend/app.js
           grep -q 'function showFinalOnlyView(ready)' frontend/app.js
           grep -q 'id="generationVideosHeading"' frontend/index.html
           node --test tests/test_frontend_poll.cjs
