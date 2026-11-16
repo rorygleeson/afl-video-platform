@@ -165,3 +165,8 @@ reconciliation case.
 ## No fixed delay between sequential videos — 16 November 2026
 
 EventBridge completion → API verifies expected S3 MP4 and DynamoDB record → atomically reserves next named Step Functions scene execution → Google worker `PaidGate → Claim → Submit`. The historical `SubmissionSchedule` Choice, `WaitScene2` (10s) and `WaitScene3` (20s) are removed. All Google scene submissions remain sequential because the next execution is initiated only after the prior completed MP4 has been verified; no retry or duplicate paid submission protections were relaxed. Normal EventBridge/Step Functions/Lambda startup latency remains. The 20s `WaitForVideo` is still the **within-scene provider polling** interval.
+
+
+### Correct assembly lifecycle after first failure — 16 November 2026
+
+`Stitch` can fail and durably mark `assembly.FAILED`. The assembly Step Functions workflow then waits 15s and attempts **one** confirmed FFmpeg-only retry. `api.assembly_failure_disposition(job)` reads the stable `final-{jobId}` execution; a running SFN maps to customer `RETRYING` nonterminal, while final FAILED is terminal only if `retryCount=1` proves a second worker failure was recorded. Missing, aborted, timed-out, inconsistent or inaccessible SFN returns nonterminal `REVIEW_REQUIRED`. This prevents a false permanent-failure screen before safe retry; no Google request or state mutation in status GET. Other resilience gaps remain documented in the audit.
