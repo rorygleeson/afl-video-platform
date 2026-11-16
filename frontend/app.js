@@ -76,8 +76,13 @@ const input = document.getElementById('selfie');
         item.retryBlockedReason === 'MAX_ATTEMPTS_REACHED';
     });
     const assemblyFailed = assembly.status === 'FAILED';
+    // REVIEW_REQUIRED is intentionally nonterminal (Google POST acceptance
+    // can be unknown), but must not trap a developer in a read-only screen.
+    // Starting fresh requires a separate confirmation and never retries this job.
+    const reviewStuck = progress?.stageStatus === 'REVIEW_REQUIRED';
     newJobButton.hidden = !currentJobId ||
-      !(progress?.canStartNewJob === true || completed || imageFailed || exhaustedVideo || assemblyFailed);
+      !(progress?.canStartNewJob === true || completed || imageFailed ||
+        exhaustedVideo || assemblyFailed || reviewStuck);
   }
   function showCurrentJobSelfie(visible) {
     input.hidden = visible;
@@ -202,6 +207,11 @@ const input = document.getElementById('selfie');
   }
   newJobButton.addEventListener('click', () => {
     if (uploadInProgress || newJobButton.hidden) return;
+    if (latestJobProgress?.stageStatus === 'REVIEW_REQUIRED' &&
+        !isTerminalFailure(latestJobProgress) &&
+        !window.confirm('This job needs review, and Google may have accepted or charged for its video request. Starting a NEW video does not retry or cancel this job. Save the job ID for support. Continue to a fresh upload?')) {
+      return;
+    }
     stopPolling();
     resetVideoUi();
     currentJobId = null;
