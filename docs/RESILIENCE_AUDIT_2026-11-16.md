@@ -188,4 +188,4 @@ The frontend remains on the progress screen and displays “Finishing your video
 6. FFmpeg first worker fail: report nonterminal RETRYING while one safe 15s retry is possible; confirmed exhausted retry terminal only with second failure plus named SFN FAILED.
 7. No payment-ready sign-off until live ASL mismatch resolved, review queue and payment-order retention designed, and at least one controlled failure path proved with no duplicate provider POST.
 
-**Visual references:** [architecture](architecture-high-level.svg), [detailed event handoffs](event-driven-handoffs.svg), [retry/failure matrix](generation-and-retries.svg), [watchdog detail](watchdog-architecture.svg). The first three are the primary engineering diagrams; none is Mermaid.
+**Visual references:** [architecture](architecture-high-level.svg), [detailed event handoffs](event-driven-handoffs.svg), [retry/failure matrix](generation-and-retries.svg). These are the three engineering diagrams; none is Mermaid.
