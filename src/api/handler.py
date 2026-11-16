@@ -717,7 +717,8 @@ def video_status(job_id, scene_id=None):
                                        if k in ("status", "mode", "approvedAt")},
                           "paidScenes": {scene: REAL_VIDEO_MODE == "ENABLED" and not job.get("paidVideoApprovals", {}).get(scene) and not job.get("realVideos", {}).get(scene) for scene in VIDEO_SCENES},
                           "videos": {scene: video_scene_public(job, scene) for scene in VIDEO_SCENES},
-                          "assembly": assembly_public(job)})
+                          "assembly": assembly_public(job),
+                          "progress": overall_job_progress(job)})
 
 
 def start_mock_video(job_id, scene_id, event):
