@@ -1,5 +1,7 @@
 # Stage 2 — Google Omni 1.2 Flash API contract research
 
+> **DOCUMENT STATUS — HISTORICAL / STAGE-SPECIFIC (reviewed 16 November 2026).** This records the design, release or resource assumptions at its original date; some model providers, payment gates, retries, waits, deployment commands and UI behaviour have since changed. **Do not use this file as today's operational contract or run its historical deployment instructions without a new live-state review.** Current references: [documentation index](README.md), [HTTP API](API_ENDPOINTS.md), [retry and timeout contract](RETRIES_AND_TIMEOUTS.md), [job statuses](JOB_STATUSES.md), [architecture](ARCHITECTURE.md), and [resilience audit](RESILIENCE_AUDIT_2026-11-16.md).
+
 **Reviewed 8 November 2026. Documentation-only research, no authenticated Google requests, paid calls, AWS deployment or resource changes.** This note records Google's published contract, not a live verification of our particular project's quota or IAM access.
 
 ## Confirmed from official Google documentation
