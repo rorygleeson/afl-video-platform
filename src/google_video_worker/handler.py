@@ -295,7 +295,7 @@ def extract_provider_failure(reply):
             safe_messages.append(safe_message)
         searchable = (str(raw_code or "") + " " + (msg if isinstance(msg, str) else "")[:2000]).lower()
         for pattern, label in (
-            (r"safe|policy|blocked|prohibit|moderation", "SAFETY_OR_POLICY"),
+            (r"\b(?:safety|unsafe|policy|blocked|prohibited|moderation)\b|content[_ -]?filter|prohibit", "SAFETY_OR_POLICY"),
             (r"quota|rate.limit|resource.exhaust|too[_-]?many[_-]?requests|429", "QUOTA_OR_RATE_LIMIT"),
             (r"budget|billing|payment", "BILLING_OR_BUDGET"),
             (r"capacity|overload|busy|unavailable", "CAPACITY_OR_UNAVAILABLE"),
