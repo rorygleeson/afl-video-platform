@@ -49,3 +49,18 @@ These files retain their original purpose and **must not override the current co
 For every change touching `src/api/handler.py`, worker handlers, frontend status code or Step Functions: confirm whether to update the [API contract](API_ENDPOINTS.md), [status contract](JOB_STATUSES.md), [retry matrix](RETRIES_AND_TIMEOUTS.md), [architecture](ARCHITECTURE.md), [infrastructure inventory](INFRASTRUCTURE.md), and [resilience backlog](RESILIENCE_AUDIT_2026-11-16.md). Record exact tests and deployment status, and keep historical notes historical.
 
 The docs contract checker `tests/test_documentation_contract.py` is intended to run in CI to flag drift in route inventory, waits, FFmpeg retry states, primary documentation references, and unmarked historical docs. It is a **static regression check**, not an API integration test.
+
+## In-depth event-driven reference
+
+**[EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md)** is the authoritative explanation of **why** the video progression is event-driven, exactly **which** `aws.states` events are consumed, what Lambda verifies before a handoff, how duplicate or lost events behave, how the watchdog replays eligible completion events, and why an application-level `NEEDS_REVIEW` return may not trigger EventBridge target retries.
+
+**Three main engineering diagrams (SVG, no Mermaid):**
+
+1. [System architecture](architecture-high-level.svg) — complete browser / API / three parallel images / three sequential videos / assembly boundaries.
+2. [EventBridge handoffs and watchdog](event-driven-handoffs.svg) — event sources, DDB/S3 checks, duplicate deliveries, missed notifications and 2-hour monitoring limit.
+3. [Failures and retry decisions](generation-and-retries.svg) — per-operation retries, paid POST uncertainty and exact FFmpeg terminal semantics.
+
+A fourth [watchdog detail](watchdog-architecture.svg) remains as a focused supplemental drawing. The old [UI mockup](mobile-ui-illustration.svg) is historical.
+
+**Source verification warning:** `infrastructure/app/google-video.yaml` currently has `Claim.requestId.$ = "$.Execution.Name"` while subsequent tasks use `"$$.Execution.Name"`. This source inconsistency must be compared with the **live** state machine before changing production; track as ED-01 / RA-10. The diagrams depict **intended checkpoint boundaries**, not proof every execution succeeds.
+
