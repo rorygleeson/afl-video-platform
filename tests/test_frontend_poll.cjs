@@ -1513,3 +1513,26 @@ test('refresh completed job opens final view without autoplaying three scenes', 
   assert.equal(h.els.startNewJob.hidden,false);
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
 });
+
+test('Start new video resets saved greeting and counter but keeps default placeholder', async () => {
+  const h=setup({
+    localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    savedMessage:'Happy holidays',
+    progress:{currentStage:'COMPLETED',stageStatus:'COMPLETED',finalVideoReady:true},
+    realVideos:Object.fromEntries([1,2,3].map(n=>['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'COMPLETED',url:'https://s3.example.com/final.mp4'}
+  });
+  await h.flush();
+  assert.equal(h.els.personalMessage.value,'Happy holidays');
+  assert.equal(h.els.personalMessageCount.textContent,'14');
+  assert.equal(h.els.startNewJob.hidden,false);
+  const paidBefore=h.calls.filter(c=>c.opts.method==='POST').length;
+  h.els.startNewJob.listeners.click();
+  assert.equal(h.els.personalMessage.value,'');
+  assert.equal(h.els.personalMessageCount.textContent,'0');
+  assert.equal(h.els.personalMessage.disabled,false);
+  assert.match(html,/id="personalMessage"[^>]*placeholder="Happy Birthday Dad, from Mary"/);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,paidBefore);
+});
