@@ -31,9 +31,20 @@ const input = document.getElementById('selfie');
   let restoredSelfieJobId = null;
   const selfieUploadLabel = document.getElementById('selfieLabel');
   const savedSelfieNote = document.getElementById('savedSelfieNote');
+  // All terminal decisions and messages originate in the AWS job projection.
+  function renderBackendOutcome(progress) {
+    const notice = document.getElementById('jobFailureNotice');
+    const blocked = progress?.terminal === true &&
+      progress?.outcome === 'FAILED' &&
+      progress?.failureCode === 'CONTENT_BLOCKED';
+    notice.hidden = !blocked;
+    notice.textContent = blocked ? (progress.message ||
+      'Video generation stopped. No further scenes will be generated.') : '';
+  }
   // Prefer confirmed terminal outcomes rather than the image-only job.status.
   function updateNewJobAvailability() {
     const progress = latestJobProgress;
+    renderBackendOutcome(progress);
     const videos = lastVideoSnapshot?.videos || {};
     const assembly = lastVideoSnapshot?.assembly || {};
     const completed = progress?.finalVideoReady === true ||
@@ -48,7 +59,7 @@ const input = document.getElementById('selfie');
     });
     const assemblyFailed = assembly.status === 'FAILED';
     newJobButton.hidden = !currentJobId ||
-      !(completed || imageFailed || exhaustedVideo || assemblyFailed);
+      !(progress?.canStartNewJob === true || completed || imageFailed || exhaustedVideo || assemblyFailed);
   }
   function showCurrentJobSelfie(visible) {
     input.hidden = visible;
@@ -574,6 +585,7 @@ const input = document.getElementById('selfie');
       const finalReady = data.assembly?.status === 'COMPLETED' && !!data.assembly.url;
       showFinalOnlyView(finalReady);
       lastVideoSnapshot = data;
+      if (data.progress) latestJobProgress = data.progress;
       updateNewJobAvailability();
       if (data.sequence?.status === "APPROVED") videoSequenceAttemptUncertain = false;
       availablePaidScenes = [1, 2, 3].filter(n => {
@@ -609,7 +621,8 @@ const input = document.getElementById('selfie');
         const pendingAttempt = videoSubmissionLog.get(id);
         const paidStatus = document.getElementById('scene' + n + 'PaidStatus');
         const retryButton = document.getElementById('retryVideoScene' + n);
-        const mayRetry = real.retryAvailable === true && !videoRetryInFlight.has(id);
+        const mayRetry = real.retryAvailable === true && !videoRetryInFlight.has(id) &&
+          latestJobProgress?.stageStatus !== 'BLOCKED';
         retryButton.hidden = !mayRetry;
         retryButton.disabled = videoRetryInFlight.has(id);
         // The user-facing scene card displays only the current MP4 state.
@@ -1089,7 +1102,9 @@ const input = document.getElementById('selfie');
       // Only show video controls after all three reference images are complete.
       const referenceImagesReady = ['scene1', 'scene2', 'scene3']
         .every(id => scenes[id]?.status === 'COMPLETED' && (sceneResults.images || []).some(image => image.sceneId === id && image.url));
-      videoTestSection.hidden = !(referenceImagesReady || latestJobProgress?.finalVideoReady === true);
+      videoTestSection.hidden = !(referenceImagesReady ||
+        latestJobProgress?.finalVideoReady === true ||
+        latestJobProgress?.stageStatus === 'BLOCKED');
       if (!referenceImagesReady) {
         stopVideoPoll();
       }
