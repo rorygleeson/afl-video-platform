@@ -131,3 +131,29 @@ Automated frontend regression tests cover no duplicate paid POSTs, resume and ex
 - After confirmed job restoration, the original browser file input **and its label** are hidden. The previously uploaded photo is displayed from the signed URL, and the input stays locked to prevent accidental changes.
 - The new read-only endpoint is a developer-mode route guarded by the existing API Gateway key. This is **not** a production customer capability token; future public/Stripe release needs authenticated, per-order expiring access. Signed preview expires after five minutes; a loaded image normally remains rendered, and refreshing requests a new one while the object is retained.
 - Source changes touch `src/api/handler.py`, `frontend/index.html`, `frontend/app.js`, regression tests and a guarded API-and-frontend deployment workflow. No image/video models, prompts, watchdog, Step Functions or provider POST logic are changed.
+
+
+## Backend-owned universal job ending (16 November 2026)
+
+The authoritative stage checkpoints are still stored in the job's existing
+DynamoDB image `status`/scenes, `videoSequence`/realVideos/approvals and
+`assembly` map. The API's common read-only projection
+`overall_job_progress(job)` returns `terminal`, `outcome`,
+`currentStage` and `stageStatus`. It now recognises four terminal failure
+reasons: `REFERENCE_IMAGES_FAILED`, `CONTENT_BLOCKED`,
+`VIDEO_ATTEMPTS_EXHAUSTED` and `STITCHING_FAILED`. Verified final assembly
+returns `COMPLETED`. `GET /jobs/{jobId}` and
+`GET /jobs/{jobId}/videos` expose the same status contract.
+
+AWS EventBridge still owns progression; the browser never starts the next
+scene, retransmits Google POSTs, or decides whether a failed job is terminal.
+Backend starts/retries/assembly refuse definitive failures. Status GETs never
+write. The frontend transitions to a clean failure explanation for
+`terminal=true/outcome=FAILED` and retains the job for later recovery/audit;
+`REVIEW_REQUIRED` remains nonterminal.
+
+There is no Stripe payment gate, persisted global lifecycle table or customer
+authentication change in this release. Durable underlying stage records
+provide terminal evidence, but future order/refund records require independent
+longer retention. This does not solve every stuck handoff or provider-unknown
+reconciliation case.
