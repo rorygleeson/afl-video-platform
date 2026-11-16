@@ -42,7 +42,15 @@ function setup(options = {}) {
       replaceChildren(...children) { this.children = [...children]; },
       addEventListener(name, fn) { this.listeners[name] = fn; },
       click() { this.clickCalls = (this.clickCalls || 0) + 1; },
-      play() { this.playCalls = (this.playCalls || 0) + 1; this.paused = false; return Promise.resolve(); },
+      play() {
+        this.playCalls = (this.playCalls || 0) + 1;
+        if (options.failNextVideoPlay && this.tagName === 'video') {
+          options.failNextVideoPlay = false;
+          return Promise.reject(new Error('Expired or unavailable media'));
+        }
+        this.paused = false;
+        return Promise.resolve();
+      },
       pause() { this.pauseCalls = (this.pauseCalls || 0) + 1; this.paused = true; this.listeners.pause?.(); },
     };
   }
@@ -1417,34 +1425,83 @@ test('restoring legacy job without greeting keeps field blank rather than placeh
   assert.equal(h.els.personalMessageCount.textContent, '0');
 });
 
-test('expired preview replay obtains a fresh GET URL and does not reset other playing clips via polling', async () => {
+test('normal preview replay keeps existing loaded video URL and first frame', async () => {
   const h=setup({realVideos:{
-    scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/expired.mp4'},
+    scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene1.mp4'},
     scene2:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene2.mp4'}
   }});
   await h.els.generate.listeners.click();await h.flush();
   await h.nextTimer();await h.nextTimer();await h.flush();
-  const player=h.els.videoPlayer1;
-  const video=player.querySelector('video');
-  const btn=player.querySelector('button');
-  const initialCount=video.playCalls;
-  await btn.listeners.click(); await h.flush();
-  assert.equal(video.src,'https://s3.example.com/fresh-scene1.mp4');
-  assert.equal(video.playCalls,initialCount+1);
-  assert.equal(player.dataset.url,video.src);
+  const player=h.els.videoPlayer1, video=player.querySelector('video');
+  const btn=player.querySelector('button'), initial=video.playCalls;
+  await btn.listeners.click();await h.flush();
+  assert.equal(video.src,'https://s3.example.com/scene1.mp4');
+  assert.equal(player.querySelector('video'),video);
+  assert.equal(video.playCalls,initial+1);
+  assert.equal(h.calls.filter(c=>/\/videos\/scene1$/.test(c.url)).length,0,
+    'Playing a valid loaded clip should not make even a read-only GET');
   await h.els.refresh.listeners.click();await h.flush();
-  assert.equal(player.querySelector('video'),video,'status polling must not replace active media');
-  assert.equal(video.src,'https://s3.example.com/fresh-scene1.mp4');
-  assert.equal(h.calls.filter(c=>c.opts.method==='POST' &&
-    /real-videos|\/generate$/.test(c.url)).length,1,
-    'only the originally requested image generation may be submitted');
+  assert.equal(player.querySelector('video'),video,'polling does not replace loaded media');
+  assert.equal(video.src,'https://s3.example.com/scene1.mp4');
 });
+
+test('expired media play failure requests fresh signed GET and preserves other clips', async () => {
+  const opts={realVideos:{
+    scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/expired.mp4'},
+    scene2:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene2.mp4'}
+  }};
+  const h=setup(opts);
+  await h.els.generate.listeners.click();await h.flush();
+  await h.nextTimer();await h.nextTimer();await h.flush();
+  const player=h.els.videoPlayer1, video=player.querySelector('video');
+  const btn=player.querySelector('button');
+  const originalPlay=video.play;
+  let rejectOnce=true;
+  video.play=function() {
+    if (rejectOnce) {
+      rejectOnce=false;
+      this.playCalls=(this.playCalls||0)+1;
+      return Promise.reject(new Error('Expired S3 URL'));
+    }
+    return originalPlay.call(this);
+  };
+  const posts=h.calls.filter(c=>c.opts.method==='POST').length;
+  await btn.listeners.click();await h.flush();
+  assert.equal(video.src,'https://s3.example.com/fresh-scene1.mp4');
+  assert.equal(player.dataset.url,video.src);
+  assert.equal(video.playCalls,3,'autoplay + failed existing replay + refreshed replay');
+  assert.equal(h.calls.filter(c=>/\/videos\/scene1$/.test(c.url)).length,1);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,posts);
+  await h.els.refresh.listeners.click();await h.flush();
+  assert.equal(player.querySelector('video'),video);
+  assert.equal(video.src,'https://s3.example.com/fresh-scene1.mp4');
+});
+
+test('late media error refreshes signed URL only once and cannot loop', async () => {
+  const h=setup({realVideos:{
+    scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/old.mp4'}
+  }});
+  await h.els.generate.listeners.click();await h.flush();
+  await h.nextTimer();await h.nextTimer();await h.flush();
+  const player=h.els.videoPlayer1,video=player.querySelector('video');
+  const count=video.playCalls;
+  video.listeners.error();
+  await h.flush();
+  assert.equal(video.src,'https://s3.example.com/fresh-scene1.mp4');
+  assert.equal(video.playCalls,count+1);
+  video.listeners.error();
+  await h.flush();
+  assert.equal(h.calls.filter(c=>/\/videos\/scene1$/.test(c.url)).length,1);
+});
+
 test('failed playback refresh leaves replay visible without any paid retry', async () => {
   const h=setup({failReplayFetch:true,realVideos:{
     scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/expired.mp4'}
   }});
   await h.els.generate.listeners.click();await h.flush();
   await h.nextTimer();await h.nextTimer();await h.flush();
+  const video=h.els.videoPlayer1.querySelector('video');
+  video.play=()=>Promise.reject(new Error('Expired MP4 link'));
   const btn=h.els.videoPlayer1.querySelector('button');
   btn.hidden=false;
   const before=h.calls.filter(c=>c.opts.method==='POST').length;
