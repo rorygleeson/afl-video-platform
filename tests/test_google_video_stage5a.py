@@ -407,5 +407,52 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         self.assertEqual(w.S3.put_object.call_args.kwargs["ContentType"], "video/mp4")
 
 
+
+    def test_confirmed_policy_rejection_atomically_blocks_job_without_new_google_post(self):
+        w = self.worker
+        job = "a" * 32
+        request = "real-" + job + "-scene2"
+        record = {"status": "PROCESSING", "requestId": request,
+                  "interactionId": "known-google-interaction"}
+        item = {"jobId": job, "videoSequence": {"status": "APPROVED",
+                    "mode": "AWS_EVENT_DRIVEN", "requestFingerprint": "original"},
+                "realVideos": {"scene2": record}}
+        with patch.object(w, "require_paid_unlock"), patch.object(
+            w, "owner_record", return_value=record), patch.object(
+            w, "get_job", return_value=item), patch.object(
+            w, "google_json", return_value={
+                "status": "failed",
+                "error": {"code": "CONTENT_FILTERED",
+                          "message": "Generation prohibited by safety policy"}
+            }) as google:
+            result = w.poll(job, "scene2", request)
+        self.assertEqual(result["status"], "FAILED")
+        write = w.JOBS.update_item.call_args.kwargs
+        self.assertEqual(write["ExpressionAttributeValues"][":blocked"]["status"], "BLOCKED")
+        self.assertEqual(write["ExpressionAttributeValues"][":blocked"]["failureCode"], "CONTENT_BLOCKED")
+        self.assertEqual(write["ExpressionAttributeValues"][":blocked"]["failedScene"], "scene2")
+        self.assertEqual(write["ExpressionAttributeValues"][":blocked"]["requestFingerprint"], "original")
+        self.assertIn("realVideos.#scene.requestId = :request", write["ConditionExpression"])
+        self.assertIn("videoSequence = :blocked", write["UpdateExpression"])
+        self.assertEqual(google.call_count, 1)
+        self.assertEqual(google.call_args.args[0], "GET")
+        w.S3.put_object.assert_not_called()
+
+    def test_generic_google_failure_does_not_terminally_block_job(self):
+        w = self.worker
+        job = "a" * 32
+        request = "real-" + job + "-scene2"
+        record = {"status": "PROCESSING", "requestId": request,
+                  "interactionId": "known-google-interaction"}
+        with patch.object(w, "require_paid_unlock"), patch.object(
+            w, "owner_record", return_value=record), patch.object(
+            w, "google_json", return_value={
+                "status": "failed", "error": {"code": "CAPACITY_EXHAUSTED",
+                "message": "Provider temporarily unavailable"}
+            }), patch.object(w, "transition") as transition:
+            self.assertEqual(w.poll(job, "scene2", request)["status"], "FAILED")
+        transition.assert_called_once()
+        w.JOBS.update_item.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()
