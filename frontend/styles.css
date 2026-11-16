@@ -16,6 +16,10 @@
     .personal-message-hint{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:7px;margin-bottom:16px;font-size:.85rem;line-height:1.4;color:#526174}
     .personal-message-counter{white-space:nowrap;flex-shrink:0;font-variant-numeric:tabular-nums;color:#526174}
 
+    #jobFailureScreen{margin:24px 0 12px;padding:22px 18px;border:1px solid #d4dce5;border-radius:12px;background:#f8fafc}
+    #jobFailureScreen h2{margin:0 0 12px;font-size:1.4rem;color:#172432}
+    #jobFailureScreen p{margin:8px 0;white-space:pre-wrap}
+    #jobFailureScreen + #startNewJob{margin-top:14px;min-height:52px}
     .reference-images-heading{border-top:1px solid #d4dce5;margin-top:24px;padding-top:20px}
     .reference-images-heading h2{font-size:1.35rem;margin:0 0 12px}
     #results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
