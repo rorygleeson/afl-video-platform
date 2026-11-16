@@ -209,3 +209,8 @@ reconciliation or full payment readiness.
 ## Handoff latency improvement — 16 November 2026
 
 Eliminated fixed AWS Step Functions submission waits for Scene 2 (10s) and Scene 3 (20s), while retaining backend EventBridge-only advancement, verified predecessor MP4 checks, conditional DynamoDB admission and no automatic Google POST retries. New scene workflows start their `Submit` task directly after `PaidGate/Claim`. This is not a change to read-only 20-second Google status polling, provider rate limits, or failure/reconciliation semantics. Measure actual completion-event-to-Submit latency and Google 429 rates in real test jobs; no automatic duplicate submission is permitted.
+
+
+### RA-01 FFmpeg status reconciliation — 16 November 2026
+
+**Implementation recorded:** On first worker `assembly.FAILED`, while the existing named SFN is RUNNING during its 15-second wait/one confirmed retry, backend reports `STITCHING/RETRYING`, `terminal=false`. Only a durably persisted second failed attempt (`retryCount=1`) and confirmed SFN `FAILED` make `STITCHING_FAILED` terminal. Unknown or inconsistent execution stays `REVIEW_REQUIRED` without refund eligibility. Customer sees a final-video retry message; successful retry still delivers the MP4. No changes to Google, Step Functions orchestration, or FFmpeg worker. CI/deployment evidence and controlled fault injection are required before marking end-to-end complete. Other RA-02…RA-12 resilience gaps remain open.
