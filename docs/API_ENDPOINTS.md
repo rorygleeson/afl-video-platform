@@ -258,3 +258,8 @@ The lifecycle fields are a projection of existing persisted stage records.
 `job.status` remains the image-job status; new job starts, retries, final
 assembly and EventBridge handoffs reject known definitive terminal failures.
 No new status POST, payment API or additional billable generation is added.
+
+
+## Corrected assembly failure projection — 16 November 2026
+
+Both job and video status GETs use `overall_job_progress`. When `assembly.status=FAILED`, this now uses a read-only named SFN `DescribeExecution` to avoid a premature terminal result. First worker failure while SFN is `RUNNING` returns `currentStage=STITCHING`, `stageStatus=RETRYING`, `terminal=false`, `outcome=null`. A permanently exhausted retry is only reported when `assembly.retryCount=1`, worker record is still `FAILED`, and named SFN status is `FAILED`; it returns `terminal=true`, `outcome=FAILED`, `failureCode=STITCHING_FAILED`. Unknown/inconsistent SFN/worker status returns `REVIEW_REQUIRED`, `terminal=false`; never trigger a refund from this state. Older warnings above described the previous code and are superseded. No API routes or write operations changed.
