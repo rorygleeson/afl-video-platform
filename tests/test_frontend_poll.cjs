@@ -1273,6 +1273,31 @@ test('assembly estimate shows while stitching, uses one timer and clears on comp
   assert.equal(h.calls.filter(c=>c.url.endsWith('/assembly') && c.opts.method==='POST').length,0);
 });
 
+test('FFmpeg first-attempt failure stays visible as retrying, not a terminal failure screen', async () => {
+  const opts = {
+    realVideos:Object.fromEntries([1,2,3].map(n=>['scene'+n,
+      {mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene'+n+'.mp4'}])),
+    assembly:{enabled:true,status:'RETRYING',errorCode:'MEDIA_PROCESSING_FAILED'},
+    progress:{currentStage:'STITCHING',stageStatus:'RETRYING',terminal:false,
+      outcome:null,finalVideoReady:false,
+      message:'We are retrying the final video assembly.'}
+  };
+  const h=setup(opts);
+  await h.els.generate.listeners.click();await h.flush();
+  await h.nextTimer();await h.nextTimer();await h.flush();
+  assert.equal(h.els.jobFailureScreen.hidden,true);
+  assert.equal(h.els.assemblyPanel.hidden,false);
+  assert.match(h.els.assemblyStatus.textContent,/trying assembly again/);
+  assert.equal(h.els.startNewJob.hidden,true);
+  assert.equal(h.calls.filter(c=>/\/assembly$/.test(c.url) && c.opts.method==='POST').length,0);
+  opts.assembly={enabled:true,status:'COMPLETED',url:'https://s3.example.com/final.mp4'};
+  opts.progress={currentStage:'COMPLETED',stageStatus:'COMPLETED',terminal:true,
+    outcome:'COMPLETED',finalVideoReady:true};
+  await h.els.refresh.listeners.click();await h.flush();
+  assert.equal(h.els.jobFailureScreen.hidden,true);
+  assert.equal(h.els.assemblyStatus.textContent,'Your final video is ready!');
+});
+
 test('assembly estimate hides on review and reset, without influencing AWS submission', async () => {
   const opts = {
     realVideos:Object.fromEntries([1,2,3].map(n=>['scene'+n,
