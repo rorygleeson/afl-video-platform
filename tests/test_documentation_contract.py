@@ -144,6 +144,49 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn("architecture-high-level.svg", text)
             self.assertIn("generation-and-retries.svg", text)
 
+    def test_event_driven_reference_and_three_main_diagrams(self):
+        guide = (DOCS / "EVENT_DRIVEN_ARCHITECTURE.md").read_text()
+        index = (DOCS / "README.md").read_text()
+        audit = (DOCS / "RESILIENCE_AUDIT_2026-11-16.md").read_text()
+        for doc in (guide, index, audit):
+            for name in ("architecture-high-level.svg", "event-driven-handoffs.svg",
+                         "generation-and-retries.svg"):
+                self.assertIn(name, doc)
+        for name in ("architecture-high-level.svg", "event-driven-handoffs.svg",
+                     "generation-and-retries.svg", "watchdog-architecture.svg"):
+            root = ET.parse(DOCS / name).getroot()
+            self.assertEqual(root.tag, "{http://www.w3.org/2000/svg}svg")
+            self.assertTrue(root.get("viewBox"))
+        self.assertNotIn("```mermaid", guide)
+        self.assertIn("NEXT_SCENE_HANDOFF_NEEDS_REVIEW", guide)
+        self.assertIn("ASSEMBLY_HANDOFF_NEEDS_REVIEW", guide)
+
+    def test_event_rules_retries_and_lost_handoff_are_documented(self):
+        guide = (DOCS / "EVENT_DRIVEN_ARCHITECTURE.md").read_text()
+        image = (ROOT / "infrastructure/app/image-video-start-events.yaml").read_text()
+        video = (ROOT / "infrastructure/app/video-sequence-events.yaml").read_text()
+        watch = (ROOT / "infrastructure/app/handoff-watchdog.yaml").read_text()
+        for data in (image, video):
+            self.assertIn("MaximumEventAgeInSeconds: 3600", data)
+            self.assertIn("MaximumRetryAttempts: 24", data)
+            self.assertNotIn("DeadLetterConfig:", data)
+        self.assertIn("MaximumRetryAttempts: 12", watch)
+        self.assertIn("TimeoutSeconds\": 7200", watch)
+        self.assertIn("no dead-letter queue", guide.lower())
+        self.assertIn("successful Lambda", guide)
+        self.assertIn("7200-second", guide)
+
+    def test_google_claim_context_mismatch_is_tracked_not_silently_ignored(self):
+        guide = (DOCS / "EVENT_DRIVEN_ARCHITECTURE.md").read_text()
+        google = (ROOT / "infrastructure/app/google-video.yaml").read_text()
+        if '"requestId.$":"$.Execution.Name"' in google:
+            self.assertIn('$.Execution.Name', guide)
+            self.assertIn('$.Execution.Name', guide)
+            self.assertIn("ED-01", guide)
+            self.assertIn("live", guide.lower())
+        # Once code is repaired, revise the audit and add a path assertion that
+        # checks every requestId in the ASL uses the Step Functions context.
+
     def test_no_obsolete_retries_in_current_primary_docs(self):
         for doc in (RETRIES, STATUSES, ARCH):
             self.assertNotIn("assembly has no Step Functions Retry/Catch", doc)
