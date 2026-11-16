@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'docs/**'
+      - 'README.md'
       - 'tests/test_documentation_contract.py'
       - 'src/api/handler.py'
       - 'infrastructure/app/google-video.yaml'
@@ -12,6 +13,7 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'README.md'
       - 'tests/test_documentation_contract.py'
       - 'src/api/handler.py'
       - 'infrastructure/app/google-video.yaml'
