@@ -49,7 +49,7 @@ function setup(options = {}) {
   for (const name of ['selfie', 'selfieLabel', 'savedSelfieNote', 'preview', 'removeSelfie', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
-                      'referenceImagesHeading', 'startNewJob', 'resumeNotice', 'jobProgressSection', 'generationVideosHeading',
+                      'referenceImagesHeading', 'startNewJob', 'resumeNotice', 'jobProgressSection', 'generationVideosHeading', 'jobFailureNotice',
                       'imageDiagnosticsText', 'developerDiagnostics', 'overallJobStatus',
                       'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName', 'personalMessage', 'personalMessageCount',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
@@ -193,6 +193,7 @@ function setup(options = {}) {
         paidScenes: options.paidScenes || {},
         sequence: options.sequence || {},
         assembly: options.assembly || {},
+        progress: options.progress || null,
         videos: {
           scene1: {status: mockStatuses.scene1},
           scene2: {status: mockStatuses.scene2},
@@ -1535,4 +1536,31 @@ test('Start new video resets saved greeting and counter but keeps default placeh
   assert.equal(h.els.personalMessage.disabled,false);
   assert.match(html,/id="personalMessage"[^>]*placeholder="Happy Birthday Dad, from Mary"/);
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,paidBefore);
+});
+
+test('terminal content policy failure is displayed from backend and survives reload', async () => {
+  const blockedProgress = {
+    currentStage:'VIDEO_2',stageStatus:'BLOCKED',terminal:true,outcome:'FAILED',
+    failureCode:'CONTENT_BLOCKED',failedScene:'scene2',finalVideoReady:false,
+    canStartNewJob:true,
+    message:'Video generation stopped because the content did not meet generation guidelines. No further scenes will be generated.'
+  };
+  const h=setup({
+    localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    progress:blockedProgress,
+    realVideos:{
+      scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene1.mp4'},
+      scene2:{mode:'REAL',status:'FAILED',retryAvailable:false,
+        retryBlockedReason:'CONTENT_BLOCKED',providerErrorCategory:'SAFETY_OR_POLICY'}
+    },
+    sequence:{status:'BLOCKED',failureCode:'CONTENT_BLOCKED',failedScene:'scene2'}
+  });
+  await h.flush();
+  assert.equal(h.els.jobFailureNotice.hidden,false);
+  assert.match(h.els.jobFailureNotice.textContent,/No further scenes will be generated/);
+  assert.equal(h.els.startNewJob.hidden,false);
+  assert.equal(h.els.retryVideoScene2.hidden,true);
+  assert.equal(h.els.videoPanel3.hidden,true);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
 });
