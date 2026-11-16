@@ -217,3 +217,9 @@ Eliminated fixed AWS Step Functions submission waits for Scene 2 (10s) and Scene
 
 
 **RA-01 release update (16 November 2026):** Guarded AWS API/UI release [43835732389](https://github.com/rorygleeson/afl-video-platform/actions/runs/43835732389) passed offline tests and verified deployment. Premature `STITCHING_FAILED` during first attempt retry is fixed in deployed projection. No Google/FFmpeg/ASL modifications. **Live failure injection remains outstanding**; other audit findings remain open.
+
+## Deep event-driven source audit — new priority checks (16 November 2026)
+
+Source-verifiable tasks to complete **before paid rollout**: (a) independently read live Google ASL and reconcile the `Claim.requestId.$` path discrepancy (ED-01 / RA-10); (b) preserve/alert application-level `NEEDS_REVIEW` handoff outcomes instead of assuming EventBridge target RetryPolicy will re-invoke Lambda (ED-02); (c) missed watchdog start, 7200s cutoff and no DLQ handling (ED-03); (d) concurrency terminal fences on paid claim (ED-04); (e) unknown provider acceptance (ED-05); (f) final MP4 delivery/retention (ED-06). See [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md) and its three detailed SVG diagrams for exact evidence and acceptance criteria.
+
+**Documentation-only:** new source findings do not imply a live incident or an AWS change. RA-01 FFmpeg status code remains deployment-verified with live fault injection outstanding; RA-02…RA-12 stay open.
