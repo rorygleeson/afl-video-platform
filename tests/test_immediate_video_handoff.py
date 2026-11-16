@@ -47,7 +47,8 @@ class ImmediateHandoffTests(unittest.TestCase):
         for state in ("SubmissionSchedule","WaitScene2","WaitScene3"):
             self.assertNotIn('"'+state+'"',template)
         self.assertIn('"WaitForVideo":{"Type":"Wait","Seconds":20',template)
-        self.assertNotIn('"Retry":',template)
+        self.assertIn('"Retry":[{"ErrorEquals":["States.TaskFailed"]',template)
+        self.assertIn('"Submit":{"Type":"Task"',template)
 
     def test_fails_closed_on_changed_live_waits(self):
         original = {"TimeoutSeconds":3600,"States":{
