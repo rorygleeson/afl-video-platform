@@ -52,3 +52,11 @@ The source establishes paths and code branches, not independently measured live 
 When API/worker/ASL changes land, update the appropriate canonical contract in the same change, not by appending contradictory “updated below” warnings. All current docs should lead with **source review date, verification level, evidence paths, known limitations**. Preserve historical records but label them. Add regression assertions for new routes/retry states and verify against actual Lambda handler and ASL in code review. **Never run AWS deployment or paid Google requests merely to review documentation.**
 
 **Review result:** Current primary docs corrected; historic pages explicitly classified; remaining live validation gaps retained. No application code or AWS resources modified.
+
+## Documentation CI evidence — 16 November 2026
+
+- **Passed:** [dedicated docs contract validation run 43838304123](https://github.com/rorygleeson/afl-video-platform/actions/runs/43838304123). All seven static source/document tests completed successfully. The workflow is read-only (GitHub checkout, Python, no AWS credentials and no Google requests).
+- **Passed after final roadmap correction:** [run 43838407608](https://github.com/rorygleeson/afl-video-platform/actions/runs/43838407608), covering the current documentation inventory and assertions. This verifies checks in source; it is not an authenticated HTTP integration run or live AWS drift assessment.
+- The dedicated `.github/workflows/validate-docs.yml` runs when docs, the API route handler, or relevant Google/FFmpeg ASL changes. Exact route response/error code behaviour still needs independent mocked/live integration test coverage.
+
+**Resolution:** Primary canonical documentation reconciled against implementation; historical documents labelled; documentation regression gate added and passing. Functional resilience blockers RA-02…RA-12 remain tracked separately.
