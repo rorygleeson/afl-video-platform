@@ -201,5 +201,71 @@ class SceneRetryTests(unittest.TestCase):
         self.assertNotIn("start_images(job_id)", self.api.retry_failed_real_scene.__code__.co_names)
 
 
+
+    def test_blocked_policy_job_is_final_and_never_offers_a_paid_retry(self):
+        self.job["videoSequence"] = {
+            "status": "BLOCKED", "failureCode": "CONTENT_BLOCKED",
+            "failedScene": "scene2", "terminalAt": "2026-11-16T00:00:00Z",
+        }
+        self.job["realVideos"]["scene1"] = {
+            "status": "COMPLETED",
+            "resultKey": f"videos/{self.jobid}/scene1.mp4"}
+        self.job["realVideos"]["scene2"]["providerErrorCategory"] = "SAFETY_OR_POLICY"
+        outcome = self.api.overall_job_progress(self.job)
+        self.assertEqual(outcome["stageStatus"], "BLOCKED")
+        self.assertTrue(outcome["terminal"])
+        self.assertEqual(outcome["outcome"], "FAILED")
+        self.assertEqual(outcome["failureCode"], "CONTENT_BLOCKED")
+        self.assertEqual(outcome["failedScene"], "scene2")
+        self.assertTrue(outcome["canStartNewJob"])
+        self.assertFalse(outcome["finalVideoReady"])
+        scene = self.api.video_scene_public(self.job, "scene2")
+        self.assertFalse(scene["retryAvailable"])
+        self.assertEqual(scene["retryBlockedReason"], "CONTENT_BLOCKED")
+        self.assertEqual(self.retry(2)[0], 409)
+        self.states.start_execution.assert_not_called()
+        self.ddb.update_item.assert_not_called()
+
+    def test_blocked_job_rejects_sequence_approval_and_manual_scene_start(self):
+        import json
+        self.job["videoSequence"] = {
+            "status": "BLOCKED", "failureCode": "CONTENT_BLOCKED",
+            "failedScene": "scene1"}
+        self.api.REAL_VIDEO_MODE = "ENABLED"
+        event = {
+            "httpMethod":"POST",
+            "path":f"/jobs/{self.jobid}/real-videos/sequence",
+            "body":json.dumps({"confirmPaidSequence":True}),
+            "headers":{"Idempotency-Key":"sequence-after-block-12345"},
+        }
+        response = self.api.lambda_handler(event, None)
+        self.assertEqual(response["statusCode"], 409)
+        event["path"] = f"/jobs/{self.jobid}/real-videos/scene3"
+        event["body"] = json.dumps({"confirmPaidScene":"scene3"})
+        response = self.api.lambda_handler(event, None)
+        self.assertEqual(response["statusCode"], 409)
+        self.states.start_execution.assert_not_called()
+        self.ddb.update_item.assert_not_called()
+
+    def test_blocked_eventbridge_handoff_is_ignored(self):
+        self.job["videoSequence"] = {
+            "status": "BLOCKED", "failureCode": "CONTENT_BLOCKED",
+            "failedScene": "scene2"}
+        state_machine = self.api.GOOGLE_STATE_MACHINE_ARN
+        event = {
+            "source": "aws.states",
+            "detail-type": "Step Functions Execution Status Change",
+            "detail": {
+                "status": "SUCCEEDED",
+                "stateMachineArn": state_machine,
+                "executionArn": state_machine.replace(":stateMachine:",":execution:",1)
+                    + ":real-" + self.jobid + "-scene2",
+            },
+        }
+        result = self.api.video_sequence_event(event)
+        self.assertEqual(result["status"], "IGNORED_NO_SEQUENCE")
+        self.states.start_execution.assert_not_called()
+        self.ddb.update_item.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()
