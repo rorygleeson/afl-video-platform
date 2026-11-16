@@ -173,7 +173,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("MaximumRetryAttempts: 12", watch)
         self.assertIn("TimeoutSeconds\": 7200", watch)
         self.assertIn("no dead-letter queue", guide.lower())
-        self.assertIn("Lambda async function-error retry", guide)
+        self.assertIn("Lambda\u0027s own asynchronous queue", guide)
         self.assertIn("successful function execution", guide)
         self.assertIn("7200-second", guide)
 
