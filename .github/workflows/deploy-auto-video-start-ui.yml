@@ -1,4 +1,4 @@
-name: Deploy video Preparing status text (frontend only)
+name: Deploy flicker-free temporary scene preview (frontend only)
 # Frontend-only release: show stitched final video alone after completion, including refresh.
 # Backend BLOCKED terminal outcome opens a failure-only screen; old job preserved for audit.
 # Includes refresh/reopen and no-duplicate-submission regression tests.
