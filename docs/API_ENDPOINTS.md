@@ -1,5 +1,8 @@
 # AFL Video Platform — HTTP API Contract
 
+> **STATUS CONTRACT LIMITATION (re-audited 16 NOVEMBER 2026):** `GET /jobs/{jobId}` and `GET /jobs/{jobId}/videos` use the existing read-only `overall_job_progress`. The `STITCHING_FAILED / terminal:true` outcome can temporarily appear after the first FFmpeg failure while the assembly Step Functions waits 15s and performs its one allowed retry. This is an identified **critical contract bug**, not a reliable final payment/refund signal. Fix RA-01 in [resilience audit](RESILIENCE_AUDIT_2026-11-16.md) before depending on it for Stripe. Other `REVIEW_REQUIRED`/unknown scenarios remain nonterminal; no payment endpoints exist.
+>
+
 **Source audit:** 15 November 2026, updated after backend stages 1–3 · **Status:** SOURCE VERIFIED; guarded AWS deploy logs verify API Lambda, EventBridge stacks and frontend publishing; full live route/drift/e2e audit remains open.  
 **Authoritative code:** `src/api/handler.py` (route dispatcher and contracts), `infrastructure/app/backend.yaml` (API Gateway proxy/Lambda), `frontend/app.js` (browser calls). See [JOB_STATUSES.md](JOB_STATUSES.md), [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md), and [RESILIENCY_ROADMAP.md](RESILIENCY_ROADMAP.md).
 
