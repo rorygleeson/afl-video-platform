@@ -195,3 +195,8 @@ jobLifecycle field or write**.
 **Status:** Universal definitive failure projection implemented, payment
 integration remains out of scope. Do not mistake this for indefinite-unknown
 reconciliation or full payment readiness.
+
+
+## Handoff latency improvement — 16 November 2026
+
+Eliminated fixed AWS Step Functions submission waits for Scene 2 (10s) and Scene 3 (20s), while retaining backend EventBridge-only advancement, verified predecessor MP4 checks, conditional DynamoDB admission and no automatic Google POST retries. New scene workflows start their `Submit` task directly after `PaidGate/Claim`. This is not a change to read-only 20-second Google status polling, provider rate limits, or failure/reconciliation semantics. Measure actual completion-event-to-Submit latency and Google 429 rates in real test jobs; no automatic duplicate submission is permitted.
