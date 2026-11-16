@@ -1,0 +1,39 @@
+name: Deploy immediate sequential video handoff (backend Step Functions only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-immediate-video-handoff.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  guarded-handoff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Offline validation of removal-only Step Functions change
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'cfn-lint>=1,<2'
+          python -m py_compile scripts/deploy_google_immediate_handoff.py
+          python -m unittest discover -s tests -p 'test_immediate_video_handoff.py' -v
+          python -m unittest discover -s tests -p 'test_aws_video_sequence.py' -v
+          cfn-lint infrastructure/app/google-video.yaml --regions ap-southeast-2
+          python scripts/check_deployment_ownership.py --enforce
+      - name: Authenticate existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Guarded CloudFormation Google state-machine-only update
+        env:
+          DEPLOY_IMMEDIATE_HANDOFF: REMOVE_FIXED_SCENE_WAITS
+        run: python -u scripts/deploy_google_immediate_handoff.py
