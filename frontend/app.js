@@ -176,6 +176,9 @@ const input = document.getElementById('selfie');
     restoredSelfieJobId = null;
     forgetJob();
     lockJobFields(false);
+    // A new job must never inherit the previous video's optional greeting.
+    document.getElementById('personalMessage').value = '';
+    document.getElementById('personalMessageCount').textContent = '0';
     newJobButton.hidden = true;
     resumeNotice.hidden = true;
     generate.hidden = false;
