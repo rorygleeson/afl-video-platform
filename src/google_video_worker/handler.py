@@ -113,7 +113,10 @@ def require_paid_unlock(job=None, scene=None, request=None):
         raise PermissionError("PAID_GENERATION_DISABLED")
     if not isinstance(job, str) or not JOB_RE.fullmatch(job) or scene not in SCENES:
         raise PermissionError("PAID_SCENE_INVALID")
-    approval = get_job(job).get("paidVideoApprovals", {}).get(scene, {})
+    item = get_job(job)
+    if item.get("videoSequence", {}).get("status") == "BLOCKED":
+        raise PermissionError("JOB_CONTENT_BLOCKED")
+    approval = item.get("paidVideoApprovals", {}).get(scene, {})
     expected = "real-" + job + "-" + scene
     execution = approval.get("executionName")
     # DynamoDB resource deserializes *all* numbers as Decimal, not int.
@@ -443,6 +446,48 @@ def transition(job, scene, request, old, new, extra=None):
     )
 
 
+def block_content_job(job, scene, request, state, failure, observed):
+    """Atomically fail the scene and permanently block the video sequence.
+
+    The write is owned by the exact in-flight Google interaction. A successful
+    scene or another attempt cannot be overwritten by a late provider result.
+    Keep the original approved sequence metadata for future payment audit.
+    """
+    item = get_job(job)
+    sequence = item.get("videoSequence") or {}
+    if sequence.get("status") not in (None, "APPROVED"):
+        raise ContractError("Video sequence is already terminal")
+    blocked = {**sequence, "status": "BLOCKED",
+               "failureCode": "CONTENT_BLOCKED", "failedScene": scene,
+               "terminalAt": observed}
+    extra = {"errorCode": "GOOGLE_" + state.upper(),
+             "providerFinalStatus": state,
+             "providerFailureObservedAt": observed, **failure}
+    names = {"#scene": scene, "#status": "status", "#sequenceStatus": "status"}
+    values = {":failed": "FAILED", ":processing": "PROCESSING",
+              ":request": request, ":now": observed, ":blocked": blocked,
+              ":approved": "APPROVED"}
+    changes = ["realVideos.#scene.#status = :failed",
+               "realVideos.#scene.updatedAt = :now",
+               "videoSequence = :blocked"]
+    for idx, (key, value) in enumerate(extra.items()):
+        name, val = f"#k{idx}", f":v{idx}"
+        names[name], values[val] = key, value
+        changes.append(f"realVideos.#scene.{name} = {val}")
+    JOBS.update_item(
+        Key={"jobId": job},
+        UpdateExpression="SET " + ", ".join(changes),
+        ConditionExpression=(
+            "realVideos.#scene.requestId = :request "
+            "AND realVideos.#scene.#status = :processing "
+            "AND (attribute_not_exists(videoSequence) OR "
+            "videoSequence.#sequenceStatus = :approved)"
+        ),
+        ExpressionAttributeNames=names,
+        ExpressionAttributeValues=values,
+    )
+
+
 def claim(job, scene, request):
     require_paid_unlock(job, scene, request)
     item = get_job(job)
@@ -671,10 +716,13 @@ def poll(job, scene, request):
         # poll*, before the interaction expires or later lookups grow too large.
         failure = extract_provider_failure(reply)
         observed = datetime.now(timezone.utc).isoformat()
-        transition(job, scene, request, "PROCESSING", "FAILED",
-                   {"errorCode": "GOOGLE_" + state.upper(),
-                    "providerFinalStatus": state,
-                    "providerFailureObservedAt": observed, **failure})
+        if state == "failed" and failure["providerErrorCategory"] == "SAFETY_OR_POLICY":
+            block_content_job(job, scene, request, state, failure, observed)
+        else:
+            transition(job, scene, request, "PROCESSING", "FAILED",
+                       {"errorCode": "GOOGLE_" + state.upper(),
+                        "providerFinalStatus": state,
+                        "providerFailureObservedAt": observed, **failure})
         LOG.warning("Google provider terminal failure scene=%s status=%s category=%s code=%s",
                     scene, state, failure["providerErrorCategory"],
                     failure.get("providerErrorCode", "UNSPECIFIED"))
