@@ -89,3 +89,11 @@ The worker may persist `assembly.status=FAILED` on its **first** FFmpeg attempt 
 ## Source traceability
 
 Routes: `src/api/handler.py:lambda_handler`. Shapes: `public_job`, `images_for_job`, `selfie_for_job`, `video_scene_public`, `video_status`, `assembly_public`, `overall_job_progress`. Admission: `create_job`, `start_images`, `start_real_scene`, `retry_failed_real_scene`, `start_video_sequence`, `start_assembly`. Runtime and retries: [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md). Historical route plans remain in `API_STAGE1B.md` and other stage docs and are **not current contracts**.
+
+## Event-driven internal handoffs and business-level failure results
+
+The HTTP endpoint inventory is unchanged at **20 method/path combinations**. EventBridge success callbacks are *not* HTTP routes: API Lambda internally dispatches `image_sequence_event` for matching image SFN `SUCCEEDED` and `video_sequence_event` for matching Google scene SFN `SUCCEEDED`. API validates current execution identity and, for video, matching DDB source/key and S3 object before any new reservation.
+
+A successful EventBridge→Lambda asynchronous invocation does **not** prove a downstream Step Functions execution was started. Video event handler may **return** `NEXT_SCENE_HANDOFF_NEEDS_REVIEW` / `ASSEMBLY_HANDOFF_NEEDS_REVIEW` as a successful Lambda return, which is not a Lambda function error. EventBridge delivery RetryPolicy and Lambda async function-error retries are **not** a replacement for a persisted application-level reconciliation queue. See [event-driven architecture](EVENT_DRIVEN_ARCHITECTURE.md) and [failure recovery runbook](FAILURE_RECOVERY_RUNBOOK.md).
+
+The committed Google video ASL `Claim.requestId.$` is currently `$.Execution.Name`, differing from `$$.Execution.Name` on subsequent tasks. This is an **infrastructure-source mismatch requiring live verification**, not a new HTTP contract. No payment/auth route is implemented.
