@@ -163,3 +163,35 @@ See [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md) for the cur
 **DEPLOYED AND VERIFIED (CloudFormation + Lambda/State Machine readback):** [GitHub Actions run 43775514956](https://github.com/rorygleeson/afl-video-platform/actions/runs/43775514956) finished **success** with `DEPLOYED_AND_VERIFIED api`, `DEPLOYED_AND_VERIFIED assembly-worker`, and `DEPLOYED_AND_VERIFIED watchdog`. The assembly-worker stack update also changed and verified the `afl-app-dev-assembly` Standard Step Functions retry definition. All change sets were reviewed before execution; no other application stacks or Google paid generation were invoked. `ap-southeast-2`, deployment source `ec996bdf31edc2bfacf5027e8c256322365add87`.
 
 **Item 1 operational status:** Source code and guarded infrastructure deployment completed. Offline targeted recovery tests passed. A live *fault-injection* proof (deliberately timeout/kill FFmpeg, event loss, recovery of an existing completed three-scene fixture) has not been performed. Therefore mark **DEPLOYED / LIVE RESOURCE VERIFIED; LIVE FAILURE RECOVERY UNTESTED**, rather than asserting full end-to-end reliability. Keep video generation and Stripe unchanged. The old unrelated 5 test failures/38 errors remain a separate test-suite maintenance task.
+
+
+## Universal terminal-outcome milestone — 16 November 2026
+
+**Implemented in repository:** common backend status projection recognises
+finalised image failure/partial success, Google policy block, confirmed Google
+video failure after ten attempts, and persisted FFmpeg assembly failure as
+`terminal=true, outcome=FAILED`, with stage, safe `failureCode` and
+customer-facing message. Final assembled MP4 is
+`terminal=true, outcome=COMPLETED`. The frontend presents the same clean
+termination screen after refresh. Existing APIs reject new work after a
+definitive failure; uncertain failures remain nonterminal. Existing DynamoDB
+stage records serve as authoritative durable evidence; there is **no new
+jobLifecycle field or write**.
+
+**Still open / not payment-ready:**
+- Reconcile stuck/uncertain Step Functions submissions and EventBridge handoffs
+  without duplicate paid Google POSTs.
+- Prove live end-to-end permanent failure and stitching outcomes using
+  observed provider results; simulated tests alone are not live proof.
+- Decide whether stitching failures should gain a bounded, explicitly safe
+  recovery path (currently one-shot and treated as final).
+- Create payment-verified order/entitlement and durable Stripe ledger, independent
+  of the current seven-day job TTL.
+- Add secure, no-login per-job customer recovery; job ID and developer API key
+  are not sufficient customer authorisation.
+- Formalise cancellation and expiry semantics. No production `CANCELLED`
+  status is currently implemented; never invent it from a timeout.
+
+**Status:** Universal definitive failure projection implemented, payment
+integration remains out of scope. Do not mistake this for indefinite-unknown
+reconciliation or full payment readiness.
