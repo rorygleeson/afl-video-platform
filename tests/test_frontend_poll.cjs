@@ -1559,6 +1559,11 @@ test('terminal content policy failure is displayed from backend and survives rel
   await h.flush();
   assert.equal(h.els.jobFailureNotice.hidden,false);
   assert.match(h.els.jobFailureNotice.textContent,/No further scenes will be generated/);
+  assert.match(html, /id="generationVideosHeading"[\s\S]*id="jobFailureNotice"/);
+  assert.match(h.els.scene1PaidStatus.textContent,/completed/i);
+  assert.equal(h.els.scene2PaidStatus.textContent,
+    'Video stopped — content not permitted. No further scenes will be generated.');
+  assert.doesNotMatch(h.els.scene2PaidStatus.textContent,/needs review|Retry unavailable/);
   assert.equal(h.els.startNewJob.hidden,false);
   assert.equal(h.els.retryVideoScene2.hidden,true);
   assert.equal(h.els.videoPanel3.hidden,true);
