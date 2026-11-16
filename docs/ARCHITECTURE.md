@@ -15,7 +15,7 @@
 
 ![Generation sequencing, retry and terminal-failure controls](generation-and-retries.svg)
 
-![Event-driven per-job watchdog](watchdog-architecture.svg)
+![Event-driven handoffs, including watchdog recovery](event-driven-handoffs.svg)
 
 The diagram is a logical model. After browser upload, job creation and the single `POST /jobs/{jobId}/generate`, **AWS owns the image-completion → Video 1 → Video 2 → Video 3 → final assembly progression**. API Lambda receives EventBridge successful-execution events, verifies prior durable state and conditionally reserves the next step. Browser progress GETs do not submit videos or stitching. Diagram does not represent retries, IAM boundaries or all infrastructure.
 
@@ -93,7 +93,7 @@ This is a **missed-success-handoff reconciler**, not a universal stuck-stage tim
 
 **Limitations before customer rollout:** an image `RUNNING` EventBridge event can be lost (no per-job watchdog then); the 2-hour watchdog deadline is not per-stage timeout enforcement; a reserved/unknown assembly is not automatically recovered; and no end-to-end provider run or fault injection was performed during this documentation review. Source checked: `src/handoff_watchdog/handler.py`, `infrastructure/app/handoff-watchdog.yaml`, `tests/test_handoff_watchdog.py`. Previous guarded AWS deployment verification is recorded in [RESILIENCY_ROADMAP.md](RESILIENCY_ROADMAP.md); this review did **not** re-read live CloudFormation resources.
 
-See [the focused watchdog architecture diagram](watchdog-architecture.svg).
+See the [event-driven handoff diagram](event-driven-handoffs.svg), which includes the watchdog and its limits.
 
 ## Browser refresh recovery (frontend-only, 2026-11-16)
 
