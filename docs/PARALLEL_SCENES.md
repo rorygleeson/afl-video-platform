@@ -1,5 +1,7 @@
 # Stage 1D — three images generated in parallel
 
+> **DOCUMENT STATUS — HISTORICAL / STAGE-SPECIFIC (reviewed 16 November 2026).** This records the design, release or resource assumptions at its original date; some model providers, payment gates, retries, waits, deployment commands and UI behaviour have since changed. **Do not use this file as today's operational contract or run its historical deployment instructions without a new live-state review.** Current references: [documentation index](README.md), [HTTP API](API_ENDPOINTS.md), [retry and timeout contract](RETRIES_AND_TIMEOUTS.md), [job statuses](JOB_STATUSES.md), [architecture](ARCHITECTURE.md), and [resilience audit](RESILIENCE_AUDIT_2026-11-16.md).
+
 On the phone, upload a selfie and create a job. The **Generate 3 reference images** button is separate and explicitly confirms **three billable Replicate requests**. Uploads by themselves do not invoke Replicate.
 
 The previously successful Scene 1 image edit is extended to three independent image edits. **All three uploaded S3 master PNGs remain unchanged** at `scenarios/afl-grand-final-winning-kick/v1/scene{1,2,3}-start.png`. Scene 2 is also edited, rather than copying the master, because its face is visible. Scene 3's prompt changes the main player face only, while changing all teammates' playing guernseys to the selected team.
