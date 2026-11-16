@@ -64,3 +64,8 @@ A fourth [watchdog detail](watchdog-architecture.svg) remains as a focused suppl
 
 **Source verification warning:** `infrastructure/app/google-video.yaml` currently has `Claim.requestId.$ = "$.Execution.Name"` while subsequent tasks use `"$$.Execution.Name"`. This source inconsistency must be compared with the **live** state machine before changing production; track as ED-01 / RA-10. The diagrams depict **intended checkpoint boundaries**, not proof every execution succeeds.
 
+
+## Operations and incident recovery
+
+**[FAILURE_RECOVERY_RUNBOOK.md](FAILURE_RECOVERY_RUNBOOK.md)** adds an evidence-first, read-only incident checklist: investigate DDB checkpoints, named Step Functions executions, S3 object existence and saved Google interaction IDs; classify safe retries versus provider-acceptance ambiguity; distinguish EventBridge delivery, Lambda asynchronous function retry and ordinary `NEEDS_REVIEW` business returns. The runbook does **not** authorise a new paid model POST or change AWS resources.
+
