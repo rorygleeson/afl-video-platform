@@ -16,7 +16,8 @@ progress_fn = next(
     if isinstance(node, ast.FunctionDef) and node.name == "overall_job_progress"
 )
 terminal_fns = [node for node in source.body if isinstance(node, ast.FunctionDef)
-                and node.name in ("definitive_failure", "terminal_failure_progress")]
+                and node.name in ("assembly_failure_disposition", "definitive_failure",
+                                  "terminal_failure_progress")]
 terminal_messages = next(node for node in source.body
                          if isinstance(node, ast.Assign) and any(
                              isinstance(t, ast.Name) and t.id == "TERMINAL_FAILURE_MESSAGES"
@@ -54,6 +55,20 @@ class ProgressTests(unittest.TestCase):
         self.assembly_calls = []
         self.video_responses = {}
         self.assembly_response = {"status": "NOT_READY"}
+        self.execution_status = "RUNNING"
+        self.execution_reads = 0
+        from botocore.exceptions import ClientError
+        from unittest.mock import MagicMock
+        self.states = MagicMock()
+        def inspect_execution(*, executionArn):
+            self.execution_reads += 1
+            self.assertEqual(executionArn,
+                "arn:aws:states:ap-southeast-2:123:execution:assembly:final-" + "a"*32)
+            if self.execution_status == "UNAVAILABLE":
+                raise ClientError({"Error": {"Code": "AccessDenied",
+                                  "Message": "No access"}}, "DescribeExecution")
+            return {"status": self.execution_status}
+        self.states.describe_execution.side_effect = inspect_execution
 
         def video_projection(job, scene):
             self.video_calls.append(scene)
@@ -63,11 +78,18 @@ class ProgressTests(unittest.TestCase):
 
         def assembly_projection(job):
             self.assembly_calls.append(True)
+            record = job.get("assembly") or {}
+            if record.get("status") == "FAILED":
+                return {"status": scope["assembly_failure_disposition"](job)}
             return self.assembly_response
 
         scope = {
             "VIDEO_SCENES": ("scene1", "scene2", "scene3"),
             "MAX_VIDEO_ATTEMPTS": 10,
+            "ASSEMBLY_STATE_MACHINE_ARN": "arn:aws:states:ap-southeast-2:123:stateMachine:assembly",
+            "STATES": self.states,
+            "ClientError": ClientError,
+            "LOG": MagicMock(),
             "video_scene_public": video_projection,
             "assembly_public": assembly_projection,
         }
@@ -168,14 +190,48 @@ class ProgressTests(unittest.TestCase):
         self.assembly_response = {"status": "PROCESSING"}
         self.check(job, "STITCHING", "PROCESSING", 3, 3)
 
-    def test_stitching_failed(self):
-        job = make_job(assembly={"status": "FAILED"})
+    def test_first_stitch_failure_is_retrying_not_terminal(self):
+        job = make_job(assembly={"status": "FAILED", "retryCount": 0})
         for n in (1, 2, 3):
             complete_video(job, n)
-        self.assembly_response = {"status": "FAILED"}
+        result = self.check(job, "STITCHING", "RETRYING", 3, 3)
+        self.assertFalse(result["terminal"])
+        self.assertIsNone(result["outcome"])
+        self.assertNotIn("failureCode", result)
+        self.assertIn("trying", result["message"])
+        self.assertGreater(self.execution_reads, 0)
+
+    def test_retry_failed_but_workflow_still_finishing_is_not_terminal(self):
+        job = make_job(assembly={"status": "FAILED", "retryCount": 1})
+        for n in (1, 2, 3):
+            complete_video(job, n)
+        result = self.check(job, "STITCHING", "RETRYING", 3, 3)
+        self.assertFalse(result["terminal"])
+
+    def test_exhausted_stitch_retry_requires_failed_named_workflow(self):
+        job = make_job(assembly={"status": "FAILED", "retryCount": 1,
+                                 "updatedAt": "2026-11-16T01:00:00Z"})
+        for n in (1, 2, 3):
+            complete_video(job, n)
+        self.execution_status = "FAILED"
         result = self.check(job, "STITCHING", "FAILED", 3, 3)
         self.assertTrue(result["terminal"])
         self.assertEqual(result["failureCode"], "STITCHING_FAILED")
+        self.assertEqual(result["terminalAt"], "2026-11-16T01:00:00Z")
+
+    def test_retry_not_admitted_or_unknown_sfn_stays_review_not_final(self):
+        job = make_job(assembly={"status": "FAILED", "retryCount": 0})
+        for n in (1, 2, 3):
+            complete_video(job, n)
+        self.execution_status = "FAILED"
+        result = self.check(job, "STITCHING", "REVIEW_REQUIRED", 3, 3)
+        self.assertFalse(result["terminal"])
+        self.execution_status = "UNAVAILABLE"
+        result = self.check(job, "STITCHING", "REVIEW_REQUIRED", 3, 3)
+        self.assertFalse(result["terminal"])
+        self.execution_status = "TIMED_OUT"
+        result = self.check(job, "STITCHING", "REVIEW_REQUIRED", 3, 3)
+        self.assertFalse(result["terminal"])
 
     def test_final_video_ready(self):
         job = make_job(assembly={"status": "COMPLETED"})
