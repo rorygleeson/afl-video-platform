@@ -1,5 +1,8 @@
 # AFL Video Platform — Current Architecture
 
+> **16 NOVEMBER 2026 RESILIENCE RE-AUDIT:** The backend-driven sequence and conditional reservations are valuable, but the current projection of `assembly.FAILED` is **prematurely terminal** while the assembly Step Functions may retry once after 15s. Source also shows an EventBridge-started per-job watchdog with a 7200s cap and no guaranteed missed-start coverage, and retention policies for uploads/results but not videos. Read [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md) (RA-01…RA-12) as the authoritative current gap register. This audit updated docs only, not AWS services.
+>
+
 **Audit:** 15 November 2026 (post stages 1–3) | **Source:** `main` repository | **Confidence:** SOURCE VERIFIED; guarded AWS release logs verify API, EventBridge rules and frontend assets; full unattended real-job run and independent infrastructure drift scan remain outstanding.
 
 **Source of truth:** `src/api/handler.py`, `src/image_worker/{handler.py,google_direct.py}`, `src/google_video_worker/handler.py`, `src/assembly_worker/handler.py`, `frontend/{index.html,app.js}`, `infrastructure/app/{backend,google-video,assembly,frontend}.yaml`.
