@@ -173,7 +173,8 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn("MaximumRetryAttempts: 12", watch)
         self.assertIn("TimeoutSeconds\": 7200", watch)
         self.assertIn("no dead-letter queue", guide.lower())
-        self.assertIn("Lambda actually raising an error", guide)
+        self.assertIn("Lambda async function-error retry", guide)
+        self.assertIn("successful function execution", guide)
         self.assertIn("7200-second", guide)
 
     def test_google_claim_context_mismatch_is_tracked_not_silently_ignored(self):
