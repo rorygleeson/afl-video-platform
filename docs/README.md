@@ -24,8 +24,6 @@
 
 - [End-to-end AWS architecture](architecture-high-level.svg): API, parallel Google image generation, EventBridge sequencing, sequential scene videos and final assembly.
 - [Generation, retries and failure outcomes](generation-and-retries.svg): confirmed image 429 retries, no blind video POST retry, read-only provider polling, manual scene retry and FFmpeg-only retry.
-- [Per-job handoff watchdog](watchdog-architecture.svg): EventBridge start, 60-second checks, verified handoff replay, 2-hour limit and missed-event risk.
-- [Historical UI mockup](mobile-ui-illustration.svg): explicitly labelled an old illustrative interface, **not** a representation of current production controls.
 
 These SVGs are conceptual source documentation, **not** live AWS topology or fault-injection evidence. Update them alongside architecture/worker changes. All current operations documentation uses SVG rather than Mermaid.
 
@@ -36,7 +34,7 @@ These files retain their original purpose and **must not override the current co
 - **Early API and feature stages:** [API_STAGE1B.md](API_STAGE1B.md), [SCENE1_REPLICATE_PILOT.md](SCENE1_REPLICATE_PILOT.md), [PARALLEL_SCENES.md](PARALLEL_SCENES.md), [VIDEO_IMPLEMENTATION_PLAN.md](VIDEO_IMPLEMENTATION_PLAN.md), [VIDEO_PROMPTS.md](VIDEO_PROMPTS.md), [GOOGLE_OMNI_STAGE2_API_CONTRACT.md](GOOGLE_OMNI_STAGE2_API_CONTRACT.md), [GOOGLE_WIF.md](GOOGLE_WIF.md).
 - **Deployment and legacy resource planning:** [BOOTSTRAP.md](BOOTSTRAP.md), [DEPLOYMENT.md](DEPLOYMENT.md), [DEPLOYMENT_BASELINE_2026-11-15.md](DEPLOYMENT_BASELINE_2026-11-15.md), [DEPLOYMENT_OWNERSHIP_AUDIT.md](DEPLOYMENT_OWNERSHIP_AUDIT.md), [PRODUCTION_PIPELINE_PLAN.md](PRODUCTION_PIPELINE_PLAN.md), [RESOURCE_CLEANUP.md](RESOURCE_CLEANUP.md).
 - **Dated code audits and releases:** [CODE_REVIEW_2026-11-08.md](CODE_REVIEW_2026-11-08.md), [PAID_MP4_CODE_AUDIT_2026-11-08.md](PAID_MP4_CODE_AUDIT_2026-11-08.md), [BANANA_TEMPLATE_LOCK_RELEASE.md](BANANA_TEMPLATE_LOCK_RELEASE.md), [TEN_VIDEO_ATTEMPTS_RELEASE.md](TEN_VIDEO_ATTEMPTS_RELEASE.md), [VIDEO_SCENE_RETRY_RELEASE.md](VIDEO_SCENE_RETRY_RELEASE.md), [VIDEO_SCENE_RETRY_UI_RELEASE.md](VIDEO_SCENE_RETRY_UI_RELEASE.md).
-- **Historical illustrations and screenshots:** [mobile-ui-illustration.svg](mobile-ui-illustration.svg) and `screenshots/`. These are illustrations/captures of earlier interfaces, not proof of current browser behaviour. The three main architecture SVGs and watchdog SVG are **current-source diagrams**, listed above, still not proof of live AWS configuration.
+- **Historical screenshots:** `screenshots/` may depict an earlier interface; they are not the currently deployed UI.
 
 ## The safe interpretation of "working" and "complete"
 
@@ -62,7 +60,7 @@ The docs contract checker `tests/test_documentation_contract.py` is intended to 
 2. [EventBridge handoffs and watchdog](event-driven-handoffs.svg) — event sources, DDB/S3 checks, duplicate deliveries, missed notifications and 2-hour monitoring limit.
 3. [Failures and retry decisions](generation-and-retries.svg) — per-operation retries, paid POST uncertainty and exact FFmpeg terminal semantics.
 
-A fourth [watchdog detail](watchdog-architecture.svg) remains as a focused supplemental drawing. The old [UI mockup](mobile-ui-illustration.svg) is historical.
+The watchdog is covered within the event-driven handoff diagram; the obsolete UI mockup has been deleted.
 
 **Source verification warning:** `infrastructure/app/google-video.yaml` currently has `Claim.requestId.$ = "$.Execution.Name"` while subsequent tasks use `"$$.Execution.Name"`. This source inconsistency must be compared with the **live** state machine before changing production; track as ED-01 / RA-10. The diagrams depict **intended checkpoint boundaries**, not proof every execution succeeds.
 
