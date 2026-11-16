@@ -106,6 +106,7 @@ class DocumentationContractTests(unittest.TestCase):
     def test_canonical_docs_link_targets_exist(self):
         current = ["README.md", "API_ENDPOINTS.md", "JOB_STATUSES.md",
                    "RETRIES_AND_TIMEOUTS.md", "ARCHITECTURE.md",
+                   "EVENT_DRIVEN_ARCHITECTURE.md", "FAILURE_RECOVERY_RUNBOOK.md",
                    "INFRASTRUCTURE.md", "RESILIENCE_AUDIT_2026-11-16.md",
                    "RESILIENCY_ROADMAP.md", "GOOGLE_OMNI_RELIABILITY_CHECKLIST.md",
                    "DOCUMENTATION_QUALITY_REVIEW_2026-11-16.md"]
