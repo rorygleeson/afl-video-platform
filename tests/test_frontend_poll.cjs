@@ -1627,3 +1627,52 @@ test('backend policy stop during a live job transitions to terminal screen witho
   assert.equal(h.els.startNewJob.hidden,false);
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,posts);
 });
+
+test('terminal image failure shows clean backend message after refresh, not old images', async () => {
+  const h=setup({
+    localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    progress:{currentStage:'IMAGES',stageStatus:'FAILED',terminal:true,
+      outcome:'FAILED',failureCode:'REFERENCE_IMAGES_FAILED',retryable:false,
+      canStartNewJob:true,message:'We could not prepare the reference images.'}
+  });
+  await h.flush();
+  assert.equal(h.els.jobFailureScreen.hidden,false);
+  assert.equal(h.els.jobInputsSection.hidden,true);
+  assert.equal(h.els.videoTestSection.hidden,true);
+  assert.equal(h.els.jobProgressSection.hidden,true);
+  assert.equal(h.els.jobFailureNotice.textContent,'We could not prepare the reference images.');
+  assert.equal(h.els.startNewJob.hidden,false);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
+});
+
+test('terminal stitching failure shows reason and offers fresh attempt, no paid request', async () => {
+  const h=setup({
+    localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    progress:{currentStage:'STITCHING',stageStatus:'FAILED',terminal:true,
+      outcome:'FAILED',failureCode:'STITCHING_FAILED',retryable:false,
+      canStartNewJob:true,message:'We could not assemble the final video.'},
+    assembly:{enabled:true,status:'FAILED',errorCode:'MEDIA_PROCESSING_FAILED'}
+  });
+  await h.flush();
+  assert.equal(h.els.jobFailureScreen.hidden,false);
+  assert.equal(h.els.jobFailureNotice.textContent,'We could not assemble the final video.');
+  assert.equal(h.els.jobProgressSection.hidden,true);
+  assert.equal(h.els.videoTestSection.hidden,true);
+  assert.equal(h.els.startNewJob.hidden,false);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
+});
+
+test('review-required is not a terminal outcome and does not remove original job screen', async () => {
+  const h=setup({
+    localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    progress:{currentStage:'VIDEO_2',stageStatus:'REVIEW_REQUIRED',
+      terminal:false,outcome:null,finalVideoReady:false}
+  });
+  await h.flush();
+  assert.equal(h.els.jobFailureScreen.hidden,true);
+  assert.equal(h.els.jobInputsSection.hidden,false);
+  assert.equal(h.els.startNewJob.hidden,true);
+});
