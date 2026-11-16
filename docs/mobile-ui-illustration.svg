@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1080" height="510" viewBox="0 0 1080 510" role="img" aria-labelledby="t d">
-<title id="t">Illustrative AFL Video Lab mobile interface</title>
+<title id="t">Historical AFL Video Lab UI mockup</title>
 <desc id="d">Two schematic phone screens showing the selfie and team setup form, followed by completed reference images and generation statuses. These are mockups, not actual screenshots.</desc>
 <rect width="1080" height="510" rx="24" fill="#f1f5f9"/>
-<text x="40" y="52" font-family="Arial,sans-serif" font-size="25" font-weight="bold" fill="#172432">Current mobile web pilot — illustrated layout</text>
-<text x="40" y="80" font-family="Arial,sans-serif" font-size="15" fill="#475569">Representative UI only · not a capture of the deployed application</text>
+<text x="40" y="52" font-family="Arial,sans-serif" font-size="25" font-weight="bold" fill="#172432">HISTORICAL UI MOCKUP — NOT CURRENT</text>
+<text x="40" y="80" font-family="Arial,sans-serif" font-size="15" fill="#475569">Early manual video-generation screen · see current application for actual flow</text>
 <g font-family="Arial,sans-serif">
 <rect x="70" y="108" width="350" height="362" rx="29" fill="#172432"/>
 <rect x="80" y="119" width="330" height="338" rx="19" fill="#fff"/>
