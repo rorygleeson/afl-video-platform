@@ -107,3 +107,9 @@ The frontend status polls are read-only; AWS completion events initiate next sce
 ## What remains unproven
 
 Full AWS live drift comparison, injected first-failure→retry-success and exhausted-retry scenarios, missed events/watchdog start, ambiguous provider acceptance, missing final S3 object, authenticated cross-device access and Stripe/refund integration. See [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md) and [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md). Never infer production readiness from a read-only status response alone.
+
+## Event-driven review states and UI status interpretation
+
+A customer-facing `PROCESSING` stage does not guarantee Google has accepted the paid interaction; a newly persisted `SUBMISSION_UNKNOWN` deliberately precedes the POST. Likewise, a DDB next-scene reservation without a discoverable named SFN is **not** proof the next video is running; EventBridge may have delivered the prior success event even though the application reported `NEXT_SCENE_HANDOFF_NEEDS_REVIEW`. Read-only `GET` may project `REVIEW_REQUIRED` without any new persisted global lifecycle field.
+
+First FFmpeg `assembly.FAILED` + RUNNING named SFN = `RETRYING` **nonterminal**; confirmed second failed worker + failed SFN = `STITCHING_FAILED` terminal. Missing/unknown SFN = nonterminal `REVIEW_REQUIRED`. Detailed transitions and handoff-to-status mapping: [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md). No payment/refund entitlements are defined by any of these job statuses.
