@@ -246,3 +246,10 @@ Before payments, independently audit staleness thresholds and reconcile
 uncertain provider acceptance/handoffs; never blindly resubmit a chargeable
 request. Separate media TTL from transaction audit retention. The existing
 seven-day DynamoDB TTL is not a sufficient payment history store.
+
+
+## Immediate backend scene-to-scene handoff — 16 November 2026
+
+**Updated active workflow:** After the previous real MP4 is durably COMPLETED and S3 verified, EventBridge invokes the existing API next-scene reservation and named Step Functions execution. The Google workflow now routes `Claim → Submit` directly for **Scenes 1, 2 and 3**. The older `WaitScene2 = 10s` and `WaitScene3 = 20s` states, and their `SubmissionSchedule` Choice, have been removed. Old delay figures in the matrix and state-machine snapshot above are historical and superseded by this section.
+
+Only the Google Step Functions definition changes, via reviewed CloudFormation change set; Google worker code, paid POST exactly-once admission, read-only polling and `WaitForVideo = 20s` (poll interval, **not inter-scene handoff delay**) remain unchanged. EventBridge, S3 verification, backend orchestration, retries and payment safety remain unchanged. The next scene begins as soon as event delivery and AWS task setup permit; there is still normal event/worker startup latency, not a guaranteed zero-second handoff. A past already-running execution may retain its creation-time workflow version; subsequent new executions use the updated state machine.
