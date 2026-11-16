@@ -170,6 +170,70 @@ def public_job(item):
 
 
 
+
+# Durable stage records are the source of truth. Never terminalise an uncertain
+# Google POST, a transient scene failure with remaining retries, or an AWS
+# execution that merely needs reconciliation.
+TERMINAL_FAILURE_MESSAGES = {
+    "CONTENT_BLOCKED": "Video generation stopped because the content did not meet generation guidelines. No further scenes will be generated.",
+    "REFERENCE_IMAGES_FAILED": "We couldn't prepare all three reference images, so this video could not be created.",
+    "VIDEO_ATTEMPTS_EXHAUSTED": "Video generation could not be completed after the permitted attempts. No further scenes will be generated.",
+    "STITCHING_FAILED": "We couldn't assemble the finished video. Generation has stopped.",
+}
+
+
+def definitive_failure(job):
+    """Derive an immutable customer outcome from durable DynamoDB checkpoints.
+
+    Deliberately excludes REVIEW_REQUIRED, SUBMISSION_UNKNOWN, ordinary failed
+    videos with eligible retries, and unfinalised image jobs. No network calls.
+    """
+    sequence = job.get("videoSequence") or {}
+    if sequence.get("status") == "BLOCKED" and sequence.get("failureCode") == "CONTENT_BLOCKED":
+        scene = sequence.get("failedScene")
+        if scene in VIDEO_SCENES:
+            return {"currentStage": f"VIDEO_{VIDEO_SCENES.index(scene) + 1}",
+                    "stageStatus": "BLOCKED", "failureCode": "CONTENT_BLOCKED",
+                    "failedScene": scene, "terminalAt": sequence.get("terminalAt")}
+    # The image worker finalises these statuses only after all three branches
+    # have ended (or the stalled-image watchdog has recovered them).
+    if job.get("status") in ("FAILED", "PARTIAL_SUCCESS"):
+        return {"currentStage": "IMAGES", "stageStatus": "FAILED",
+                "failureCode": "REFERENCE_IMAGES_FAILED",
+                "terminalAt": job.get("completedAt")}
+    # A recorded failed FFmpeg operation is final under the present one-shot
+    # assembly contract. Do not treat failed/timed-out SFN visibility as final.
+    assembly = job.get("assembly") or {}
+    if assembly.get("status") == "FAILED":
+        return {"currentStage": "STITCHING", "stageStatus": "FAILED",
+                "failureCode": "STITCHING_FAILED",
+                "terminalAt": assembly.get("updatedAt")}
+    for number, scene in enumerate(VIDEO_SCENES, 1):
+        video = (job.get("realVideos") or {}).get(scene) or {}
+        approval = (job.get("paidVideoApprovals") or {}).get(scene) or {}
+        try:
+            attempts = int(approval.get("attemptNumber", 1))
+        except (TypeError, ValueError, OverflowError):
+            attempts = 1
+        if (video.get("status") == "FAILED" and
+                video.get("providerFinalStatus") in
+                ("failed", "cancelled", "incomplete", "budget_exceeded") and
+                attempts >= MAX_VIDEO_ATTEMPTS):
+            return {"currentStage": f"VIDEO_{number}", "stageStatus": "FAILED",
+                    "failureCode": "VIDEO_ATTEMPTS_EXHAUSTED", "failedScene": scene,
+                    "terminalAt": video.get("providerFailureObservedAt") or video.get("updatedAt")}
+    return None
+
+
+def terminal_failure_progress(job):
+    failure = definitive_failure(job)
+    return ({**failure, "terminal": True, "outcome": "FAILED",
+             "retryable": False, "canStartNewJob": True,
+             "finalVideoReady": False,
+             "message": TERMINAL_FAILURE_MESSAGES[failure["failureCode"]]}
+            if failure else None)
+
+
 def overall_job_progress(job):
     """Read-only end-to-end progress derived from existing per-stage job records.
 
@@ -199,23 +263,10 @@ def overall_job_progress(job):
         "finalVideoReady": False,
     }
 
-    # The video sequence is the persisted authority for permanent policy
-    # failure. An image COMPLETED status must never conceal a blocked video.
-    blocked = job.get("videoSequence") or {}
-    if blocked.get("status") == "BLOCKED" and blocked.get("failureCode") == "CONTENT_BLOCKED":
-        failed_scene = blocked.get("failedScene")
-        if failed_scene in VIDEO_SCENES:
-            progress.update({
-                "currentStage": "VIDEO_" + str(VIDEO_SCENES.index(failed_scene) + 1),
-                "stageStatus": "BLOCKED",
-                "terminal": True, "outcome": "FAILED",
-                "failureCode": "CONTENT_BLOCKED",
-                "failedScene": failed_scene,
-                "terminalAt": blocked.get("terminalAt"),
-                "canStartNewJob": True,
-                "message": "Video generation stopped because the content did not meet generation guidelines. No further scenes will be generated.",
-            })
-            return progress
+    terminal_failure = terminal_failure_progress(job)
+    if terminal_failure:
+        progress.update(terminal_failure)
+        return progress
 
     if images_completed != len(VIDEO_SCENES):
         if job.get("status") in ("FAILED", "PARTIAL_SUCCESS"):
@@ -288,6 +339,8 @@ def overall_job_progress(job):
         progress["finalVideoReady"] = True
         progress["terminal"] = True
         progress["outcome"] = "COMPLETED"
+        progress["retryable"] = False
+        progress["canStartNewJob"] = True
     elif state == "READY":
         progress["stageStatus"] = "WAITING_FOR_ACTION"
     elif state in ("QUEUED", "PROCESSING"):
