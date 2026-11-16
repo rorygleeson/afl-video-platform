@@ -49,7 +49,8 @@ function setup(options = {}) {
   for (const name of ['selfie', 'selfieLabel', 'savedSelfieNote', 'preview', 'removeSelfie', 'generate', 'testApi', 'refresh',
                       'generateScene1', 'status', 'pollStatus', 'key', 'apiConnectionStatus', 'team', 'scenario',
                       'jobIdPanel', 'currentJobIdText', 'copyJobId', 'copyJobStatus',
-                      'referenceImagesHeading', 'startNewJob', 'resumeNotice', 'jobProgressSection', 'generationVideosHeading', 'jobFailureNotice',
+                      'referenceImagesHeading', 'startNewJob', 'resumeNotice', 'jobProgressSection',
+                      'generationVideosHeading', 'jobFailureNotice', 'jobFailureScreen', 'jobInputsSection',
                       'imageDiagnosticsText', 'developerDiagnostics', 'overallJobStatus',
                       'testGoogle', 'googleStatus', 'apiTestResult', 'firstName', 'lastName', 'personalMessage', 'personalMessageCount',
                       'videoPromptSection', 'videoPromptStatus', 'videoPromptText',
@@ -87,6 +88,7 @@ function setup(options = {}) {
   for (const n of [1, 2, 3]) els['diagnoseScene' + n].hidden = true;
   els.referenceImagesHeading.hidden = true;
   els.startNewJob.hidden = true;
+  els.jobFailureScreen.hidden = true;
   els.resumeNotice.hidden = true;
   els.jobIdPanel.hidden = true;
   els.key.value = options.noKey ? '' : 'test-api-key';
@@ -1538,7 +1540,7 @@ test('Start new video resets saved greeting and counter but keeps default placeh
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,paidBefore);
 });
 
-test('terminal content policy failure is displayed from backend and survives reload', async () => {
+test('backend terminal policy exit hides customer inputs, previews and retries after refresh', async () => {
   const blockedProgress = {
     currentStage:'VIDEO_2',stageStatus:'BLOCKED',terminal:true,outcome:'FAILED',
     failureCode:'CONTENT_BLOCKED',failedScene:'scene2',finalVideoReady:false,
@@ -1548,24 +1550,80 @@ test('terminal content policy failure is displayed from backend and survives rel
   const h=setup({
     localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
     sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
-    progress:blockedProgress,
+    savedMessage:'Happy holidays',progress:blockedProgress,
     realVideos:{
       scene1:{mode:'REAL',status:'COMPLETED',url:'https://s3.example.com/scene1.mp4'},
       scene2:{mode:'REAL',status:'FAILED',retryAvailable:false,
         retryBlockedReason:'CONTENT_BLOCKED',providerErrorCategory:'SAFETY_OR_POLICY'}
-    },
-    sequence:{status:'BLOCKED',failureCode:'CONTENT_BLOCKED',failedScene:'scene2'}
+    },sequence:{status:'BLOCKED',failureCode:'CONTENT_BLOCKED',failedScene:'scene2'}
   });
   await h.flush();
-  assert.equal(h.els.jobFailureNotice.hidden,false);
+  assert.equal(h.els.jobFailureScreen.hidden,false);
   assert.match(h.els.jobFailureNotice.textContent,/No further scenes will be generated/);
-  assert.match(html, /id="generationVideosHeading"[\s\S]*id="jobFailureNotice"/);
-  assert.match(h.els.scene1PaidStatus.textContent,/completed/i);
-  assert.equal(h.els.scene2PaidStatus.textContent,
-    'Video stopped — content not permitted. No further scenes will be generated.');
-  assert.doesNotMatch(h.els.scene2PaidStatus.textContent,/needs review|Retry unavailable/);
+  assert.match(html,/id="jobFailureScreen"[^>]*role="alert"/);
+  assert.equal(h.els.jobInputsSection.hidden,true);
+  assert.equal(h.els.jobProgressSection.hidden,true);
+  assert.equal(h.els.videoTestSection.hidden,true);
+  assert.equal(h.els.resumeNotice.hidden,true);
   assert.equal(h.els.startNewJob.hidden,false);
   assert.equal(h.els.retryVideoScene2.hidden,true);
-  assert.equal(h.els.videoPanel3.hidden,true);
+  assert.equal(h.els.videoPlayer1.querySelector('video'),null);
+  assert.equal(h.els.preview.hidden,true,'Blocked refresh never downloads the stored selfie');
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/selfie')).length,0);
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
+  assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),'a'.repeat(32),
+    'Failed job ID stays in storage for refresh and payment audit');
+  assert.equal(h.els.personalMessage.value,'Happy holidays',
+    'Failed job remains intact in memory until Start new video');
+  // Customer expressly starts a new job; old AWS job is not mutated/deleted.
+  h.els.startNewJob.listeners.click();
+  assert.equal(h.els.jobFailureScreen.hidden,true);
+  assert.equal(h.els.jobInputsSection.hidden,false);
+  assert.equal(h.els.jobProgressSection.hidden,false);
+  assert.equal(h.els.firstName.value,'');
+  assert.equal(h.els.lastName.value,'');
+  assert.equal(h.els.personalMessage.value,'');
+  assert.equal(h.els.personalMessageCount.textContent,'0');
+  assert.equal(h.els.selfie.value,'');
+  assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),null);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
+});
+
+test('normal in-progress jobs remain unchanged and no failure screen appears', async () => {
+  const h=setup({
+    realVideos:{scene1:{mode:'REAL',status:'COMPLETED',
+      url:'https://s3.example.com/scene1.mp4'}},
+    assembly:{enabled:true,status:'PROCESSING'}
+  });
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.jobFailureScreen.hidden,true);
+  assert.equal(h.els.jobInputsSection.hidden,false);
+  assert.equal(h.els.jobProgressSection.hidden,false);
+  assert.equal(h.els.videoTestSection.hidden,false);
+  assert.equal(h.els.videoPanel1.hidden,false);
+});
+
+test('backend policy stop during a live job transitions to terminal screen without extra POST', async () => {
+  const opts = {
+    progress:{currentStage:'VIDEO_1',stageStatus:'PROCESSING',
+      finalVideoReady:false},
+    realVideos:{scene1:{mode:'REAL',status:'PROCESSING'}}
+  };
+  const h=setup(opts);
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  const posts=h.calls.filter(c=>c.opts.method==='POST').length;
+  opts.progress={currentStage:'VIDEO_1',stageStatus:'BLOCKED',terminal:true,
+    outcome:'FAILED',failureCode:'CONTENT_BLOCKED',failedScene:'scene1',
+    finalVideoReady:false,canStartNewJob:true,
+    message:'Generation stopped due to content guidelines.'};
+  opts.realVideos.scene1={mode:'REAL',status:'FAILED',retryAvailable:false,
+    retryBlockedReason:'CONTENT_BLOCKED'};
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(h.els.jobFailureScreen.hidden,false);
+  assert.equal(h.els.jobProgressSection.hidden,true);
+  assert.equal(h.els.videoTestSection.hidden,true);
+  assert.equal(h.els.startNewJob.hidden,false);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,posts);
 });
