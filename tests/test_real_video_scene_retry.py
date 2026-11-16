@@ -267,5 +267,42 @@ class SceneRetryTests(unittest.TestCase):
         self.states.start_execution.assert_not_called()
         self.ddb.update_item.assert_not_called()
 
+
+    def test_exhausted_video_job_has_universal_final_failed_outcome(self):
+        self.job["videoSequence"] = {"status": "APPROVED"}
+        self.job["paidVideoApprovals"]["scene1"]["attemptNumber"] = 10
+        self.job["realVideos"]["scene1"]["providerFinalStatus"] = "failed"
+        result = self.api.overall_job_progress(self.job)
+        self.assertTrue(result["terminal"])
+        self.assertEqual(result["outcome"], "FAILED")
+        self.assertEqual(result["failureCode"], "VIDEO_ATTEMPTS_EXHAUSTED")
+        self.assertFalse(result["retryable"])
+        self.assertTrue(result["canStartNewJob"])
+        # No additional paid attempt or orchestration may begin.
+        self.assertEqual(self.retry(1)[0], 409)
+        self.states.start_execution.assert_not_called()
+
+    def test_terminal_image_failure_rejects_new_video_sequence(self):
+        self.job["status"] = "PARTIAL_SUCCESS"
+        self.job["scenes"]["scene2"]["status"] = "FAILED"
+        self.job["videoSequence"] = {}
+        result = self.api.overall_job_progress(self.job)
+        self.assertEqual(result["failureCode"], "REFERENCE_IMAGES_FAILED")
+        import json
+        event = {"httpMethod": "POST",
+                 "path": f"/jobs/{self.jobid}/real-videos/sequence",
+                 "headers": {"Idempotency-Key": "terminal-images-example"},
+                 "body": json.dumps({"confirmPaidSequence": True})}
+        self.assertEqual(self.api.lambda_handler(event, None)["statusCode"], 409)
+        self.states.start_execution.assert_not_called()
+
+    def test_failed_assembly_blocks_next_attempts_without_reprocessing(self):
+        self.job["assembly"] = {"status": "FAILED", "errorCode": "MEDIA_PROCESSING_FAILED"}
+        result = self.api.overall_job_progress(self.job)
+        self.assertEqual(result["failureCode"], "STITCHING_FAILED")
+        self.assertEqual(self.retry(1)[0], 409)
+        self.states.start_execution.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
