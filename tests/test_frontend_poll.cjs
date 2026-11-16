@@ -1110,8 +1110,9 @@ test('only one of three scene previews plays; new autoplay pauses previous previ
   await h.flush();
   assert.equal(three.pauseCalls,1,'Manual replay pauses Scene 3');
   assert.equal(one.playCalls,2);
-  assert.equal(one.src,'https://s3.example.com/fresh-scene1.mp4');
-  assert.equal(h.calls.filter(c=>c.url.endsWith('/videos/scene1') && !c.opts.method).length,1);
+  assert.equal(one.src,'https://s3.example.com/scene1.mp4',
+    'Valid replay retains the loaded media and its first frame');
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/videos/scene1') && !c.opts.method).length,0);
   assert.equal(h.calls.filter(c=>c.opts.method==='POST' && c.url.includes('/videos/scene1')).length,0);
   assert.equal(one.muted,true);
   assert.equal(one.controls,false);
