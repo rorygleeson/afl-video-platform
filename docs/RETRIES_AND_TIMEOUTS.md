@@ -256,3 +256,15 @@ seven-day DynamoDB TTL is not a sufficient payment history store.
 **Updated active workflow:** After the previous real MP4 is durably COMPLETED and S3 verified, EventBridge invokes the existing API next-scene reservation and named Step Functions execution. The Google workflow now routes `Claim → Submit` directly for **Scenes 1, 2 and 3**. The older `WaitScene2 = 10s` and `WaitScene3 = 20s` states, and their `SubmissionSchedule` Choice, have been removed. Old delay figures in the matrix and state-machine snapshot above are historical and superseded by this section.
 
 Only the Google Step Functions definition changes, via reviewed CloudFormation change set; Google worker code, paid POST exactly-once admission, read-only polling and `WaitForVideo = 20s` (poll interval, **not inter-scene handoff delay**) remain unchanged. EventBridge, S3 verification, backend orchestration, retries and payment safety remain unchanged. The next scene begins as soon as event delivery and AWS task setup permit; there is still normal event/worker startup latency, not a guaranteed zero-second handoff. A past already-running execution may retain its creation-time workflow version; subsequent new executions use the updated state machine.
+
+
+## FFmpeg first failure no longer terminates job early — 16 November 2026
+
+The assembly workflow's **one** safe retry remains unchanged: a confirmed first worker `FAILED` record, 15-second Wait, then `RetryConfirmedAssemblyFailure` with conditional DynamoDB `FAILED → PROCESSING` and `retryCount=1`. The API now distinguishes an attempt failure from an exhausted workflow:
+
+- Named SFN `RUNNING` + recorded `assembly.FAILED`: `STITCHING / RETRYING`, **nonterminal**.
+- Named SFN `FAILED` + persisted `assembly.FAILED` and `retryCount=1`: definitive `STITCHING_FAILED`, terminal.
+- SFN unavailable/ambiguous/timed out, or no persisted retry evidence: `REVIEW_REQUIRED`, **nonterminal**.
+- Success: verified final MP4 key returns `COMPLETED`.
+
+No new paid Google requests, no changed retry attempt budget, and no changes to worker/Step Functions logic. Source's previously documented early terminal race is fixed by API projection + a frontend retry message. Read-only `DescribeExecution` is required for an observed failed assembly.
