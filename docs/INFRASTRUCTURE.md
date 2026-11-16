@@ -177,3 +177,13 @@ This is a **documentation snapshot only**; the code, CloudFormation deployment a
 - [Stage 2](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297): Scene 3 → FFmpeg handler deployed.
 - [Stage 3](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205): frontend read-only progression deployed.
 - A live unattended full-job test and fault-injected missed-event test remain unverified.
+
+## Event-driven verification and failure-handling reference (16 November 2026)
+
+![Source-level EventBridge handoffs and watchdog](event-driven-handoffs.svg)
+
+Complete current-source routing, ownership checks, retry boundaries and the verified recovery gap register: [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md). Completion targets in `image-video-start-events.yaml` and `video-sequence-events.yaml` each specify **3600s event age / 24 maximum delivery retries**; watchdog start rule `handoff-watchdog.yaml` specifies **3600s / 12 attempts**. **These are target-delivery settings, not a guarantee of retry when Lambda successfully returns a JSON `NEEDS_REVIEW` result.** The reviewed templates do not configure DLQs.
+
+**ASL source verification warning:** Google video's `Claim.Parameters.Payload.requestId.$` is `$.Execution.Name` while Submit/Poll/Finalize use `$$.Execution.Name`. An earlier dedicated release checker expects the context path. Compare `DescribeStateMachine` live with the current IaC; do not claim the current template is a proven deployable source of truth until the mismatch is resolved. The resource's stale `Comment` about hard-disabled video is also historical; deployed parameter truth requires separate verification.
+
+**IaC naming caveat:** watchdog EventBridge rule logical ID `EveryMinute` refers to an **event-pattern** rule for image SFN RUNNING, not a minute cron. The actual per-job workflow waits 60 seconds between checks, and separately the image reconciler runs on its own 5-minute schedule. Neither provides a guaranteed permanent job-reconciliation queue.
