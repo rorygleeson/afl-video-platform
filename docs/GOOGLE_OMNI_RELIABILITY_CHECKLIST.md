@@ -1,6 +1,6 @@
 # Google Omni reliability checklist
 
-Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and deployment verification are complete. Never automatically retry a potentially billable video POST.
+Reviewed against current video worker and Step Functions source: 2026-11-16. Items below are operational checkboxes: distinguish source/deployment verification from live provider fault injection. Keep items unchecked until implementation, tests, and deployment verification are complete. Never automatically retry a potentially billable video POST.
 
 ## Priority order
 
@@ -9,7 +9,7 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 - [ ] **3. Harden completed-MP4 retrieval (high).** Prevent oversized inline base64 payloads, response-size limits or Lambda memory/timeout failures from unnecessarily losing an already generated MP4. Preserve the interaction ID and allow safe GET recovery. Test bounded 720p payloads and oversized responses without new POSTs.
 - [x] **4. Improve HTTP error visibility (medium).** Safely capture Google HTTP error code, request/correlation ID, relevant rate-limit/Retry-After metadata and bounded redacted structured provider error; never store credentials, raw images, prompts or media.
 - [ ] **5. Record generation provenance (medium).** Model, scene duration, prompt/version digest, reference-image SHA-256, configuration and bounded polling/timing metrics; allow successful vs failed scene comparisons.
-- [ ] **6. Apply provider-wide concurrency/rate controls (medium, pre-launch).** The existing 0/10/20-second per-batch stagger is *not* a global limiter across customers. Design admission controls that do not compromise idempotency or allow a second paid POST.
+- [ ] **6. Apply provider-wide concurrency/rate controls (medium, pre-launch).** The old 0/10/20-second per-batch stagger was **removed** (guarded release 43824295664). Immediate event-driven handoff is **not** a global limiter across customers. Design admission controls that do not compromise idempotency or allow a second paid POST.
 
 ## Deployed verification (2026-11-12)
 
@@ -45,3 +45,11 @@ Last reviewed: 2026-11-12. Keep items unchecked until implementation, tests, and
 - Implement in small, separately testable stages. Do not change prompts, UI layout, billing or reference-image generation as part of these reliability fixes.
 - Confirm GitHub CI before merging. Confirm deployment separately; a merged PR is not proof of a live AWS deployment.
 - Check off items only after code, tests and deployed behaviour have been verified. Record PR/commit or date beside each checked item.
+
+## Current compatibility note — 16 November 2026
+
+- Video ASL now uses `PaidGate → Claim → Submit → WaitForVideo(20s) → PollVideo`. There are **no fixed 10s/20s waits between different scenes**. The 20s Wait is a **read-only status-poll cadence**. `Submit` has no Retry; only `PollVideo` has bounded TaskFailed Retry.
+- The image worker is currently a **direct Google** adapter, not the original Replicate pipeline described in early stage documents.
+- `SUBMISSION_UNKNOWN` may be set before the billable POST; it is not evidence that the POST was rejected. Do not resubmit automatically or claim it is refunded.
+- Deployment verification for the immediate-handoff ASL: [43824295664](https://github.com/rorygleeson/afl-video-platform/actions/runs/43824295664). This is **not** a live quota/capacity stress test; provider-wide rate controls and uncertain acceptance recovery remain open.
+- No Stripe checkout, customer charge or refund is implemented. See [current retries](RETRIES_AND_TIMEOUTS.md) and [audit](RESILIENCE_AUDIT_2026-11-16.md).
