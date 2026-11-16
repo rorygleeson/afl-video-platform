@@ -132,3 +132,23 @@ No deployment is implicit from a source merge. This PR intentionally has no auto
 **Acceptance evidence required:** exact git SHA and live Lambda/code/ASL hashes; mocked fault-injection for each case; no unintended new paid Google POST; observable terminal transition once, correct customer reason and no premature refund; recovery from refresh/closed browser; final MP4 downloadable; retention and alarm tests; successful bounded rollback. Never label static source review a production-ready release.
 
 **Release decision:** Development/testing can continue with controlled, explicitly authorised Google spend. **Do not enable paid customer orders/automatic refunds yet.** No changes to AWS were made in this audit.
+
+
+## RA-01 implementation correction — 16 November 2026
+
+**Code fixed on main, pending deployment evidence until the guarded release passes.**
+The API now uses read-only `assembly_failure_disposition(job)` against the stable `final-{jobId}` Step Functions execution. A persisted `assembly.FAILED` alone is **not terminal**:
+
+| Assembly worker record | Named SFN | API `stageStatus` | `terminal` / `outcome` |
+|---|---|---|---|
+| `FAILED`, `retryCount=0` | `RUNNING` (15s Wait or safe retry) | `RETRYING` | false / null |
+| `FAILED`, `retryCount=1` | `RUNNING` (retry settling) | `RETRYING` | false / null |
+| `FAILED`, `retryCount=1` | `FAILED` | `FAILED` | true / FAILED, `STITCHING_FAILED` |
+| `FAILED`, `retryCount=0` | `FAILED` | `REVIEW_REQUIRED` | false / null: retry not proven to have run |
+| `FAILED` | missing/unknown/aborted/timed-out/SUCCEEDED-but-inconsistent | `REVIEW_REQUIRED` | false / null |
+| `PROCESSING` | in flight | `PROCESSING` | false / null |
+| `COMPLETED` and verified result key | completed | `COMPLETED` | true / COMPLETED |
+
+The frontend remains on the progress screen and displays “Finishing your video — trying assembly again…” during a safe retry. No premature customer failure screen or automatic refund eligibility. The status GET calls SFN **DescribeExecution only** when a failed assembly needs classification. No Google POST, new FFmpeg execution, state mutation or extra automatic retry is introduced. The existing one confirmed FFmpeg-only retry after 15s is unchanged.
+
+**Remaining operational gap:** an unknown/failed workflow without a durably recorded second failure remains `REVIEW_REQUIRED` and requires an operator/reconciliation path. This is intentional safety, not a permanent-failure declaration. Test first fail→success, confirmed second fail→terminal, lost Describe permission, timeout/inconsistent status, browser reload, no duplicate Google charges and status stability. Mark RA-01 **CODE FIXED / OFFLINE TESTED** only after CI evidence; **LIVE VERIFIED** only after guarded AWS code readback and ideally fault injection.
