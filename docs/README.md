@@ -7,6 +7,8 @@
 | Document | Authority and purpose |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Current backend-driven image → three sequential videos → assembly flow and data boundaries. |
+| [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md) | Exact AWS status-change events, EventBridge target retries vs Lambda async retries, owner/S3 gates, deduplication and missed-handoff controls. |
+| [FAILURE_RECOVERY_RUNBOOK.md](FAILURE_RECOVERY_RUNBOOK.md) | Read-only incident triage checklist for unknown Google submissions, stuck handoffs, retries and final media loss. |
 | [API_ENDPOINTS.md](API_ENDPOINTS.md) | **All 20 current method/path combinations**, request guards, response shapes, internal event distinction, developer access. |
 | [JOB_STATUSES.md](JOB_STATUSES.md) | Image, video, assembly, terminal and review statuses; why first FFmpeg failure is nonterminal. |
 | [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md) | Definitive current retry, backoff, timeouts, failure disposition and unknown-Google-submission safety. |
@@ -34,7 +36,7 @@ These files retain their original purpose and **must not override the current co
 - **Early API and feature stages:** [API_STAGE1B.md](API_STAGE1B.md), [SCENE1_REPLICATE_PILOT.md](SCENE1_REPLICATE_PILOT.md), [PARALLEL_SCENES.md](PARALLEL_SCENES.md), [VIDEO_IMPLEMENTATION_PLAN.md](VIDEO_IMPLEMENTATION_PLAN.md), [VIDEO_PROMPTS.md](VIDEO_PROMPTS.md), [GOOGLE_OMNI_STAGE2_API_CONTRACT.md](GOOGLE_OMNI_STAGE2_API_CONTRACT.md), [GOOGLE_WIF.md](GOOGLE_WIF.md).
 - **Deployment and legacy resource planning:** [BOOTSTRAP.md](BOOTSTRAP.md), [DEPLOYMENT.md](DEPLOYMENT.md), [DEPLOYMENT_BASELINE_2026-11-15.md](DEPLOYMENT_BASELINE_2026-11-15.md), [DEPLOYMENT_OWNERSHIP_AUDIT.md](DEPLOYMENT_OWNERSHIP_AUDIT.md), [PRODUCTION_PIPELINE_PLAN.md](PRODUCTION_PIPELINE_PLAN.md), [RESOURCE_CLEANUP.md](RESOURCE_CLEANUP.md).
 - **Dated code audits and releases:** [CODE_REVIEW_2026-11-08.md](CODE_REVIEW_2026-11-08.md), [PAID_MP4_CODE_AUDIT_2026-11-08.md](PAID_MP4_CODE_AUDIT_2026-11-08.md), [BANANA_TEMPLATE_LOCK_RELEASE.md](BANANA_TEMPLATE_LOCK_RELEASE.md), [TEN_VIDEO_ATTEMPTS_RELEASE.md](TEN_VIDEO_ATTEMPTS_RELEASE.md), [VIDEO_SCENE_RETRY_RELEASE.md](VIDEO_SCENE_RETRY_RELEASE.md), [VIDEO_SCENE_RETRY_UI_RELEASE.md](VIDEO_SCENE_RETRY_UI_RELEASE.md).
-- **Illustrations and screenshots:** [architecture-high-level.svg](architecture-high-level.svg), [watchdog-architecture.svg](watchdog-architecture.svg), [mobile-ui-illustration.svg](mobile-ui-illustration.svg), and `screenshots/`. Illustrations may represent an earlier stage and are *not* executable architecture or proof of live configuration.
+- **Historical illustrations and screenshots:** [mobile-ui-illustration.svg](mobile-ui-illustration.svg) and `screenshots/`. These are illustrations/captures of earlier interfaces, not proof of current browser behaviour. The three main architecture SVGs and watchdog SVG are **current-source diagrams**, listed above, still not proof of live AWS configuration.
 
 ## The safe interpretation of "working" and "complete"
 
