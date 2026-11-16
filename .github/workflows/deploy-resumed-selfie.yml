@@ -1,4 +1,4 @@
-name: Deploy backend universal terminal lifecycle (API and UI only)
+name: Fix FFmpeg retry terminal-state agreement (API and UI only)
 # Uniform final image/video/assembly terminal exit; no provider calls or worker changes.
 # This release also returns the persisted personal message on job recovery.
 # UI rehydrates the greeting and character counter from the same read-only job GET.
