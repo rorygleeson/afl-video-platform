@@ -182,11 +182,47 @@ TERMINAL_FAILURE_MESSAGES = {
 }
 
 
+def assembly_failure_disposition(job):
+    """Read-only assembly disposition, confirmed from the named SFN execution.
+
+    A worker-persisted FAILED is an *attempt* failure, not a final job result:
+    the assembly workflow may be waiting 15s to run its one safe FFmpeg retry.
+    Fail closed for missing/inaccessible executions, hard timeouts, and retries
+    that never persisted a second failure. Never submit or restart work here.
+    """
+    record = job.get("assembly") or {}
+    if record.get("status") != "FAILED":
+        return None
+    if not ASSEMBLY_STATE_MACHINE_ARN:
+        return "REVIEW_REQUIRED"
+    arn = (ASSEMBLY_STATE_MACHINE_ARN.replace(
+        ":stateMachine:", ":execution:", 1) + ":final-" + job["jobId"])
+    try:
+        execution = STATES.describe_execution(executionArn=arn)
+    except ClientError:
+        LOG.warning("Cannot verify named FFmpeg workflow after worker failure")
+        return "REVIEW_REQUIRED"
+    status = execution.get("status")
+    if status == "RUNNING":
+        # First failure is waiting/retrying, or the second attempt has yet
+        # to finish the state machine. Neither is a customer terminal exit.
+        return "RETRYING"
+    if status == "FAILED" and record.get("retryCount") == 1:
+        # Second worker actually ran and durably FAILED; then the named
+        # execution ended. This is the definitive exhausted retry.
+        return "FAILED"
+    # FAILED without a persisted second failure could mean the retry was
+    # never admitted. ABORTED/TIMED_OUT/SUCCEEDED with FAILED worker state
+    # is inconsistent or uncertain and needs review, not auto-refund.
+    return "REVIEW_REQUIRED"
+
+
 def definitive_failure(job):
     """Derive an immutable customer outcome from durable DynamoDB checkpoints.
 
     Deliberately excludes REVIEW_REQUIRED, SUBMISSION_UNKNOWN, ordinary failed
-    videos with eligible retries, and unfinalised image jobs. No network calls.
+    videos with eligible retries, and unfinalised image jobs. Only a FAILED
+    assembly attempts read-only DescribeExecution of its *named* workflow.
     """
     sequence = job.get("videoSequence") or {}
     if sequence.get("status") == "BLOCKED" and sequence.get("failureCode") == "CONTENT_BLOCKED":
@@ -201,10 +237,10 @@ def definitive_failure(job):
         return {"currentStage": "IMAGES", "stageStatus": "FAILED",
                 "failureCode": "REFERENCE_IMAGES_FAILED",
                 "terminalAt": job.get("completedAt")}
-    # A recorded failed FFmpeg operation is final under the present one-shot
-    # assembly contract. Do not treat failed/timed-out SFN visibility as final.
+    # A first failed FFmpeg worker attempt is *not* terminal: Step Functions
+    # waits 15s and may retry once. Only exhausted confirmed retry is final.
     assembly = job.get("assembly") or {}
-    if assembly.get("status") == "FAILED":
+    if assembly_failure_disposition(job) == "FAILED":
         return {"currentStage": "STITCHING", "stageStatus": "FAILED",
                 "failureCode": "STITCHING_FAILED",
                 "terminalAt": assembly.get("updatedAt")}
@@ -345,8 +381,11 @@ def overall_job_progress(job):
         progress["stageStatus"] = "WAITING_FOR_ACTION"
     elif state in ("QUEUED", "PROCESSING"):
         progress["stageStatus"] = "PROCESSING"
+    elif state == "RETRYING":
+        progress["stageStatus"] = "RETRYING"
+        progress["message"] = "We are retrying the final video assembly. No new scenes are being generated."
     elif state in ("FAILED", "REVIEW_REQUIRED"):
-        progress["stageStatus"] = state
+        progress["stageStatus"] = "REVIEW_REQUIRED" if state == "FAILED" else state
     else:
         progress["stageStatus"] = "REVIEW_REQUIRED"
     return progress
@@ -561,6 +600,8 @@ def assembly_public(job):
         except ClientError:
             result["workflowStatus"] = "UNKNOWN"
     if status == "FAILED":
+        disposition = assembly_failure_disposition(job)
+        result["status"] = disposition
         result["errorCode"] = record.get("errorCode", "ASSEMBLY_FAILED")
     if status == "COMPLETED" and record.get("resultKey") == f"videos/{job_id}/final.mp4":
         key = record["resultKey"]
