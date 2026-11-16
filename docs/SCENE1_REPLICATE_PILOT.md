@@ -1,5 +1,7 @@
 # Stage 1C — paid Scene 1 pilot
 
+> **DOCUMENT STATUS — HISTORICAL / STAGE-SPECIFIC (reviewed 16 November 2026).** This records the design, release or resource assumptions at its original date; some model providers, payment gates, retries, waits, deployment commands and UI behaviour have since changed. **Do not use this file as today's operational contract or run its historical deployment instructions without a new live-state review.** Current references: [documentation index](README.md), [HTTP API](API_ENDPOINTS.md), [retry and timeout contract](RETRIES_AND_TIMEOUTS.md), [job statuses](JOB_STATUSES.md), [architecture](ARCHITECTURE.md), and [resilience audit](RESILIENCE_AUDIT_2026-11-16.md).
+
 The Stage 1B selfie upload/API-key flow remains unchanged. **Uploading does not trigger any Replicate spending.**
 
 This implementation adds an explicit **Generate Scene 1 with Replicate (paid API)** action. Confirm the browser dialog to start exactly one async Replicate `google/nano-banana-pro` edit. Scene 2 and Scene 3 are defined in versioned config but **disabled** until the pilot quality is approved.
