@@ -159,3 +159,33 @@ The frontend remains on the progress screen and displays “Finishing your video
 ### RA-01 guarded AWS rollout evidence — 16 November 2026
 
 [GitHub Actions run 43835732389](https://github.com/rorygleeson/afl-video-platform/actions/runs/43835732389) **SUCCEEDED**. API lifecycle/retry/UI regression tests passed and guarded CloudFormation API Lambda update plus frontend S3 publication/verification and CloudFront invalidation completed. No Google provider requests, FFmpeg worker code changes, or Step Functions definition changes were performed. **RA-01 status: CODE FIXED / CI AND DEPLOYMENT VERIFIED**. Real injected fail→retry→success and fail→retry→failure scenarios remain to be tested in live AWS; do not label end-to-end recovery proven. RA-02…RA-12 remain open.
+
+
+## Deeper event-driven architecture re-audit — 16 November 2026
+
+**Evidence:** current `src/api/handler.py:image_sequence_event,video_sequence_event,start_real_scene,retry_failed_real_scene`, `src/google_video_worker/handler.py:claim,submit,poll`, `src/handoff_watchdog/handler.py`, source EventBridge rules and Step Functions definitions. **Documentation review only**; no read-only live AWS `DescribeStateMachine`, new paid generation, fault injection or runtime change. Full trace and diagram in [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md).
+
+### Existing risk upgrade and new explicit failure modes
+
+| Risk | Source-verified observation | Severity / status | Next check |
+|---|---|---|---|
+| **RA-10 / ED-01: Google Claim JSONPath** | Committed Google-video ASL has `Claim.Payload.requestId.$ = "$.Execution.Name"` while Submit/Poll/Finalize use `"$$.Execution.Name"`. An existing prior dedicated `fix-omni-execution-context` workflow asserts **four** context references; the current template violates it. The source template's stale Comment also claims hard-disabled. **Live could differ.** | **HIGH, source mismatch confirmed, runtime outcome UNKNOWN.** Previously medium RA-10. | Read-only compare exact live `DescribeStateMachine` vs current rendered ASL, check recent execution ownership, then fix source/deploy using guarded change set and static regression assertion. Do not trigger paid Google to test this. |
+| **ED-02: event acknowledgement is not business success** | In `video_sequence_event`, an unknown Scene 3 assembly StartExecution can return `ASSEMBLY_HANDOFF_NEEDS_REVIEW` and a reserved-but-absent next scene can return `NEXT_SCENE_HANDOFF_NEEDS_REVIEW` without throwing. EventBridge sees a successfully invoked Lambda and its target delivery retry policy may not cover the **application failure**. | **HIGH, source behaviour confirmed; no observed lost customer delivery.** | Durable reviewed handoff reason / alert, safe recheck of named execution and output; fault inject missing execution while Lambda exits normally. Do not issue new paid POST. |
+| **ED-03: EventBridge expiry / missing DLQ** | Image/video completion rules allow `MaximumRetryAttempts=24`, `MaximumEventAgeInSeconds=3600`. Watchdog launch rule permits 12 attempts/3600s. No target DLQ appears in these IaC templates; watchdog image-start event itself may be lost, and watchdog naturally ends at 7200s. | **HIGH, previously RA-02/RA-11; OPEN.** | Test delivery exhaustion, absent watchdog startup, manual retry after watchdog stop and a >2h job. Add monitored durable failure sink before Stripe. |
+| **ED-04: transition ownership / atomic fencing** | Paid original scene and manual retry read `definitive_failure` before conditional DDB writes; conditions fence `videoSequence.BLOCKED` but not every possible concurrently terminal state. | **HIGH, RA-04 OPEN.** | Race terminal transition against reserve/claim/StartExecution in offline AWS fake. |
+| **ED-05: unknown provider acceptance** | Paid video `SUBMISSION_UNKNOWN` is set **before** Google POST; loss of interaction ID must not be treated as definitive failure. | **HIGH, RA-03 OPEN.** | Reconcile existing provider result if correlation is available; explicit review and provider-cost investigation; no blind POST retry. |
+| **ED-06: delivery evidence / expiry** | Final completed API status generates a 300s signed URL based on final DDB result key; live object availability/retention not re-checked in this document review. | **MEDIUM-HIGH, RA-06/RA-08 OPEN.** | Verify final object and customer access, distinguish expired URL vs deleted object; separate job TTL and payment records. |
+
+**Important:** The existing row saying RA-10 is MEDIUM is the **discovery-time snapshot**. Current priority is **HIGH** pending live ASL comparison. Do not imply this new audit established live AWS drift. These risks do not negate the prior RA-01 FFmpeg status fix; **RA-01 remains code/CI/deployment verified, live fault injection open**.
+
+### Event/retry design acceptance gates
+
+1. EventBridge invocation failure vs Lambda `NEEDS_REVIEW` return: prove each behavior using a fake Lambda target and verify durable reconciliation/alert rather than assume automatic target retry.
+2. Repeated/reordered image/video SUCCESS: match exact named execution and current DDB request owner; verify S3 MP4 exists; only one paid next-scene reservation.
+3. Stage reservation written then SFN `StartExecution` response lost: preserve idempotency, check existing named execution, never submit another Google request.
+4. Watchdog launch absent or stopped before a later manual retry: mark job as requiring review; ensure a durable owner, no infinite unobserved wait.
+5. Real video billable POST response unknown: no automatic retry regardless of HTTP 5xx/timeout; distinguish POST cost from read-only PollVideo retries.
+6. FFmpeg first worker fail: report nonterminal RETRYING while one safe 15s retry is possible; confirmed exhausted retry terminal only with second failure plus named SFN FAILED.
+7. No payment-ready sign-off until live ASL mismatch resolved, review queue and payment-order retention designed, and at least one controlled failure path proved with no duplicate provider POST.
+
+**Visual references:** [architecture](architecture-high-level.svg), [detailed event handoffs](event-driven-handoffs.svg), [retry/failure matrix](generation-and-retries.svg), [watchdog detail](watchdog-architecture.svg). The first three are the primary engineering diagrams; none is Mermaid.
