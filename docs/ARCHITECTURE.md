@@ -157,3 +157,8 @@ authentication change in this release. Durable underlying stage records
 provide terminal evidence, but future order/refund records require independent
 longer retention. This does not solve every stuck handoff or provider-unknown
 reconciliation case.
+
+
+## No fixed delay between sequential videos — 16 November 2026
+
+EventBridge completion → API verifies expected S3 MP4 and DynamoDB record → atomically reserves next named Step Functions scene execution → Google worker `PaidGate → Claim → Submit`. The historical `SubmissionSchedule` Choice, `WaitScene2` (10s) and `WaitScene3` (20s) are removed. All Google scene submissions remain sequential because the next execution is initiated only after the prior completed MP4 has been verified; no retry or duplicate paid submission protections were relaxed. Normal EventBridge/Step Functions/Lambda startup latency remains. The 20s `WaitForVideo` is still the **within-scene provider polling** interval.
