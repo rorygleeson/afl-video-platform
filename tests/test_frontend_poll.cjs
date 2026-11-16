@@ -1747,15 +1747,43 @@ test('terminal stitching failure shows reason and offers fresh attempt, no paid 
   assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
 });
 
-test('review-required is not a terminal outcome and does not remove original job screen', async () => {
+test('review-required keeps original job visible but offers a confirmed clean start without paid retry', async () => {
+  const oldId='a'.repeat(32);
   const h=setup({
-    localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    localMap:new Map([['afl-video-active-job-v1',oldId]]),
     sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
-    progress:{currentStage:'VIDEO_2',stageStatus:'REVIEW_REQUIRED',
-      terminal:false,outcome:null,finalVideoReady:false}
+    progress:{currentStage:'VIDEO_1',stageStatus:'REVIEW_REQUIRED',
+      terminal:false,outcome:null,finalVideoReady:false},
+    realVideos:{scene1:{mode:'REAL',status:'REVIEW_REQUIRED',
+      failureCode:'GOOGLE_HTTP_429',retryAvailable:false}}
   });
   await h.flush();
   assert.equal(h.els.jobFailureScreen.hidden,true);
   assert.equal(h.els.jobInputsSection.hidden,false);
-  assert.equal(h.els.startNewJob.hidden,true);
+  assert.equal(h.els.startNewJob.hidden,false,
+    'A stuck review state must have a safe fresh-start escape');
+  assert.equal(h.els.retryVideoScene1.hidden,true,
+    'Do not allow a second paid scene POST from ambiguous acceptance');
+  const before=h.calls.filter(c=>c.opts.method==='POST').length;
+  h.els.startNewJob.listeners.click();
+  assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),null);
+  assert.equal(h.els.generate.hidden,false);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,before,
+    'Starting fresh is a UI reset only, not a paid POST');
+});
+test('review-required fresh-start confirmation can be refused without dropping job', async () => {
+  const oldId='a'.repeat(32);
+  const h=setup({
+    localMap:new Map([['afl-video-active-job-v1',oldId]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    progress:{currentStage:'VIDEO_1',stageStatus:'REVIEW_REQUIRED',
+      terminal:false,outcome:null,finalVideoReady:false}
+  });
+  await h.flush();
+  assert.equal(h.els.startNewJob.hidden,false);
+  // The existing harness defaults to confirmation=true. Verify the dialog
+  // through source contract, and that all new starts require explicit click.
+  assert.match(script,/Starting a NEW video does not retry or cancel this job/);
+  assert.equal(h.localStorage.getItem('afl-video-active-job-v1'),oldId);
+  assert.equal(h.calls.filter(c=>c.opts.method==='POST').length,0);
 });
