@@ -60,3 +60,19 @@ When API/worker/ASL changes land, update the appropriate canonical contract in t
 - The dedicated `.github/workflows/validate-docs.yml` runs when docs, the API route handler, or relevant Google/FFmpeg ASL changes. Exact route response/error code behaviour still needs independent mocked/live integration test coverage.
 
 **Resolution:** Primary canonical documentation reconciled against implementation; historical documents labelled; documentation regression gate added and passing. Functional resilience blockers RA-02…RA-12 remain tracked separately.
+
+
+## Diagram audit and replacement — 16 November 2026
+
+**Current vector diagrams are SVG, not Mermaid.** Their contents were reviewed against the current API, image/video workers, Step Functions and EventBridge code. The resulting drawings are:
+
+| Diagram | Audit finding / fix |
+|---|---|
+| [architecture-high-level.svg](architecture-high-level.svg) | Replaced the obsolete Replicate image provider, per-scene manual video approval and missing assembly with direct Google Vertex image API, parallel image workflow, verified backend EventBridge handoffs, strictly sequential video and FFmpeg final assembly. |
+| [generation-and-retries.svg](generation-and-retries.svg) | New source-aligned engineering flow: image 429 retry (up to eight total attempts/600s), no automatic paid Google video POST replay, read-only 20s poll loop, confirmed failure/manual scene retries (up to ten total attempts), and one safe FFmpeg-only retry after 15s. |
+| [watchdog-architecture.svg](watchdog-architecture.svg) | Replaced with clearer one-job event-driven flow: image SFN RUNNING → EventBridge → named watchdog → 60s checks → safe verified event replay. Explicit 2h lifetime, lost-start-event limitation and separate existing five-minute image reconciler. |
+| [mobile-ui-illustration.svg](mobile-ui-illustration.svg) | Preserved as historical artwork; prominently relabelled NOT CURRENT because it depicts an obsolete manual video-generation button. |
+
+**Documentation usage:** `ARCHITECTURE.md` and `INFRASTRUCTURE.md` now reference the SVGs instead of Mermaid fenced diagrams. `docs/README.md` indexes all four assets; the old mobile illustration is historical. The diagrams are **source-aligned conceptual views**, not a live cloud resource snapshot or proof of event delivery.
+
+**Validation:** [GitHub Actions documentation run 43839983352](https://github.com/rorygleeson/afl-video-platform/actions/runs/43839983352) passed. The new unit tests XML-parse every SVG, check that the index links exist and disallow Mermaid in the primary architecture/infrastructure documents. Full rendered cross-device layout review has not been independently performed; do not claim visual usability is proven from XML parsing alone.
