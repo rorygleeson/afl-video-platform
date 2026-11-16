@@ -1,5 +1,8 @@
 # AFL Video Platform — Job and Stage Status Contract
 
+> **IMPORTANT RE-AUDIT CORRECTION — 16 NOVEMBER 2026:** The current backend `overall_job_progress` marks `STITCHING_FAILED / terminal:true` immediately when `assembly.status==FAILED`. The assembly SFN now performs a **15-second Wait and one safe FFmpeg-only retry** after the first persisted failure. Consequently **a first failed attempt is not a confirmed permanent customer outcome**. The existing generic `STITCHING_FAILED` wording in the universal-outcome section below describes the current implementation, **not correct payment/refund readiness**. Resolve RA-01 in [resilience audit](RESILIENCE_AUDIT_2026-11-16.md) first: report first failure as retrying/nonterminal until the named assembly SFN confirms the retry succeeded or all permitted attempts finished. Uncertain timeout must remain `REVIEW_REQUIRED`. No code was changed during the audit.
+>
+
 **Verified against repository source:** 2026-11-15.  
 **Verification level:** SOURCE VERIFIED; guarded API, EventBridge and frontend AWS deployment logs verified for 15 November releases. Not independently verified with a live end-to-end customer job or full DynamoDB drift inspection.  
 **Key implementations:** `src/api/handler.py`, `src/image_worker/handler.py`, `src/image_worker/google_direct.py`, `src/google_video_worker/handler.py`, `src/assembly_worker/handler.py`, `frontend/app.js`, `infrastructure/app/backend.yaml`, `infrastructure/app/google-video.yaml`, `infrastructure/app/assembly.yaml`.
