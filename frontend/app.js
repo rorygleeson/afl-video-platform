@@ -319,7 +319,7 @@ const input = document.getElementById('selfie');
     const assembly = lastVideoSnapshot?.assembly || {};
     const active = currentJobId && currentJobId === assemblyProgressJobId &&
       !document.getElementById('assemblyPanel').hidden &&
-      ['READY', 'QUEUED', 'PROCESSING'].includes(assembly.status) &&
+      ['READY', 'QUEUED', 'PROCESSING', 'RETRYING'].includes(assembly.status) &&
       assemblyProgressStartedAt !== null;
     const panel = document.getElementById('assemblyProgress');
     panel.hidden = !active;
@@ -832,7 +832,8 @@ const input = document.getElementById('selfie');
       assembleButton.hidden = true;
       assembleButton.disabled = true;
       const display = {READY:'Generating final video…', QUEUED:'Generating final video…',
-        PROCESSING:'Generating final video…', COMPLETED:'Your final video is ready!',
+        PROCESSING:'Generating final video…', RETRYING:'Finishing your video — trying assembly again…',
+        COMPLETED:'Your final video is ready!',
         FAILED:'Final video generation failed', REVIEW_REQUIRED:'Final video needs review'};
       assemblyStatus.textContent = display[assembly.status] || '';
       assemblyStatus.classList.toggle('generating',
