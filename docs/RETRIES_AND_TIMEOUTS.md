@@ -80,8 +80,11 @@ See [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md) for RA-01â€
 
 An AWS completion event has two separate opportunities to fail:
 
-1. **Target delivery/invocation failure:** EventBridge may retry the target according to each rule's `RetryPolicy`; source-defined maximum ages/attempts are detailed in [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md).
-2. **Application-level handoff uncertainty:** `video_sequence_event` can **return** `NEXT_SCENE_HANDOFF_NEEDS_REVIEW` or `ASSEMBLY_HANDOFF_NEEDS_REVIEW` as an ordinary successful Lambda result after a missing/unknown next execution. EventBridge sees a successful invocation; its target-delivery retry may **not** be activated. The per-job watchdog may replay a verified past event after 120s, but can be absent, stopped or past its 2-hour limit.
+1. **EventBridge target delivery failure:** EventBridge `RetryPolicy` controls reaching/accepting the Lambda target (the application rules configure 24 attempts/3600s for completion events). This is **not** a retry of failed business code.
+2. **Lambda async function failure:** After accepted asynchronous invocation, Lambda has a **separate queue and function-error retry policy**. AWS's standard behaviour retries function errors twice unless configured differently; the effective setting of this deployed function was **not checked live**.
+3. **Business-level handoff uncertainty despite successful Lambda execution:** `video_sequence_event` can **return** `NEXT_SCENE_HANDOFF_NEEDS_REVIEW` or `ASSEMBLY_HANDOFF_NEEDS_REVIEW` after a missing/unknown named execution. This is a **successful Lambda return**; it triggers neither the Lambda async function-error retry nor EventBridge delivery retry. The per-job watchdog may replay a verified completion after 120s but can be absent, stopped or past its 2-hour limit.
+
+AWS service reference: [EventBridge Lambda invocation](https://docs.aws.amazon.com/us_en/eventbridge/latest/userguide/eb-custom-bus-target-lambda.html) and [Lambda async errors](https://docs.aws.amazon.com/lambda/latest/dg/invocation-async-error-handling.html).
 
 Neither failure type justifies a new Google POST. A durable needs-review record, alerting and recovery strategy remain **proposed**, not implemented. This distinction should be in every event-driven fault-injection test plan.
 
