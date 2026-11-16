@@ -262,3 +262,8 @@ for indefinitely uncertain states, robust no-login customer authorisation,
 and separate long-lived payment/refund records. No Stripe integration exists.
 Older sections describing a proposed lifecycle or lacking terminal fields are
 historical and superseded by this section.
+
+
+## Immediate video handoff update — 16 November 2026
+
+Following durable Google video completion and S3 MP4 verification, the existing EventBridge/API backend advances directly to the next named Scene execution. The Google Step Functions `Claim` task transitions straight to `Submit` for all three scenes. Previously fixed waits (10s for Scene 2 and 20s for Scene 3) were removed. No frontend action or timer starts or advances paid video generation. `SUBMISSION_UNKNOWN` and recovery safeguards remain unchanged; `WaitForVideo` remains a 20s provider-poll interval, not a scene-to-scene stagger. The prior timing descriptions elsewhere in this document have been superseded.
