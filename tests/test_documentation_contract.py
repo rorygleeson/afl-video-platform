@@ -88,7 +88,7 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('"WaitForVideo":{"Type":"Wait","Seconds":20', VIDEO_ASL)
         self.assertIn('"PollVideo":{"Type":"Task"', VIDEO_ASL)
         self.assertIn('"Retry":[{"ErrorEquals":["States.TaskFailed"]', VIDEO_ASL)
-        self.assertIn('No fixed scheduling waits', RETRIES.lower().replace("no fixed scheduling waits", "No fixed scheduling waits") if 'No fixed scheduling waits' in RETRIES else RETRIES)
+        self.assertIn('No fixed scheduling waits', RETRIES)
 
     def test_assembly_confirms_single_retry_and_terminal_source_gate(self):
         self.assertIn('"WaitBeforeConfirmedRetry"', ASSEMBLY_ASL)
@@ -99,7 +99,8 @@ class DocumentationContractTests(unittest.TestCase):
         self.assertIn('if status == "FAILED"', API)
         self.assertIn('REVIEW_REQUIRED', STATUSES)
         self.assertIn('STITCHING_FAILED', STATUSES)
-        self.assertIn('15-second', RETRIES)
+        self.assertIn('WaitBeforeConfirmedRetry', RETRIES)
+        self.assertIn('**15s**', RETRIES)
 
     def test_canonical_docs_link_targets_exist(self):
         current = ["README.md", "API_ENDPOINTS.md", "JOB_STATUSES.md",
