@@ -146,3 +146,13 @@ EventBridge completion → API verifies expected S3 MP4 and DynamoDB record → 
 ### Correct assembly lifecycle after first failure — 16 November 2026
 
 `Stitch` can fail and durably mark `assembly.FAILED`. The assembly Step Functions workflow then waits 15s and attempts **one** confirmed FFmpeg-only retry. `api.assembly_failure_disposition(job)` reads the stable `final-{jobId}` execution; a running SFN maps to customer `RETRYING` nonterminal, while final FAILED is terminal only if `retryCount=1` proves a second worker failure was recorded. Missing, aborted, timed-out, inconsistent or inaccessible SFN returns nonterminal `REVIEW_REQUIRED`. This prevents a false permanent-failure screen before safe retry; no Google request or state mutation in status GET. Other resilience gaps remain documented in the audit.
+
+## Detailed event-driven handoff specification (16 November 2026)
+
+For a worked explanation of each AWS event, Lambda validation predicate, idempotency/duplicate delivery, missed-event recovery, checkpoint ownership, and the distinction between **EventBridge delivery success** and **successful downstream StartExecution**, see [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md).
+
+![EventBridge delivery, next-scene verification and watchdog gap diagram](event-driven-handoffs.svg)
+
+The event-driven design is **not a single transaction**. Each transition crosses independently observable steps: (1) previous SFN has SUCCEEDED, (2) EventBridge delivers an event, (3) Lambda verifies current DDB ownership, completed output and required S3 object, (4) Lambda conditionally writes a new reservation, and (5) a new named SFN execution starts. A reservation is not proof that its execution started. A successful Lambda invocation is not proof that its internal handoff succeeded if it returned a `NEEDS_REVIEW` status instead of raising. This recovery distinction is a verified source concern, not a demonstrated customer incident.
+
+**Important source-only risk:** the committed video SFN Claim request-ID path appears as `$.Execution.Name` rather than context `$$.Execution.Name` used by Submit/PollVideo/Finalize. Verify the live workflow and reconcile IaC before the next video ASL rollout (ED-01). **No source/code or AWS runtime fix was included in this documentation review.**
