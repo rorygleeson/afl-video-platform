@@ -18,6 +18,15 @@
 
 **Canonical ownership:** Do not repeat endpoint definitions in the architecture or implement retries based on historical release notes. Update the relevant canonical document in the same pull request as any code change. Include a source citation path, test, deploy evidence when present, and confidence level.
 
+## Current SVG diagrams (no Mermaid)
+
+- [End-to-end AWS architecture](architecture-high-level.svg): API, parallel Google image generation, EventBridge sequencing, sequential scene videos and final assembly.
+- [Generation, retries and failure outcomes](generation-and-retries.svg): confirmed image 429 retries, no blind video POST retry, read-only provider polling, manual scene retry and FFmpeg-only retry.
+- [Per-job handoff watchdog](watchdog-architecture.svg): EventBridge start, 60-second checks, verified handoff replay, 2-hour limit and missed-event risk.
+- [Historical UI mockup](mobile-ui-illustration.svg): explicitly labelled an old illustrative interface, **not** a representation of current production controls.
+
+These SVGs are conceptual source documentation, **not** live AWS topology or fault-injection evidence. Update them alongside architecture/worker changes. All current operations documentation uses SVG rather than Mermaid.
+
 ## Historical plans, dated release evidence, or stage-specific references
 
 These files retain their original purpose and **must not override the current contracts above**:
