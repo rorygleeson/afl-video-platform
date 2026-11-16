@@ -214,3 +214,6 @@ Eliminated fixed AWS Step Functions submission waits for Scene 2 (10s) and Scene
 ### RA-01 FFmpeg status reconciliation — 16 November 2026
 
 **Implementation recorded:** On first worker `assembly.FAILED`, while the existing named SFN is RUNNING during its 15-second wait/one confirmed retry, backend reports `STITCHING/RETRYING`, `terminal=false`. Only a durably persisted second failed attempt (`retryCount=1`) and confirmed SFN `FAILED` make `STITCHING_FAILED` terminal. Unknown or inconsistent execution stays `REVIEW_REQUIRED` without refund eligibility. Customer sees a final-video retry message; successful retry still delivers the MP4. No changes to Google, Step Functions orchestration, or FFmpeg worker. CI/deployment evidence and controlled fault injection are required before marking end-to-end complete. Other RA-02…RA-12 resilience gaps remain open.
+
+
+**RA-01 release update (16 November 2026):** Guarded AWS API/UI release [43835732389](https://github.com/rorygleeson/afl-video-platform/actions/runs/43835732389) passed offline tests and verified deployment. Premature `STITCHING_FAILED` during first attempt retry is fixed in deployed projection. No Google/FFmpeg/ASL modifications. **Live failure injection remains outstanding**; other audit findings remain open.
