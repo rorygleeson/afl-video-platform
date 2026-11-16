@@ -53,3 +53,9 @@ Reviewed against current video worker and Step Functions source: 2026-11-16. Ite
 - `SUBMISSION_UNKNOWN` may be set before the billable POST; it is not evidence that the POST was rejected. Do not resubmit automatically or claim it is refunded.
 - Deployment verification for the immediate-handoff ASL: [43824295664](https://github.com/rorygleeson/afl-video-platform/actions/runs/43824295664). This is **not** a live quota/capacity stress test; provider-wide rate controls and uncertain acceptance recovery remain open.
 - No Stripe checkout, customer charge or refund is implemented. See [current retries](RETRIES_AND_TIMEOUTS.md) and [audit](RESILIENCE_AUDIT_2026-11-16.md).
+
+## Deep event-driven audit update — 16 November 2026
+
+- **New high-priority source finding:** committed `infrastructure/app/google-video.yaml` `Claim.requestId.$` uses the input JSONPath `$.Execution.Name` although Submit, PollVideo and Finalize use Step Functions execution context `$$.Execution.Name`. The historical fix workflow asserts all four should be context-based. **Live comparison and source/IaC reconciliation are required before the next guarded Google workflow deployment; not fixed here.**
+- **Lost handoff acknowledgement:** `video_sequence_event` can return `NEXT_SCENE_HANDOFF_NEEDS_REVIEW` / `ASSEMBLY_HANDOFF_NEEDS_REVIEW` to EventBridge without raising, so target delivery retries may not occur; the bounded per-job watchdog is not guaranteed to have started. See [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md).
+- Distinguish **no automatic paid Submit POST Retry**, **read-only PollVideo GET Retry**, **separately user-confirmed scene attempt** and **safe FFmpeg-only retry**. They have different cost and failure implications; no single blanket retry rule is appropriate.
