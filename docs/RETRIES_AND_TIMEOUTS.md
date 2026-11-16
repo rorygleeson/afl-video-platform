@@ -212,3 +212,37 @@ and offers Start new video; reloading the job reports the same outcome.
 Other provider failures, ambiguous submissions and workflow timeouts remain
 their existing non-content-blocked states. Do NOT mark those permanently
 CONTENT_BLOCKED without authoritative evidence from Google.
+
+
+## Extended terminal job exit (16 November 2026)
+
+The backend now projects `terminal=true, outcome=FAILED` using **only durable,
+definitive evidence** from the existing DynamoDB records:
+
+- `REFERENCE_IMAGES_FAILED`: image worker finalised `FAILED` or
+  `PARTIAL_SUCCESS` (includes existing stale-image recovery);
+- `CONTENT_BLOCKED`: Google policy refusal atomically wrote videoSequence
+  `BLOCKED`, unchanged from the earlier release;
+- `VIDEO_ATTEMPTS_EXHAUSTED`: a scene has a confirmed Google terminal
+  failure, persisted `FAILED` record and at least ten authorised attempts;
+- `STITCHING_FAILED`: FFmpeg worker durably recorded assembly `FAILED`.
+
+Each returns a safe `message`, stage, failure code, no retry eligibility and
+`canStartNewJob=true`. A verified assembled final MP4 returns
+`terminal=true, outcome=COMPLETED`. Both job and video status GETs expose
+the same `progress`; no new provider call or job-wide DynamoDB write occurs.
+
+**Critical distinction:** `REVIEW_REQUIRED`, `SUBMISSION_UNKNOWN`, Google
+capacity/transient failures with remaining retries, API handoff uncertainty
+and a timed-out Step Functions execution are **not** final or automatic refund
+triggers. No mechanism now manufactures a permanent failure merely from time
+elapsed or status polling. Backend start/retry/assembly/EventBridge paths
+refuse known definitive failure records. The customer UI hides progress and
+previews only after `terminal=true/outcome=FAILED`.
+
+This closes the clear-outcome gap for **known** unrecoverable failures, but
+does not close the recovery/reconciliation gap for indefinite unknown work.
+Before payments, independently audit staleness thresholds and reconcile
+uncertain provider acceptance/handoffs; never blindly resubmit a chargeable
+request. Separate media TTL from transaction audit retention. The existing
+seven-day DynamoDB TTL is not a sufficient payment history store.
