@@ -188,6 +188,8 @@ def overall_job_progress(job):
     )
 
     progress = {
+        "terminal": False,
+        "outcome": None,
         "currentStage": "IMAGES",
         "stageStatus": "PENDING",
         "imagesCompleted": images_completed,
@@ -196,6 +198,24 @@ def overall_job_progress(job):
         "videosTotal": len(VIDEO_SCENES),
         "finalVideoReady": False,
     }
+
+    # The video sequence is the persisted authority for permanent policy
+    # failure. An image COMPLETED status must never conceal a blocked video.
+    blocked = job.get("videoSequence") or {}
+    if blocked.get("status") == "BLOCKED" and blocked.get("failureCode") == "CONTENT_BLOCKED":
+        failed_scene = blocked.get("failedScene")
+        if failed_scene in VIDEO_SCENES:
+            progress.update({
+                "currentStage": "VIDEO_" + str(VIDEO_SCENES.index(failed_scene) + 1),
+                "stageStatus": "BLOCKED",
+                "terminal": True, "outcome": "FAILED",
+                "failureCode": "CONTENT_BLOCKED",
+                "failedScene": failed_scene,
+                "terminalAt": blocked.get("terminalAt"),
+                "canStartNewJob": True,
+                "message": "Video generation stopped because the content did not meet generation guidelines. No further scenes will be generated.",
+            })
+            return progress
 
     if images_completed != len(VIDEO_SCENES):
         if job.get("status") in ("FAILED", "PARTIAL_SUCCESS"):
@@ -266,6 +286,8 @@ def overall_job_progress(job):
         progress["currentStage"] = "COMPLETED"
         progress["stageStatus"] = "COMPLETED"
         progress["finalVideoReady"] = True
+        progress["terminal"] = True
+        progress["outcome"] = "COMPLETED"
     elif state == "READY":
         progress["stageStatus"] = "WAITING_FOR_ACTION"
     elif state in ("QUEUED", "PROCESSING"):
@@ -590,13 +612,17 @@ def video_scene_public(job, scene_id):
     # attempt is safe to offer only after our poll persisted one of them.
     # A failed AWS workflow or ambiguous POST is not proof of a failed Google
     # interaction. Never enable retry for those states.
+    content_blocked = (job.get("videoSequence", {}).get("status") == "BLOCKED"
+                       and job.get("videoSequence", {}).get("failureCode") == "CONTENT_BLOCKED")
     confirmed_terminal = real.get("providerFinalStatus") in (
         "failed", "cancelled", "incomplete", "budget_exceeded")
     result["retryAvailable"] = bool(
-        REAL_VIDEO_MODE == "ENABLED" and status == "FAILED"
+        not content_blocked and REAL_VIDEO_MODE == "ENABLED" and status == "FAILED"
         and confirmed_terminal
         and attempt_number < MAX_VIDEO_ATTEMPTS and not job.get("assembly")
     )
+    if content_blocked:
+        result["retryBlockedReason"] = "CONTENT_BLOCKED"
     if status in ("MOCK_CLAIMED", "MOCK_GENERATING", "MOCK_COMPLETED", "MOCK_FAILED"):
         result["mock"] = True
     if item.get("errorCode") and status in ("FAILED", "MOCK_FAILED", "SUBMISSION_UNKNOWN"):
@@ -648,7 +674,8 @@ def video_scene_public(job, scene_id):
 
     # Every failed scene returns a machine-readable reason when no retry
     # button is available; the frontend must not silently hide it.
-    if result["status"] in ("FAILED", "REVIEW_REQUIRED") and not result["retryAvailable"]:
+    if (result["status"] in ("FAILED", "REVIEW_REQUIRED") and
+            not result["retryAvailable"] and not content_blocked):
         if job.get("assembly"):
             result["retryBlockedReason"] = "ASSEMBLY_STARTED"
         elif attempt_number >= MAX_VIDEO_ATTEMPTS:
@@ -825,6 +852,8 @@ def start_real_scene(job_id, scene_id, event):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
+    if job.get("videoSequence", {}).get("status") == "BLOCKED":
+        return response(409, {"status": "CONTENT_BLOCKED", "error": "This job is permanently stopped"})
     if job.get("paidVideoApprovals", {}).get(scene_id) or job.get("realVideos", {}).get(scene_id):
         return response(409, {"error": "This scene already has a paid request; check status, do not retry"})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -872,9 +901,11 @@ def start_real_scene(job_id, scene_id, event):
         DDB.update_item(
             Key={"jobId": job_id},
             UpdateExpression="SET paidVideoApprovals.#scene = :approval",
-            ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(paidVideoApprovals.#scene) AND attribute_not_exists(realVideos.#scene)",
-            ExpressionAttributeNames={"#scene": scene_id},
-            ExpressionAttributeValues={":approval": {
+            ConditionExpression=("attribute_exists(jobId) AND attribute_not_exists(paidVideoApprovals.#scene) "
+                                 "AND attribute_not_exists(realVideos.#scene) "
+                                 "AND (attribute_not_exists(videoSequence) OR videoSequence.#seqStatus <> :blocked)"),
+            ExpressionAttributeNames={"#scene": scene_id, "#seqStatus": "status"},
+            ExpressionAttributeValues={":blocked": "BLOCKED", ":approval": {
                 "status": "REQUESTED", "executionName": name,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "requestFingerprint": hashlib.sha256(token.encode()).hexdigest(),
@@ -918,6 +949,8 @@ def start_video_sequence(job_id, event):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
+    if job.get("videoSequence", {}).get("status") == "BLOCKED":
+        return response(409, {"status": "CONTENT_BLOCKED", "error": "This job is permanently stopped"})
     if job.get("assembly"):
         return response(409, {"error": "Final assembly already started"})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1133,6 +1166,8 @@ def retry_failed_real_scene(job_id, scene_id, event):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
+    if job.get("videoSequence", {}).get("status") == "BLOCKED":
+        return response(409, {"status": "CONTENT_BLOCKED", "error": "This job is permanently stopped"})
     approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
     current = job.get("realVideos", {}).get(scene_id, {})
     # Replaying the same API request cannot create a third attempt, including
