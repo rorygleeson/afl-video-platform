@@ -1,4 +1,5 @@
 name: Deploy terminal content-policy exit (Google worker, API, frontend)
+# Final terminal-state recovery check: refresh video status even before image cards load.
 on:
   push:
     branches: [main]
