@@ -406,37 +406,46 @@ const input = document.getElementById('selfie');
     playButton.hidden = true;
     try {
       await video.play();
+      return true;
     } catch {
       if (activeScenePreview === video) activeScenePreview = null;
-      playButton.hidden = false; // Browser blocked autoplay: allow one tap.
+      playButton.hidden = false; // Browser blocked autoplay / stale link.
+      return false;
     }
   }
 
-  // A completed MP4 stays in S3, but its presigned URL only lasts five minutes.
-  // Refresh *only* the selected clip when Replay is tapped; never call a paid POST.
-  async function replaySceneWithFreshUrl(scene, jobId, video, button, player) {
+  // Reuse a loaded MP4 first: replacing video.src on every tap resets the
+  // decoded first frame and produces a visible flash on Android browsers.
+  // Only request a fresh five-minute S3 URL when actual playback fails.
+  // The GET is read-only and never resubmits Google generation.
+  async function replaySceneWithFreshUrl(scene, jobId, video, button, player, forceRefresh = false) {
     if (button.disabled || !jobId || jobId !== currentJobId) return;
     button.disabled = true;
-    button.textContent = 'Loading…';
     try {
+      if (!forceRefresh) {
+        video.dataset.refreshedForPlayback = '';
+        const started = await playScenePreview(video, button, true);
+        if (started) return; // Keep the existing media element and loaded frame.
+      }
+      button.textContent = 'Loading…';
       const data = await api('/jobs/' + jobId + '/videos/scene' + scene);
-      if (jobId !== currentJobId || !player.querySelector('video') ||
-          player.querySelector('video') !== video) return;
+      if (jobId !== currentJobId || player.querySelector('video') !== video) return;
       const clip = data.video || {};
       if (clip.mode !== 'REAL' || clip.status !== 'COMPLETED' ||
           typeof clip.url !== 'string' || !clip.url.startsWith('https://') || clip.mock) {
         throw new Error('Completed video is not currently available.');
       }
-      // Never update an actively playing preview during routine status polling.
-      // The explicit replay tap is the safe point to replace the expired URL.
+      // Only an expired/unplayable source gets replaced; normal replay does not flash.
+      video.dataset.refreshedForPlayback = 'true';
       video.src = clip.url;
       player.dataset.url = clip.url;
-      await playScenePreview(video, button, true);
+      const started = await playScenePreview(video, button, true);
+      if (!started) throw new Error('The refreshed video could not be played');
     } catch (error) {
       if (jobId === currentJobId) {
         button.hidden = false;
         videoTestMessage.textContent = 'Scene ' + scene +
-          ' playback could not be refreshed: ' + error.message +
+          ' playback is unavailable: ' + error.message +
           '. Tap Play to try again. No video generation was restarted.';
       }
     } finally {
@@ -773,7 +782,15 @@ const input = document.getElementById('selfie');
               playButton.hidden = false;
             });
             video.addEventListener('error', () => {
-              playButton.hidden = false;
+              // A cached clip can fail asynchronously when the signed link
+              // expires. Refresh once only for an active play, never on polling.
+              if (activeScenePreview === video &&
+                  video.dataset.refreshedForPlayback !== 'true') {
+                void replaySceneWithFreshUrl(n, jobId, video, playButton, player, true);
+              } else {
+                if (activeScenePreview === video) activeScenePreview = null;
+                playButton.hidden = false;
+              }
             });
             preview.appendChild(video);
             preview.appendChild(playButton);
