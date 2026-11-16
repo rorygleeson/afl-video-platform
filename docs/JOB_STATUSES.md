@@ -1,279 +1,109 @@
-# AFL Video Platform — Job and Stage Status Contract
+# AFL Video Platform — Current job and stage status contract
 
-> **IMPORTANT RE-AUDIT CORRECTION — 16 NOVEMBER 2026:** The current backend `overall_job_progress` marks `STITCHING_FAILED / terminal:true` immediately when `assembly.status==FAILED`. The assembly SFN now performs a **15-second Wait and one safe FFmpeg-only retry** after the first persisted failure. Consequently **a first failed attempt is not a confirmed permanent customer outcome**. The existing generic `STITCHING_FAILED` wording in the universal-outcome section below describes the current implementation, **not correct payment/refund readiness**. Resolve RA-01 in [resilience audit](RESILIENCE_AUDIT_2026-11-16.md) first: report first failure as retrying/nonterminal until the named assembly SFN confirms the retry succeeded or all permitted attempts finished. Uncertain timeout must remain `REVIEW_REQUIRED`. No code was changed during the audit.
->
+**Reviewed:** 16 November 2026 against `src/api/handler.py`, image/video/assembly workers, AWS Step Functions definitions and `frontend/app.js`. This is the authoritative **source-based** status reference; live fault injection remains outstanding. Historical status proposals are archived in older release notes and [resiliency roadmap](RESILIENCY_ROADMAP.md).
 
-**Verified against repository source:** 2026-11-15.  
-**Verification level:** SOURCE VERIFIED; guarded API, EventBridge and frontend AWS deployment logs verified for 15 November releases. Not independently verified with a live end-to-end customer job or full DynamoDB drift inspection.  
-**Key implementations:** `src/api/handler.py`, `src/image_worker/handler.py`, `src/image_worker/google_direct.py`, `src/google_video_worker/handler.py`, `src/assembly_worker/handler.py`, `frontend/app.js`, `infrastructure/app/backend.yaml`, `infrastructure/app/google-video.yaml`, `infrastructure/app/assembly.yaml`.
+## Most important distinction
 
-> **Current implementation:** `GET /jobs/{jobId}` already provides an **end-to-end read-only** `job.progress.currentStage` and `stageStatus` projection derived from image, real-video and assembly state. This is **not** a new persistent global DynamoDB field, and existing `job.status` is still the image-job status. Additional operation-level status and anonymous recovery improvements below remain proposals.
-
-## Backend-owned progression added 15 November 2026
-
-- Initial `POST /jobs` records `autoVideoConsent` from `confirmPaidSequence:true`; it is **not Stripe payment validation**. `POST /jobs/{jobId}/generate` is still browser-initiated once.
-- Successful *image* Step Functions completion triggers AWS EventBridge → `image_sequence_event()` → existing `start_video_sequence()`, after image success and recorded consent checks.
-- Successful *video* Step Functions completion triggers AWS EventBridge → `video_sequence_event()`, verifying attempt ownership and S3 MP4 then starting the next scene. After Scene 3, it calls `start_assembly()`, with one conditional reservation and stable `final-{jobId}` workflow name.
-- Browser video/assembly polling is read-only; manual scene retry remains a **separate explicit** POST. Normal image/video status polls use 5 seconds (15 after errors); **developer overall status** uses 2 seconds while open/visible.
-- Source verified; deployment evidence: [Stage 1](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689396745), [Stage 2](https://github.com/rorygleeson/afl-video-platform/actions/runs/43689754297), [Stage 3](https://github.com/rorygleeson/afl-video-platform/actions/runs/43690121205). A full live paid end-to-end generation has not been re-run for this documentation review.
-
-## Existing status GET endpoints
-
-| Method / route | Returns | Source |
-| --- | --- | --- |
-| `GET /jobs/{jobId}` | `{job: {jobId, scenarioId, team, firstName, lastName, status, createdAt, imageCount, sceneCount, completedScenes, failedScenes, scenes, progress}}`; `progress` has current stage, stage status, completed/total image/video counts and `finalVideoReady` | `public_job()` plus `overall_job_progress()` (read-only) |
-| `GET /jobs/{jobId}/images` | `{jobId, status, scenes, images}` where `images` contains completed `sceneId` and signed `url` | `images_for_job()` |
-| `GET /jobs/{jobId}/videos` | `{jobId, videoGenerationMode, realVideoMode, scene1PaidApproved, sequence, paidScenes, videos, assembly}` | `video_status()` |
-| `GET /jobs/{jobId}/videos/{scene}` | `{jobId, video}` with one video scene's fields | `video_status()` |
-| `GET /jobs/{jobId}/assembly` | `{jobId, assembly}` with assembly state and final signed URLs when available | `assembly_public()` |
-| `GET /jobs/{jobId}/real-videos/{scene}/diagnostics` | Developer diagnostic results; not the normal customer progress API | `failed_video_diagnostic()` |
-
-All these routes currently sit behind the API Gateway developer `x-api-key`; there is no customer-specific anonymous recovery authorisation yet. The API uses `jobId` as a lookup key, not as a sufficient secure authorisation mechanism for future customers. Signed media URLs expire after 300 seconds and can be regenerated by an authorised GET.
-
-## Reference-image job lifecycle
-
-| Status | Meaning | Notes |
-| --- | --- | --- |
-| `AWAITING_IMAGE_PIPELINE` | Job exists, generation not launched | Initial status after `POST /jobs` |
-| `GENERATING_IMAGES` | Image Step Functions has prepared/started processing | Map can run all three scenes concurrently with **MaxConcurrency: 3** |
-| `COMPLETED` | All three image scenes completed | Image job status, **not** evidence final MP4 is ready |
-| `PARTIAL_SUCCESS` | At least one but not all reference images completed | Does not mean a complete customer video |
-| `FAILED` | Reference image pipeline did not deliver a complete set | Image-side terminalisation may retain completed outputs |
-
-`GET /jobs/{jobId}` exposes this as `job.status`, not the global end-to-end status. `imageCount`, `completedScenes`, and `failedScenes` are calculated from the three scene records. A complete image job can still have incomplete videos or no final MP4.
-
-## Individual reference-image scene states
-
-| Status | Meaning | Recovery implications |
-| --- | --- | --- |
-| `PENDING` | Scene has not begun | Scene not yet claimed; other image scenes can be processing concurrently |
-| `SUBMITTING` | Per-scene DynamoDB claim taken; preparing/issuing Google request | Request may not yet be accepted |
-| `GENERATING` | Google generation request is in progress or waiting for its synchronous response | A timeout after POST is **ambiguous** |
-| `RETRY_WAIT` | Explicit Google HTTP 429 rejection; waiting for safe retry | `retryCount`, `maxRetries`, `nextRetryAt` may be exposed |
-| `COMPLETED` | Image saved to S3 and completion persisted | Must not regenerate when resuming |
-| `FAILED` | Scene terminally marked failed | `errorCode` exposed for developer diagnostics |
-
-Source retry policy in `google_direct.py`: only an explicit Google HTTP **429** is automatically resubmitted; up to **8 total attempts**, within a **600-second retry window**, respecting Retry-After and otherwise exponential delay with jitter. Google HTTP socket timeout **240 s**; image Lambda timeout **600 s**. Other ambiguous request failures must not be blindly resubmitted.
-
-**Precision limitation:** the public status maps multiple underlying details to `SUBMITTING` or `GENERATING`; it does not expose a precise `MASTER_READ`, `SELFIE_READ`, `AUTH`, `GOOGLE_POST`, `IMAGE_VALIDATION`, `S3_WRITE` micro-step. Some internal error codes distinguish them after failures.
-
-## Real-video lifecycle (per scene)
-
-| Status | Meaning | Recovery implications |
-| --- | --- | --- |
-| `NOT_REQUESTED` | No real scene request recorded | Waiting on prior stages/approval |
-| `REQUESTED` | Scene reserved/approved by API, waiting for AWS worker handoff | Duplicate paid start is guarded |
-| `PREPARED` | Worker has claimed scene and prepared to submit | Only this state permits first submission |
-| `SUBMISSION_UNKNOWN` | State recorded before paid Google POST; response or acceptance may be uncertain | **Never blindly retry** |
-| `PROCESSING` | Google interaction ID accepted and stored; read-only polling active | Google may still be generating |
-| `COMPLETED` | MP4 persisted and scene completion recorded | Must preserve on later retries/failures |
-| `FAILED` | Terminal scene failure | New manual retry available only after confirmed eligible Google terminal failure |
-| `REVIEW_REQUIRED` | Presented by API if Step Functions failed, timed out, aborted, or reservation has no execution beyond grace period | Needs reconciliation; does not prove Google never charged |
-
-The internal worker can return `WAITING` during a poll; it is **not** itself a persisted scene state. It may also produce terminal provider statuses such as `failed`, `cancelled`, `incomplete`, `budget_exceeded`. `providerFinalStatus` is distinct from the application's `FAILED` state.
-
-The video `mode` field distinguishes `REAL`, `MOCK_ONLY`, or `DISABLED`. Legacy `MOCK_CLAIMED`, `MOCK_GENERATING`, `MOCK_COMPLETED`, `MOCK_FAILED` are not evidence of real playable MP4 results.
-
-### Video scene status fields
-
-For each video in `GET /jobs/{jobId}/videos`, the handler supplies:
-
-- Always: `sceneId`, `status`, `mode`, `attemptNumber`, `maxAttempts`, `retryAvailable`.
-- Where available: `errorCode`, `retryBlockedReason`, `interactionId`, `requestId`, `submissionStartedAt`, `submittedAt`, `providerFailureObservedAt`, `providerFinalStatus`, `providerErrorCode`, `providerErrorCategory`, `completedAt`, `workflowStatus`, `failureCode`.
-- Only when completed and the expected `resultKey` is present: `url` and `downloadUrl` (presigned S3 GET, five-minute expiry).
-
-`maxAttempts` comes from `MAX_VIDEO_ATTEMPTS` in the API (currently **10**). `retryAvailable` requires source configuration enabled, scene `FAILED`, verified provider terminal status, remaining attempts, and no assembly started. This is currently **manual scene retry**; status GET never creates a new paid generation.
-
-### Video sequence
-
-`GET /jobs/{jobId}/videos` also returns `sequence` (up to `status`, `mode`, `approvedAt`) from `videoSequence`; normal approved state is `APPROVED`, mode `AWS_EVENT_DRIVEN`. On a successful original or retried scene, EventBridge sends a Step Functions success event to the API Lambda, which checks that the scene is durably `COMPLETED` and the S3 MP4 exists before reserving the next scene. Failed/uncertain scenes prevent automatic advance. Duplicate notifications use conditional reservation checks.
-
-**Important limitation:** there is no global `VIDEO_2` field today. Derive the active scene from the ordered per-scene statuses; report conflicts or ambiguous states rather than guessing.
-
-## Final assembly lifecycle
-
-| Status | Meaning |
-| --- | --- |
-| `NOT_READY` | One or more real videos missing/incomplete |
-| `READY` | All three real MP4 records have completed keys; no assembly record yet |
-| `QUEUED` | Assembly reserved by API |
-| `PROCESSING` | Assembly Lambda running FFmpeg |
-| `COMPLETED` | Final MP4 saved and status persisted |
-| `FAILED` | Assembly Lambda recorded failure |
-| `REVIEW_REQUIRED` | API observed failed/timed-out/aborted assembly execution while record remained queued/processing |
-
-`assembly.ready` indicates all 3 real scene status records/keys are complete, not that final stitching finished. `assembly.enabled` reflects a configured state-machine ARN. Completed assembly returns a temporary `url` and `downloadUrl` signed for five minutes. Current final S3 key: `videos/{jobId}/final.mp4`; download filename: `afl-grand-final.mp4`.
-
-**Current behaviour:** The **AWS EventBridge Scene 3 completion handler** starts assembly by calling the existing conditional `start_assembly()` logic; frontend `refreshVideos()` reads status only and does not POST assembly. The assembly Step Functions still has one `Stitch` task with **no retry/Catch**, no separate assembly-only recovery watchdog, and no secure anonymous page-reload recovery. The UI percentage is a **frontend-only** ten-second estimate, not FFmpeg progress.
-
-## What the frontend can presently tell you
-
-1. Image job overall status, image 1–3, retry countdown for confirmed 429.
-2. Each real video scene's independent processing/failure/completion status and optional diagnostic Google operation ID.
-3. Stitching readiness, active processing, completion and download availability.
-
-**Cannot fully guarantee today:** a **persisted** unified job-wide stage field (the read-only projection exists); granular pre-/post-Google operation distinction for every request; anonymous recovery after reload; **lost AWS event/assembly handoff** recovery; fully automatic reconciliation or recovery from every transient video/FFmpeg failure.
-
-## Proposed richer persistent status and action model (NOT implemented)
-
-Preserve all existing GET responses for compatibility. Add a backward-compatible `progress` object, preferably to `GET /jobs/{jobId}`, containing:
+**`job.status` is the reference-image workflow status only.** `job.progress` in `GET /jobs/{jobId}` and top-level `progress` in `GET /jobs/{jobId}/videos` describe the end-to-end stage and outcome. The progress object is **computed read-only** from existing DynamoDB records and, where needed, read-only Step Functions `DescribeExecution`; there is no separately persisted `jobLifecycle` attribute.
 
 ```json
 {
   "progress": {
-    "currentStage": "VIDEO_2",
-    "currentOperation": "WAITING_FOR_GOOGLE",
-    "stageStatus": "PROCESSING",
-    "completedStages": 5,
-    "totalStages": 8,
-    "attemptNumber": 1,
-    "requiresAttention": false,
+    "currentStage": "STITCHING",
+    "stageStatus": "RETRYING",
+    "terminal": false,
+    "outcome": null,
+    "imagesCompleted": 3,
+    "imagesTotal": 3,
+    "videosCompleted": 3,
+    "videosTotal": 3,
     "finalVideoReady": false,
-    "updatedAt": "2026-11-15T00:00:00Z"
+    "message": "We are retrying the final video assembly. No new scenes are being generated."
   }
 }
 ```
 
-This is an **example proposal, not an existing response**. The eight completion milestones are selfie upload + three image outputs + three video outputs + final assembly. Count completed milestones; don't equate the fraction with percentage of elapsed time or true Google work done. Use a job-level monotonic stage order while handling blocked/ambiguous states. The backend remains the source of truth.
+*Illustrative subset of the real projection. Not a recorded customer job.*
 
-### Required invariants before payments
+## Stages and nonterminal statuses
 
-- A completed image/video/assembly checkpoint cannot be cleared by a later failed attempt.
-- `SUBMISSION_UNKNOWN` or `REVIEW_REQUIRED` is **not** automatic-refund eligibility.
-- A completed image job (`job.status == COMPLETED`) does not imply videos, assembly or customer delivery complete.
-- A single authenticated customer recovery method must guard job/media access without requiring sign-in.
-- Never mark refund complete merely because refund API accepted a request; future payment/refund lifecycle must be independent of image `job.status`.
-- A backend-owned reconciler must handle uncertain Google submissions and stale AWS workflows before retrying, terminalising or refunding.
+| `currentStage` | When reported | Typical `stageStatus` |
+|---|---|---|
+| `IMAGES` | Image workflow has not successfully finalised all 3 images | `PENDING`, `PROCESSING`, `RETRYING`, `REVIEW_REQUIRED`, or final `FAILED` |
+| `VIDEO_1` | Scene 1 real video incomplete | `WAITING_FOR_ACTION`, `PENDING`, `PROCESSING`, `FAILED` (manual retry possible), `REVIEW_REQUIRED`, or terminal `BLOCKED`/`FAILED` |
+| `VIDEO_2` | Scene 1 saved; Scene 2 incomplete | Same categories |
+| `VIDEO_3` | Scenes 1 and 2 saved; Scene 3 incomplete | Same categories |
+| `STITCHING` | All three real MP4s completed | `WAITING_FOR_ACTION`, `PROCESSING`, `RETRYING`, `REVIEW_REQUIRED` or terminal `FAILED` |
+| `COMPLETED` | Assembly reports expected final MP4 key and signed final URL | `COMPLETED`; terminal |
 
-## Implemented computed overall progress (new API-only change)
+`WAITING_FOR_ACTION` does **not always** mean the browser needs to push a button. It can also mean a backend-owned event/initial reservation has not yet arrived. `REVIEW_REQUIRED` is neither final customer failure nor proof of a provider rejection, and must never initiate an automatic refund.
 
-The `GET /jobs/{jobId}` response now includes **`job.progress`**. This is the computed overall lifecycle, in contrast to legacy `job.status` (image workflow only). No new DynamoDB attribute, SFN or generation call is created.
+## Reference-image states
 
-```json
-{
-  "currentStage": "IMAGES",
-  "stageStatus": "RETRYING",
-  "imagesCompleted": 2,
-  "imagesTotal": 3,
-  "videosCompleted": 0,
-  "videosTotal": 3,
-  "finalVideoReady": false
-}
-```
+The overall image `job.status`: `AWAITING_IMAGE_PIPELINE`, `GENERATING_IMAGES`, `COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`. Individual `job.scenes.sceneN.status`: `PENDING`, `SUBMITTING`, `GENERATING`, `RETRY_WAIT`, `COMPLETED`, `FAILED`.
 
-`currentStage` values: `IMAGES`, `VIDEO_1`, `VIDEO_2`, `VIDEO_3`, `STITCHING`, `COMPLETED`. `stageStatus` values: `PENDING`, `PROCESSING`, `RETRYING`, `WAITING_FOR_ACTION`, `FAILED`, `REVIEW_REQUIRED`, `COMPLETED`.
+- Three scenes are generated in parallel with SFN Map `MaxConcurrency:3`; one confirmed Google HTTP 429 can put its own scene in `RETRY_WAIT` without resetting completed other scenes.
+- Image `COMPLETED` means its reference PNG exists and checkpoint is recorded; **not** a completed video.
+- `PARTIAL_SUCCESS` or image `FAILED` after finalisation project to `terminal:true, outcome:FAILED, failureCode:REFERENCE_IMAGES_FAILED`.
+- Failed scene may expose safe diagnostic fields such as `errorCode`, `providerFinishReason`, `providerBlockReason`, bounded `providerBlockedCategories`, `providerCandidateCount`, `providerImageParts`, `providerTextOnly`. Available fields depend on the error.
+- Image 429 `retryCount/maxRetries/nextRetryAt` are not Google video attempts.
 
-Pre-job selfie upload is **not a job stage** because a job ID is only created by `POST /jobs`. Payment is not yet implemented; do not include `AWAITING_PAYMENT` in active statuses.
+## Real video scene states
 
-For concurrent images, `IMAGES` remains the overall stage and `job.scenes.scene1/scene2/scene3` remain the independent source of truth. If any branch has an explicit 429 `RETRY_WAIT`, overall `stageStatus` is `RETRYING`, even when the other branches continue. A failed image job remains `IMAGES / FAILED`; all scene records must be complete and the image workflow finalised before advancing. For video scenes, the first scene not durably marked `COMPLETED` with the expected key determines the stage; the existing video status projection may report a workflow requiring review. When video 3 completes, `STITCHING` is next; AWS now starts assembly on a successful Scene 3 event. `WAITING_FOR_ACTION` may still occur if the backend has not recorded an expected reservation or handoff; it does not automatically prove customer action is required.
+| Scene status | Meaning | Safe follow-up |
+|---|---|---|
+| `NOT_REQUESTED` | Scene not reserved | Wait for backend-verified predecessor handoff |
+| `REQUESTED` | DDB approval reserved; named execution not yet/just started | Reconcile named execution, never blindly resubmit |
+| `PREPARED` | Worker has claimed request | Worker may submit once |
+| `SUBMISSION_UNKNOWN` | Recorded **before** Google billable POST; acceptance unknown until interaction ID recorded | Not a failed Google result; never automatically repeat POST |
+| `PROCESSING` | Google interaction ID known; async read-only polling | Keep existing operation, don't generate another |
+| `COMPLETED` | Private scene MP4 written, expected S3 key checkpoint saved | Eligible for next verified handoff |
+| `FAILED` | Provider-confirmed terminal failure or worker failure marker | Manual retry only if API confirms `retryAvailable:true`; not globally terminal unless policy blocked / attempts exhausted |
+| `REVIEW_REQUIRED` | Projected for failed, timed-out, aborted or missing named SFN, or inconsistency | Reconcile; not refund-ready |
 
-The original **proposed** eight-milestone contract below is historical design context; the six-stage `currentStage` and `stageStatus` fields above describe the implemented API projection. API/status deployment and offline tests were verified in [43678843432](https://github.com/rorygleeson/afl-video-platform/actions/runs/43678843432). Full real-job end-to-end status progression remains unverified.
+A worker `WAITING` polling response represents provider queue/progress, not a persisted scene status. Each video has `attemptNumber` and `maxAttempts:10`; `retryAvailable` requires confirmed provider terminal failure, attempts remaining, previous safe completion and no assembly. The public video may also include `retryBlockedReason`, `errorCode`, `providerFinalStatus`, `providerErrorCategory`, `interactionId`, `requestId`, `workflowStatus` and timestamps.
 
-## Documentation changes pending
+Video sequence `videoSequence.status=APPROVED` enables backend EventBridge progression; a confirmed policy refusal persists `videoSequence.status=BLOCKED`, `failureCode=CONTENT_BLOCKED`, failed scene and terminal timestamp. The public `sequence` in `GET /videos` exposes only `status,mode,approvedAt`; the full failure reason belongs in `progress`.
 
-- [ ] Validate deployed version, environment flags and source/CloudFormation drift.
-- [ ] Cross-check response fields with mock handler tests; add fixtures for each status.
-- [ ] Revise older `docs/API_ENDPOINTS.md` and `docs/ARCHITECTURE.md` so they point here.
-- [x] Document and test the existing read-only `job.progress` status contract. [ ] Future: document any richer persistent operation status only after its implementation and deployment.
+## Final FFmpeg assembly — corrected retry semantics
 
-## Google reference-image failure diagnostics (15 November 2026)
+The `assembly` map in DynamoDB contains `QUEUED`, `PROCESSING`, `COMPLETED` or `FAILED` worker states. The API exposes additional **computed** statuses in `assembly_public` and overall `progress`:
 
-Image-scene records in DynamoDB retain `errorCode` and, when Google returned
-a parseable image-less HTTP 200 response, additional **allowlisted** fields:
-
-- `providerFinishReason`: approved Google `candidates[0].finishReason`, otherwise `UNKNOWN`.
-- `providerBlockReason`: approved `promptFeedback.blockReason`, otherwise `UNKNOWN`.
-- `providerBlockedCategories`: at most five names from blocked candidate `safetyRatings`; no probabilities, severity or provider text.
-- `providerCandidateCount`: bounded 0–10 count.
-- `providerImageParts`: bounded 0–10 count of inline image parts in the first candidate.
-- `providerTextOnly`: boolean that indicates the presence of a text part (the text itself is never retained).
-
-The API exposes those optional fields only on failed scenes through **both**
-`GET /jobs/{jobId}` and `GET /jobs/{jobId}/images` via `public_job()`.
-The existing developer diagnostics panel displays these already-stored fields
-without a separate read or paid model call. Earlier failures without the
-fields will show *Not recorded*. Absence of a declared safety block is not
-proof that the child's photo was accepted or rejected for another reason.
-
-`GOOGLE_PROMPT_BLOCKED` means Google declared a recognised prompt block reason.
-`GOOGLE_IMAGE_SAFETY_BLOCK` means an allowlisted safety finish reason or a
-blocked safety rating was returned. `GOOGLE_NO_IMAGE_CONTENT` means the
-response contained candidates but no usable inline image and no recognised
-block signal; it **does not itself imply a safety rejection**.
-`GOOGLE_NO_CANDIDATES` means the response contained no candidates and no
-recognised prompt block. The existing image validation and conversion errors
-remain unchanged.
-
-No original provider message, safety narratives, generated text, photo bytes,
-base64 image, prompt, token or full Google response is stored in these
-diagnostic fields. No Google request can be triggered by the diagnostic UI.
-Only explicit HTTP **429** is automatically resubmitted using the existing
-8-attempt/600-second bounded retry policy. The image map runs up to three scene branches concurrently
-(`MaxConcurrency: 3`). Per-scene retry behaviour is unchanged. These are diagnostic metadata changes, not a safety
-filter bypass or a recovery/retry redesign.
-
-### JSON serialization safeguard (15 November 2026)
-
-DynamoDB returns numeric attributes as Python `Decimal`. In `public_job()`,
-`providerCandidateCount` and `providerImageParts` must be converted to
-ordinary integers before the shared `response()` JSON serializer runs. Without
-this conversion, an image failure with these stored diagnostics can make both
-`GET /jobs/{jobId}` and `GET /jobs/{jobId}/images` return a server error,
-leaving the browser displaying stale `GENERATING` status. The existing status
-poll remains read-only; no extra paid Google request is needed to recover it.
-
-
-## Universal definitive job outcomes — 16 November 2026
-
-**Current implemented source contract (replaces older proposals above):** Both
-`GET /jobs/{jobId}` (`job.progress`) and `GET /jobs/{jobId}/videos`
-(`progress`) now expose `terminal`, `outcome`, `currentStage`,
-`stageStatus`, `finalVideoReady` and, for definitive failures,
-`failureCode`, `message`, `canStartNewJob: true`, `retryable: false`,
-and any available `terminalAt`/`failedScene`. These fields are projected
-**read-only from existing durable DynamoDB scene, sequence and assembly
-records**. There is **no separately persisted jobLifecycle attribute**;
-`job.status` remains the image-pipeline status. Future payment code must
-read the authoritative projection **with suitable customer authorisation**,
-and keep a separate long-lived payment ledger.
-
-| Durable evidence | Projected stage/status | terminal/outcome | Code |
+| Durable worker record | Named `final-{jobId}` SFN | Public assembly/progress | Permanent? |
 |---|---|---|---|
-| Image worker finalised `job.status=FAILED` or `PARTIAL_SUCCESS` | `IMAGES / FAILED` | `true / FAILED` | `REFERENCE_IMAGES_FAILED` |
-| Google confirmed safety/policy refusal, atomic videoSequence `BLOCKED` | `VIDEO_N / BLOCKED` | `true / FAILED` | `CONTENT_BLOCKED` |
-| Video `FAILED` with confirmed Google terminal status **and** `attemptNumber>=10` | `VIDEO_N / FAILED` | `true / FAILED` | `VIDEO_ATTEMPTS_EXHAUSTED` |
-| Assembly worker persisted `assembly.status=FAILED` | `STITCHING / FAILED` | `true / FAILED` | `STITCHING_FAILED` |
-| Assembly `COMPLETED` with expected final MP4 key | `COMPLETED / COMPLETED` | `true / COMPLETED` | — |
+| `QUEUED` | Not yet/just started | `QUEUED` or `REVIEW_REQUIRED` after confirmed execution trouble | No |
+| `PROCESSING` | Running | `PROCESSING` | No |
+| `FAILED,retryCount=0` | RUNNING during 15s wait/one safe retry | `RETRYING` | **No** |
+| `FAILED,retryCount=1` | RUNNING while failure settles | `RETRYING` | **No** |
+| `FAILED,retryCount=1` | FAILED | `FAILED`, `STITCHING_FAILED` | **Yes** |
+| `FAILED` | Missing, inaccessible, timed-out, aborted, inconsistent, or FAILED without recorded second failure | `REVIEW_REQUIRED` | **No** |
+| `COMPLETED` with expected `videos/{jobId}/final.mp4` key | Final media marked complete | `COMPLETED`, final signed URLs | **Yes** |
 
-**Do not conflate:** a failed scene before ten attempts, `SUBMISSION_UNKNOWN`,
-`REVIEW_REQUIRED`, workflow timeouts, missing handoff events, or an
-unfinalised image branch remain nonterminal. The previous manual video retry
-path stays available when eligible. A terminal image/assembly failure and a
-confirmed final exhausted attempt are permanent under today's generation
-contract and reject further API starts/retries/handoffs. No automatic Google
-requests are triggered by projection.
+**First failed FFmpeg attempt is NOT job failure.** Step Functions catches it, waits 15s and runs one extra invocation only if a failed worker checkpoint exists. If AWS cannot verify a final outcome, it reports review instead of guessing. This was fixed and deployed in guarded run [43835732389](https://github.com/rorygleeson/afl-video-platform/actions/runs/43835732389); source/offline/deployment verification is not a controlled live failure-injection pass.
 
-**Frontend:** all definitive failures open the clean failure screen with the
-backend-supplied customer-friendly reason and **Start new video**. This
-survives browser refresh; customer details/previews are hidden, not deleted.
-Completed final MP4s continue to show the final-only experience. Developer
-diagnostics remain available.
+## Definitive job outcomes
 
-**Outstanding before paid launch:** build explicit reprocessing/recovery for
-recoverable stitching/other errors if desired, a backend reconciliation policy
-for indefinitely uncertain states, robust no-login customer authorisation,
-and separate long-lived payment/refund records. No Stripe integration exists.
-Older sections describing a proposed lifecycle or lacking terminal fields are
-historical and superseded by this section.
+| `failureCode` / completion | Evidence for `terminal:true` | Customer experience |
+|---|---|---|
+| `REFERENCE_IMAGES_FAILED` | Image overall `FAILED` / `PARTIAL_SUCCESS` finalised | Explain that reference images could not be prepared |
+| `CONTENT_BLOCKED` | Atomic content-policy `videoSequence.BLOCKED` from confirmed Google response | Explain generation guidelines; stop further scenes |
+| `VIDEO_ATTEMPTS_EXHAUSTED` | Confirmed provider final failure at 10th authorised scene attempt | Explain attempts exhausted; stop |
+| `STITCHING_FAILED` | **Second** persisted assembly worker failure + confirmed named SFN FAILED | Explain final assembly could not finish |
+| `COMPLETED` | Expected final assembly key + signed URL in status projection | Show final MP4; allow download |
 
+Definitive failure returns `terminal:true,outcome:FAILED,retryable:false,canStartNewJob:true,finalVideoReady:false`, `currentStage`, `stageStatus`, `failureCode` and a safe `message`. Other nonterminal progress has `terminal:false,outcome:null` and may lack the optional failure fields. Completed final video returns `terminal:true,outcome:COMPLETED,finalVideoReady:true`. There is **no implemented global `CANCELLED` outcome**.
 
-## Immediate video handoff update — 16 November 2026
+## APIs and browser behaviours
 
-Following durable Google video completion and S3 MP4 verification, the existing EventBridge/API backend advances directly to the next named Scene execution. The Google Step Functions `Claim` task transitions straight to `Submit` for all three scenes. Previously fixed waits (10s for Scene 2 and 20s for Scene 3) were removed. No frontend action or timer starts or advances paid video generation. `SUBMISSION_UNKNOWN` and recovery safeguards remain unchanged; `WaitForVideo` remains a 20s provider-poll interval, not a scene-to-scene stagger. The prior timing descriptions elsewhere in this document have been superseded.
+- `GET /jobs/{jobId}` → `{job:{...,status,scenes,progress}}`.
+- `GET /jobs/{jobId}/images` → `{jobId,status,scenes,images:[{sceneId,url}]}`.
+- `GET /jobs/{jobId}/videos` → `{...,sequence,videos,assembly,progress}`.
+- `GET /jobs/{jobId}/videos/{scene}` → `{jobId,video}`; refreshes signed video URLs without generation.
+- `GET /jobs/{jobId}/assembly` → `{jobId,assembly}`; `assembly.url` and `downloadUrl` when completed.
+- `GET /jobs/{jobId}/selfie` → signed uploaded-selfie URL for same-browser developer recovery.
 
+The frontend status polls are read-only; AWS completion events initiate next scenes and stitching. When the backend reports a **definitive** failure, the customer sees a clean failure screen; during FFmpeg retry the customer remains on the progress screen. The same-browser developer resume requires the shared API key. Secure no-signup customer recovery is **not** implemented.
 
-## Corrected FFmpeg terminal contract — 16 November 2026
+## What remains unproven
 
-The previous warning about premature `STITCHING_FAILED` is addressed by the current API code: a failed *worker attempt* is not necessarily a failed *job*. On `assembly.status=FAILED`, the API reads the **named** `final-{jobId}` Step Functions execution. While it is `RUNNING`, progress reports `STITCHING / RETRYING`, `terminal=false`; no failure screen or refund signal. Only `retryCount=1` **and** named SFN status `FAILED` produce `STITCHING_FAILED, terminal=true, outcome=FAILED`. If the workflow is missing, timed out, aborted, inaccessible, or failed without a persisted second worker failure, status remains `REVIEW_REQUIRED, terminal=false`. Verified completed assembly continues to return `COMPLETED`.
-
-This is a read-only projection; it does not initiate any Google or FFmpeg work. Older warnings above are historical, superseded by this section. See the RA-01 implementation addendum in `RESILIENCE_AUDIT_2026-11-16.md`.
+Full AWS live drift comparison, injected first-failure→retry-success and exhausted-retry scenarios, missed events/watchdog start, ambiguous provider acceptance, missing final S3 object, authenticated cross-device access and Stripe/refund integration. See [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md) and [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md). Never infer production readiness from a read-only status response alone.
