@@ -233,3 +233,25 @@ are queried; there is **no new HTTP endpoint**, extra Google call, or paid
 diagnostic POST. The developer UI reads them from the existing job-status GET.
 The metadata is strictly allowlisted: no raw Google response body, safety
 explanation strings or user media is returned.
+
+
+## Definitive universal job terminal response (16 November 2026)
+
+Both `GET /jobs/{jobId}` under `job.progress` and
+`GET /jobs/{jobId}/videos` under `progress` expose the same backend-owned,
+read-only definitive lifecycle result:
+
+- `terminal: true`, `outcome: COMPLETED` means final MP4 is available.
+- `terminal: true`, `outcome: FAILED` and `retryable: false` indicate
+  `REFERENCE_IMAGES_FAILED`, `CONTENT_BLOCKED`,
+  `VIDEO_ATTEMPTS_EXHAUSTED` or `STITCHING_FAILED`. Responses include
+  `currentStage`, `stageStatus`, `failureCode`, safe `message`,
+  `canStartNewJob: true`, and optionally `terminalAt` / `failedScene`.
+- `terminal: false` means pending, processing, eligible for manual retry or
+  review. It is **not** a payment/refund decision, even when stageStatus is
+  `FAILED` or `REVIEW_REQUIRED`.
+
+The lifecycle fields are a projection of existing persisted stage records.
+`job.status` remains the image-job status; new job starts, retries, final
+assembly and EventBridge handoffs reject known definitive terminal failures.
+No new status POST, payment API or additional billable generation is added.
