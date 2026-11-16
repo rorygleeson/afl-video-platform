@@ -1,0 +1,42 @@
+# AFL Video Platform — documentation home
+
+**Reviewed:** 16 November 2026. The repository's source and CloudFormation definitions are the definitive implementation evidence. The table below distinguishes **current operational contracts** from **dated audits and historical stage documents**. No document alone proves an AWS deployment is presently identical to GitHub; verify live deployed resources before a production cutover.
+
+## Current documentation — read these first
+
+| Document | Authority and purpose |
+|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Current backend-driven image → three sequential videos → assembly flow and data boundaries. |
+| [API_ENDPOINTS.md](API_ENDPOINTS.md) | **All 20 current method/path combinations**, request guards, response shapes, internal event distinction, developer access. |
+| [JOB_STATUSES.md](JOB_STATUSES.md) | Image, video, assembly, terminal and review statuses; why first FFmpeg failure is nonterminal. |
+| [RETRIES_AND_TIMEOUTS.md](RETRIES_AND_TIMEOUTS.md) | Definitive current retry, backoff, timeouts, failure disposition and unknown-Google-submission safety. |
+| [INFRASTRUCTURE.md](INFRASTRUCTURE.md) | Source-defined AWS stacks, IAM, EventBridge, Lambda, S3/DDB, runtime inventory and live-verification gaps. |
+| [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md) | Severity-ranked RA-01…RA-12 evidence, state of fixes and outstanding fault injection. |
+| [RESILIENCY_ROADMAP.md](RESILIENCY_ROADMAP.md) | Open work, verification gates, implementation history. |
+| [GOOGLE_OMNI_RELIABILITY_CHECKLIST.md](GOOGLE_OMNI_RELIABILITY_CHECKLIST.md) | Current provider-specific open controls; provider-wide limits and costly POST safety. |
+| [DOCUMENTATION_QUALITY_REVIEW_2026-11-16.md](DOCUMENTATION_QUALITY_REVIEW_2026-11-16.md) | Evidence of document-vs-source corrections and remaining review limitations. |
+
+**Canonical ownership:** Do not repeat endpoint definitions in the architecture or implement retries based on historical release notes. Update the relevant canonical document in the same pull request as any code change. Include a source citation path, test, deploy evidence when present, and confidence level.
+
+## Historical plans, dated release evidence, or stage-specific references
+
+These files retain their original purpose and **must not override the current contracts above**:
+
+- **Early API and feature stages:** [API_STAGE1B.md](API_STAGE1B.md), [SCENE1_REPLICATE_PILOT.md](SCENE1_REPLICATE_PILOT.md), [PARALLEL_SCENES.md](PARALLEL_SCENES.md), [VIDEO_IMPLEMENTATION_PLAN.md](VIDEO_IMPLEMENTATION_PLAN.md), [VIDEO_PROMPTS.md](VIDEO_PROMPTS.md), [GOOGLE_OMNI_STAGE2_API_CONTRACT.md](GOOGLE_OMNI_STAGE2_API_CONTRACT.md), [GOOGLE_WIF.md](GOOGLE_WIF.md).
+- **Deployment and legacy resource planning:** [BOOTSTRAP.md](BOOTSTRAP.md), [DEPLOYMENT.md](DEPLOYMENT.md), [DEPLOYMENT_BASELINE_2026-11-15.md](DEPLOYMENT_BASELINE_2026-11-15.md), [DEPLOYMENT_OWNERSHIP_AUDIT.md](DEPLOYMENT_OWNERSHIP_AUDIT.md), [PRODUCTION_PIPELINE_PLAN.md](PRODUCTION_PIPELINE_PLAN.md), [RESOURCE_CLEANUP.md](RESOURCE_CLEANUP.md).
+- **Dated code audits and releases:** [CODE_REVIEW_2026-11-08.md](CODE_REVIEW_2026-11-08.md), [PAID_MP4_CODE_AUDIT_2026-11-08.md](PAID_MP4_CODE_AUDIT_2026-11-08.md), [BANANA_TEMPLATE_LOCK_RELEASE.md](BANANA_TEMPLATE_LOCK_RELEASE.md), [TEN_VIDEO_ATTEMPTS_RELEASE.md](TEN_VIDEO_ATTEMPTS_RELEASE.md), [VIDEO_SCENE_RETRY_RELEASE.md](VIDEO_SCENE_RETRY_RELEASE.md), [VIDEO_SCENE_RETRY_UI_RELEASE.md](VIDEO_SCENE_RETRY_UI_RELEASE.md).
+- **Illustrations and screenshots:** [architecture-high-level.svg](architecture-high-level.svg), [watchdog-architecture.svg](watchdog-architecture.svg), [mobile-ui-illustration.svg](mobile-ui-illustration.svg), and `screenshots/`. Illustrations may represent an earlier stage and are *not* executable architecture or proof of live configuration.
+
+## The safe interpretation of "working" and "complete"
+
+- **SOURCE VERIFIED:** Actual repo API/worker/CloudFormation source inspected.
+- **CI VERIFIED:** A specific offline test workflow passed. CI does not validate the provider's acceptance/billing state.
+- **DEPLOYMENT VERIFIED:** Guarded release confirmed AWS code hashes/templates and/or published frontend objects at a specific time. This does **not** necessarily mean every later resource has no drift.
+- **LIVE FAULT-INJECTION VERIFIED:** Explicitly tested named failure transitions in running AWS without unsafe duplicate paid calls. **Not yet established across every stage.**
+- **PAYMENT READY:** Requires proven customer entitlement, transaction/refund state, retention and all blocking RA findings closed. **Not achieved**.
+
+## Change control checklist
+
+For every change touching `src/api/handler.py`, worker handlers, frontend status code or Step Functions: confirm whether to update the [API contract](API_ENDPOINTS.md), [status contract](JOB_STATUSES.md), [retry matrix](RETRIES_AND_TIMEOUTS.md), [architecture](ARCHITECTURE.md), [infrastructure inventory](INFRASTRUCTURE.md), and [resilience backlog](RESILIENCE_AUDIT_2026-11-16.md). Record exact tests and deployment status, and keep historical notes historical.
+
+The docs contract checker `tests/test_documentation_contract.py` is intended to run in CI to flag drift in route inventory, waits, FFmpeg retry states, primary documentation references, and unmarked historical docs. It is a **static regression check**, not an API integration test.
