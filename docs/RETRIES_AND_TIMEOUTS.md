@@ -180,3 +180,35 @@ blindly retried. This does not recover response details missing from older jobs.
 | Pre-existing image reconciliation | Scheduled **every 5 minutes**, regardless of active jobs; approximately **45-minute** stalled image threshold | Terminalise unfinished image jobs as defined by existing image worker | Does not restart paid image submissions; is **not** the isolated handoff watchdog |
 
 **Do not confuse three independent numbers:** 60 seconds = watchdog check cadence; 120 seconds = successful-execution settlement age before potential handoff replay; 7,200 seconds = overall watchdog monitoring lifetime. A Google video taking eight minutes is not failed simply for remaining in progress across several checks. Monitoring ends or requires review if a failure/uncertain paid submission/unknown reserved assembly occurs; no automatic safe recovery is claimed for all those cases. Source: `infrastructure/app/handoff-watchdog.yaml` and `src/handoff_watchdog/handler.py`. No fresh live AWS deployment or end-to-end test accompanied this documentation amendment.
+
+
+## Permanent Google content-policy rejection — terminal job exit (16 November 2026)
+
+A confirmed Google video interaction with terminal `failed` status and an explicit
+`SAFETY_OR_POLICY` classification now terminates the **whole video job**.
+The Google worker performs a single conditional DynamoDB update, owned by the
+in-flight scene's request ID and PROCESSING state, which both marks that scene
+FAILED and persists `videoSequence = { status: BLOCKED, failureCode:
+CONTENT_BLOCKED, failedScene: sceneN, terminalAt: UTC timestamp, ...existing consent }`.
+There is no new Google POST, no automatic retry, and no deletion of existing
+reference images or successful video clips.
+
+The existing read-only `GET /jobs/{jobId}` and continuous
+`GET /jobs/{jobId}/videos` projections expose
+`progress.stageStatus = BLOCKED`, `progress.terminal = true`,
+`progress.outcome = FAILED`, `progress.failureCode = CONTENT_BLOCKED`,
+`progress.failedScene`, `progress.canStartNewJob = true`,
+`progress.finalVideoReady = false`, and a safe customer-facing message.
+A successfully stitched final MP4 exposes `terminal = true` and
+`outcome = COMPLETED`. This is the contract future payment/reconciliation
+code should inspect; no payment decisions or refund logic have been added.
+
+The API and Google worker reject further scene submissions/retries and final
+assembly on BLOCKED jobs. EventBridge handoffs already require the video
+sequence to remain APPROVED and a completed scene MP4; stale events therefore
+cannot advance a blocked job. The frontend only renders the backend outcome
+and offers Start new video; reloading the job reports the same outcome.
+
+Other provider failures, ambiguous submissions and workflow timeouts remain
+their existing non-content-blocked states. Do NOT mark those permanently
+CONTENT_BLOCKED without authoritative evidence from Google.
