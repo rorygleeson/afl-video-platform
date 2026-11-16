@@ -562,6 +562,9 @@ def start_assembly(job_id):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
+    if job.get("videoSequence", {}).get("status") == "BLOCKED":
+        return response(409, {"status": "CONTENT_BLOCKED",
+                              "error": "This job is permanently stopped"})
     assembly = job.get("assembly") or {}
     if assembly and assembly.get("status") != "QUEUED":
         return response(200, {"jobId": job_id, "assembly": assembly_public(job)})
@@ -1025,7 +1028,8 @@ def image_sequence_event(event):
     if not JOB_RE.fullmatch(job_id):
         return {"status": "IGNORED"}
     job = get_job(job_id)
-    if not job or job.get("autoVideoConsent") is not True:
+    if not job or job.get("autoVideoConsent") is not True or (
+            job.get("videoSequence", {}).get("status") == "BLOCKED"):
         return {"status": "IGNORED_NOT_AUTHORISED"}
     if job.get("status") != "COMPLETED" or any(
             job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1230,12 +1234,15 @@ def retry_failed_real_scene(job_id, scene_id, event):
             ConditionExpression=(
                 "attribute_exists(jobId) AND realVideos.#scene.#status = :failed "
                 "AND realVideos.#scene.requestId = :request "
-                "AND paidVideoApprovals.#scene.executionName = :oldname"
+                "AND paidVideoApprovals.#scene.executionName = :oldname "
+                "AND (attribute_not_exists(videoSequence) OR videoSequence.#seqStatus <> :blocked)"
             ),
-            ExpressionAttributeNames={"#scene": scene_id, "#status": "status"},
+            ExpressionAttributeNames={"#scene": scene_id, "#status": "status",
+                                      "#seqStatus": "status"},
             ExpressionAttributeValues={
                 ":approval": next_approval, ":failed": "FAILED",
                 ":request": old_request, ":oldname": old_name,
+                ":blocked": "BLOCKED",
             },
         )
     except ClientError as exc:
