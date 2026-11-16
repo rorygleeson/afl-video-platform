@@ -127,8 +127,8 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertIn("README.md", text[:1300], name)
 
     def test_current_svg_diagrams_parse_and_are_linked(self):
-        expected = ("architecture-high-level.svg", "generation-and-retries.svg",
-                    "watchdog-architecture.svg", "mobile-ui-illustration.svg")
+        expected = ("architecture-high-level.svg", "event-driven-handoffs.svg",
+                    "generation-and-retries.svg")
         idx = (DOCS / "README.md").read_text()
         for name in expected:
             path = DOCS / name
@@ -136,7 +136,8 @@ class DocumentationContractTests(unittest.TestCase):
             self.assertEqual(root.tag, "{http://www.w3.org/2000/svg}svg", name)
             self.assertTrue(root.attrib.get("viewBox"), name)
             self.assertIn(name, idx)
-        self.assertIn("HISTORICAL UI MOCKUP", (DOCS / expected[3]).read_text())
+        self.assertFalse((DOCS / "watchdog-architecture.svg").exists())
+        self.assertFalse((DOCS / "mobile-ui-illustration.svg").exists())
 
     def test_current_architecture_docs_use_svg_not_mermaid(self):
         for name in ("ARCHITECTURE.md", "INFRASTRUCTURE.md"):
@@ -154,7 +155,7 @@ class DocumentationContractTests(unittest.TestCase):
                          "generation-and-retries.svg"):
                 self.assertIn(name, doc)
         for name in ("architecture-high-level.svg", "event-driven-handoffs.svg",
-                     "generation-and-retries.svg", "watchdog-architecture.svg"):
+                     "generation-and-retries.svg"):
             root = ET.parse(DOCS / name).getroot()
             self.assertEqual(root.tag, "{http://www.w3.org/2000/svg}svg")
             self.assertTrue(root.get("viewBox"))
