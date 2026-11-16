@@ -1,5 +1,7 @@
 # AFL Video Prompts — personalisation and cost controls
 
+> **DOCUMENT STATUS — HISTORICAL / STAGE-SPECIFIC (reviewed 16 November 2026).** This records the design, release or resource assumptions at its original date; some model providers, payment gates, retries, waits, deployment commands and UI behaviour have since changed. **Do not use this file as today's operational contract or run its historical deployment instructions without a new live-state review.** Current references: [documentation index](README.md), [HTTP API](API_ENDPOINTS.md), [retry and timeout contract](RETRIES_AND_TIMEOUTS.md), [job statuses](JOB_STATUSES.md), [architecture](ARCHITECTURE.md), and [resilience audit](RESILIENCE_AUDIT_2026-11-16.md).
+
 The three source prompts live in GitHub at `scenarios/afl-grand-final-winning-kick/v1/video/` and are copied to the **private, versioned AWS S3 artifact bucket** by our deployment workflow. Google is a video-generation service, **not** our prompt database.
 
 **Current state:** You can preview each resolved video prompt from the phone app. **Google paid video submission has not been implemented or enabled.** The existing Replicate *image* generation buttons and 3-image pipeline are unchanged.
