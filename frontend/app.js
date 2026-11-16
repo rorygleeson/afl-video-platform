@@ -634,8 +634,12 @@ const input = document.getElementById('selfie');
         }
         document.getElementById('diagnoseScene' + n).hidden =
           real.status !== 'FAILED' && real.status !== 'REVIEW_REQUIRED';
+        const failedByPolicy = latestJobProgress?.terminal === true &&
+          latestJobProgress?.failureCode === 'CONTENT_BLOCKED' &&
+          latestJobProgress?.failedScene === id;
         paidStatus.textContent =
-          real.mode !== 'REAL' && pendingAttempt
+          failedByPolicy ? 'Video stopped — content not permitted. No further scenes will be generated.'
+          : real.mode !== 'REAL' && pendingAttempt
             ? pendingAttempt.status
             : real.mode === 'REAL'
             ? (real.status === 'REVIEW_REQUIRED'
