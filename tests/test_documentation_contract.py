@@ -6,6 +6,7 @@ navigation, and historic labelling. No boto3, AWS credentials or paid calls.
 from pathlib import Path
 import re
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCS = ROOT / "docs"
@@ -123,6 +124,25 @@ class DocumentationContractTests(unittest.TestCase):
             text = (DOCS / name).read_text()
             self.assertIn("DOCUMENT STATUS — HISTORICAL / STAGE-SPECIFIC", text[:1100], name)
             self.assertIn("README.md", text[:1300], name)
+
+    def test_current_svg_diagrams_parse_and_are_linked(self):
+        expected = ("architecture-high-level.svg", "generation-and-retries.svg",
+                    "watchdog-architecture.svg", "mobile-ui-illustration.svg")
+        idx = (DOCS / "README.md").read_text()
+        for name in expected:
+            path = DOCS / name
+            root = ET.parse(path).getroot()
+            self.assertEqual(root.tag, "{http://www.w3.org/2000/svg}svg", name)
+            self.assertTrue(root.attrib.get("viewBox"), name)
+            self.assertIn(name, idx)
+        self.assertIn("HISTORICAL UI MOCKUP", (DOCS / expected[3]).read_text())
+
+    def test_current_architecture_docs_use_svg_not_mermaid(self):
+        for name in ("ARCHITECTURE.md", "INFRASTRUCTURE.md"):
+            text = (DOCS / name).read_text()
+            self.assertNotIn("```mermaid", text, name)
+            self.assertIn("architecture-high-level.svg", text)
+            self.assertIn("generation-and-retries.svg", text)
 
     def test_no_obsolete_retries_in_current_primary_docs(self):
         for doc in (RETRIES, STATUSES, ARCH):
