@@ -1155,7 +1155,8 @@ const input = document.getElementById('selfie');
         }
       }
       syncImageRetryCountdown();
-      if (referenceImagesReady || latestJobProgress?.finalVideoReady === true) {
+      if (referenceImagesReady || latestJobProgress?.finalVideoReady === true ||
+          latestJobProgress?.stageStatus === 'BLOCKED') {
         void refreshVideos();
         // Run once per visible job. A manual recheck remains available if inputs change.
         if (preflightCheckedJobId !== requestedJobId) {
