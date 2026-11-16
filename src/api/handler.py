@@ -445,6 +445,9 @@ def start_images(job_id):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
+    if definitive_failure(job):
+        return response(409, {"status": "JOB_TERMINAL_FAILED",
+                              "error": "This job has permanently ended"})
     if job.get("status") != "AWAITING_IMAGE_PIPELINE":
         return response(200, {"jobId": job_id, "status": job["status"], "job": public_job(job), "message": "Job already started"})
     try:
@@ -615,9 +618,9 @@ def start_assembly(job_id):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
-    if job.get("videoSequence", {}).get("status") == "BLOCKED":
-        return response(409, {"status": "CONTENT_BLOCKED",
-                              "error": "This job is permanently stopped"})
+    if definitive_failure(job):
+        return response(409, {"status": "JOB_TERMINAL_FAILED",
+                              "error": "This job has permanently ended"})
     assembly = job.get("assembly") or {}
     if assembly and assembly.get("status") != "QUEUED":
         return response(200, {"jobId": job_id, "assembly": assembly_public(job)})
@@ -909,8 +912,9 @@ def start_real_scene(job_id, scene_id, event):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
-    if job.get("videoSequence", {}).get("status") == "BLOCKED":
-        return response(409, {"status": "CONTENT_BLOCKED", "error": "This job is permanently stopped"})
+    if definitive_failure(job):
+        return response(409, {"status": "JOB_TERMINAL_FAILED",
+                              "error": "This job has permanently ended"})
     if job.get("paidVideoApprovals", {}).get(scene_id) or job.get("realVideos", {}).get(scene_id):
         return response(409, {"error": "This scene already has a paid request; check status, do not retry"})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1006,8 +1010,9 @@ def start_video_sequence(job_id, event):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
-    if job.get("videoSequence", {}).get("status") == "BLOCKED":
-        return response(409, {"status": "CONTENT_BLOCKED", "error": "This job is permanently stopped"})
+    if definitive_failure(job):
+        return response(409, {"status": "JOB_TERMINAL_FAILED",
+                              "error": "This job has permanently ended"})
     if job.get("assembly"):
         return response(409, {"error": "Final assembly already started"})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1081,8 +1086,7 @@ def image_sequence_event(event):
     if not JOB_RE.fullmatch(job_id):
         return {"status": "IGNORED"}
     job = get_job(job_id)
-    if not job or job.get("autoVideoConsent") is not True or (
-            job.get("videoSequence", {}).get("status") == "BLOCKED"):
+    if not job or job.get("autoVideoConsent") is not True or definitive_failure(job):
         return {"status": "IGNORED_NOT_AUTHORISED"}
     if job.get("status") != "COMPLETED" or any(
             job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1124,7 +1128,8 @@ def video_sequence_event(event):
         return {"status": "IGNORED"}
     job_id, scene_id = match.groups()
     job = get_job(job_id)
-    if (not job or job.get("videoSequence", {}).get("status") != "APPROVED"
+    if (not job or definitive_failure(job)
+            or job.get("videoSequence", {}).get("status") != "APPROVED"
             or (scene_id != "scene3" and job.get("assembly"))):
         return {"status": "IGNORED_NO_SEQUENCE"}
     approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
@@ -1224,8 +1229,9 @@ def retry_failed_real_scene(job_id, scene_id, event):
     job = get_job(job_id)
     if not job:
         return response(404, {"error": "Job not found"})
-    if job.get("videoSequence", {}).get("status") == "BLOCKED":
-        return response(409, {"status": "CONTENT_BLOCKED", "error": "This job is permanently stopped"})
+    if definitive_failure(job):
+        return response(409, {"status": "JOB_TERMINAL_FAILED",
+                              "error": "This job has permanently ended"})
     approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
     current = job.get("realVideos", {}).get(scene_id, {})
     # Replaying the same API request cannot create a third attempt, including
