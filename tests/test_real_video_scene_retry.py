@@ -299,8 +299,11 @@ class SceneRetryTests(unittest.TestCase):
     def test_failed_assembly_blocks_next_attempts_without_reprocessing(self):
         self.job["assembly"] = {"status": "FAILED", "errorCode": "MEDIA_PROCESSING_FAILED"}
         result = self.api.overall_job_progress(self.job)
-        self.assertEqual(result["failureCode"], "STITCHING_FAILED")
-        self.assertEqual(self.retry(1)[0], 409)
+        self.assertFalse(result["terminal"],
+                         "A first failed FFmpeg attempt cannot end the job before its safe retry")
+        self.assertNotIn("failureCode", result)
+        self.assertEqual(self.retry(1)[0], 409,
+                         "Cannot restart paid video after assembly has begun")
         self.states.start_execution.assert_not_called()
 
 
