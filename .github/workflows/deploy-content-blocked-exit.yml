@@ -1,0 +1,52 @@
+name: Deploy terminal content-policy exit (Google worker, API, frontend)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-content-blocked-exit.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  safe-content-exit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Offline contract tests (no paid requests)
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
+          python3 -m py_compile src/google_video_worker/handler.py src/api/handler.py scripts/deploy_ten_video_attempts.py scripts/deploy_overall_job_progress.py
+          python3 -m unittest discover -s tests -p 'test_google_video_stage5a.py' -v
+          python3 -m unittest discover -s tests -p 'test_real_video_scene_retry.py' -v
+          python3 -m unittest discover -s tests -p 'test_aws_video_sequence.py' -v
+          python3 -m unittest discover -s tests -p 'test_overall_job_progress.py' -v
+          python3 -m unittest discover -s tests -p 'test_video_api_stage4.py' -v
+          node --check frontend/app.js
+          node --test tests/test_frontend_poll.cjs
+          grep -q 'def block_content_job' src/google_video_worker/handler.py
+          grep -q '"outcome": "FAILED"' src/api/handler.py
+          grep -q 'jobFailureNotice' frontend/app.js
+          python3 scripts/check_deployment_ownership.py --enforce
+      - name: Authenticate existing AWS deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: content-policy-terminal-exit
+      - name: Guarded code-only CloudFormation worker update
+        run: python3 -u scripts/deploy_ten_video_attempts.py
+      - name: Guarded API code update and frontend publish
+        env:
+          DEPLOY_PROGRESS_CHANGE: DEPLOY_JOB_PROGRESS_ONLY
+        run: python3 -u scripts/deploy_overall_job_progress.py
