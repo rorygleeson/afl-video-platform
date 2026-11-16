@@ -2,7 +2,7 @@
 
 **Source reviewed:** 16 November 2026. **Authority:** event rules in `infrastructure/app/{image-video-start-events,video-sequence-events,handoff-watchdog}.yaml`, workflow definitions in `backend.yaml`, `google-video.yaml`, `assembly.yaml`, API handlers in `src/api/handler.py`, and `src/handoff_watchdog/handler.py`. This is **repository source analysis**, not a live deployed AWS `DescribeStateMachine` comparison or an end-to-end delivery test.
 
-**Diagrams:** [main AWS architecture](architecture-high-level.svg) · [event delivery and deduplication](event-driven-handoffs.svg) · [failure and retry decision matrix](generation-and-retries.svg) · [watchdog detail](watchdog-architecture.svg). All are editable SVG, not Mermaid.
+**Diagrams:** [main AWS architecture](architecture-high-level.svg) · [event delivery and deduplication](event-driven-handoffs.svg) · [failure and retry decision matrix](generation-and-retries.svg). All are editable SVG, not Mermaid.
 
 ## 1. What makes the architecture event-driven?
 
