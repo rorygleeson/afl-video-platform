@@ -1,5 +1,8 @@
 # AFL Video Platform — Retry, Timeout and Failure Audit
 
+> **RE-AUDIT WARNING — 16 NOVEMBER 2026:** Actual source-defined assembly state machine includes `Stitch → WaitBeforeConfirmedRetry(15s) → RetryConfirmedAssemblyFailure` when the first worker durably records `assembly.FAILED`. The older retry matrix describing assembly as *one-shot, no Retry/Catch* is outdated. The API currently treats **any** persisted `assembly.FAILED` as terminal, even during this legitimate retry window; see RA-01 in [full resilience re-audit](RESILIENCE_AUDIT_2026-11-16.md). Do not conflate `failed first worker attempt` with `permanently failed job` or automatic refund eligibility. The Google video worker still has **no automatic paid Submit POST retry**; only Google status GET PollVideo has retry. No deployed changes were made for this re-audit.
+>
+
 **Audit date:** 2026-11-15 · **Verification:** SOURCE VERIFIED; guarded AWS handoff/resource deployments VERIFIED from GitHub Actions logs, but individual timeout/runtime/SDK settings **not independently live-audited**.  
 **Sources:** `src/api/handler.py`, `src/image_worker/handler.py`, `src/image_worker/google_direct.py`, `src/google_video_worker/handler.py`, `src/assembly_worker/handler.py`, `frontend/app.js`, `infrastructure/app/backend.yaml`, `infrastructure/app/google-video.yaml`, `infrastructure/app/assembly.yaml`.  
 **Related:** [API_ENDPOINTS.md](API_ENDPOINTS.md), [JOB_STATUSES.md](JOB_STATUSES.md), [RESILIENCY_ROADMAP.md](RESILIENCY_ROADMAP.md).
