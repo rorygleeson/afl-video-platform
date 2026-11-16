@@ -184,6 +184,7 @@ const input = document.getElementById('selfie');
     resetVideoUi();
     currentJobId = null;
     latestJobProgress = null;
+    renderBackendOutcome(null);
     restoredSelfieJobId = null;
     forgetJob();
     lockJobFields(false);
