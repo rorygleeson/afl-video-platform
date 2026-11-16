@@ -1,5 +1,5 @@
-name: Deploy safe resume selfie preview (API and UI only)
-# Repeat after correcting the offline filename-regex fixture; no provider calls.
+name: Deploy backend universal terminal lifecycle (API and UI only)
+# Uniform final image/video/assembly terminal exit; no provider calls or worker changes.
 # This release also returns the persisted personal message on job recovery.
 # UI rehydrates the greeting and character counter from the same read-only job GET.
 on:
@@ -25,16 +25,21 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Validate API-only selfie contract and frontend recovery
+      - name: Validate API lifecycle exits, safe retries, progress projection and UI
         run: |
           set -euo pipefail
           python -m py_compile src/api/handler.py scripts/deploy_overall_job_progress.py
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
           python -m unittest discover -s tests -p 'test_overall_job_progress.py' -v
+          python -m unittest discover -s tests -p 'test_video_api_stage4.py' -v
+          python -m unittest discover -s tests -p 'test_real_video_scene_retry.py' -v
           node --check frontend/app.js
           node --test tests/test_frontend_poll.cjs
           grep -q 'def selfie_for_job(job):' src/api/handler.py
           grep -q '"personalMessage": item.get("personalMessage", "")' src/api/handler.py
-          grep -q 'finalVideoReady' frontend/app.js
+          grep -q 'def definitive_failure(job):' src/api/handler.py
+          grep -q 'VIDEO_ATTEMPTS_EXHAUSTED' src/api/handler.py
+          grep -q 'isTerminalFailure' frontend/app.js
           grep -q 'id="savedSelfieNote"' frontend/index.html
           python scripts/check_deployment_ownership.py --enforce
       - name: Install AWS SDK
@@ -44,7 +49,7 @@ jobs:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
           aws-region: ap-southeast-2
           role-session-name: deploy-safe-resume
-      - name: Deploy only changed API Lambda artifact and existing frontend JS/HTML
+      - name: Guarded CloudFormation API-only update and frontend status UI publish
         env:
           DEPLOY_PROGRESS_CHANGE: DEPLOY_JOB_PROGRESS_ONLY
         run: python -u scripts/deploy_overall_job_progress.py
