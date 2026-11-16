@@ -75,3 +75,16 @@ The source reads `assembly_failure_disposition(job)` using Step Functions `Descr
 8. **Observability:** error codes and logs exist but a durable operator review queue, alerts and payment-ready reconciliation need further design.
 
 See [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md) for RA-01…RA-12, [JOB_STATUSES.md](JOB_STATUSES.md) for status meanings, and [API_ENDPOINTS.md](API_ENDPOINTS.md) for the complete route inventory. **No provider API call, live fault test or CloudFormation change was made by this documentation review.**
+
+## EventBridge and application-level failure acknowledgement
+
+An AWS completion event has two separate opportunities to fail:
+
+1. **Target delivery/invocation failure:** EventBridge may retry the target according to each rule's `RetryPolicy`; source-defined maximum ages/attempts are detailed in [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md).
+2. **Application-level handoff uncertainty:** `video_sequence_event` can **return** `NEXT_SCENE_HANDOFF_NEEDS_REVIEW` or `ASSEMBLY_HANDOFF_NEEDS_REVIEW` as an ordinary successful Lambda result after a missing/unknown next execution. EventBridge sees a successful invocation; its target-delivery retry may **not** be activated. The per-job watchdog may replay a verified past event after 120s, but can be absent, stopped or past its 2-hour limit.
+
+Neither failure type justifies a new Google POST. A durable needs-review record, alerting and recovery strategy remain **proposed**, not implemented. This distinction should be in every event-driven fault-injection test plan.
+
+**High-priority source issue:** the Google video Step Functions `Claim` task's committed template uses `requestId.$:"$.Execution.Name"`; subsequent tasks use context `"$$.Execution.Name"`. This inconsistency must be tested against the live state machine and corrected via a guarded, separate infrastructure release. It is **not fixed by changing documentation**.
+
+![Retry and definitive-failure flowchart](generation-and-retries.svg)
