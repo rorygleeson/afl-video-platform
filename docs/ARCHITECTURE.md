@@ -11,35 +11,11 @@
 
 ## Architecture and flow
 
-```mermaid
-flowchart TD
-  Browser["Browser: team, selfie, status"] --> CF["CloudFront + private S3 frontend"]
-  Browser --> API["API Gateway REST /dev → API Lambda"]
-  Browser -->|presigned POST| Uploads[("Private S3 uploads/")]
-  API --> Jobs[("DynamoDB afl-app-dev-jobs")]
-  API -->|StartExecution once per job| ImageSFN["Image Step Functions — concurrent Map (up to 3)"]
-  ImageSFN --> ImageWorker["Image Lambda: Google direct image adapter"]
-  ImageWorker -->|template / prompts| Assets[("Private versioned S3 scenario assets")]
-  ImageWorker -->|selfie| Uploads
-  ImageWorker -->|Google WIF + generateContent| GoogleImage["Google gemini-3-pro-image"]
-  ImageWorker -->|results/jobId/sceneN.png| Uploads
-  ImageWorker --> Jobs
-  ImageSFN -->|SUCCEEDED event| ImagesEvent["EventBridge: image completion"]
-  ImagesEvent -->|consent and all 3 image checks| API
-  API -->|start consented video sequence| VideoSFN["Google video Step Functions: one execution per scene"]
-  VideoSFN --> VideoWorker["Google video Lambda"]
-  VideoWorker -->|Interactions POST then read-only GET| GoogleVideo["Google gemini-omni-1.2-flash"]
-  VideoWorker -->|videos/jobId/sceneN.mp4| Uploads
-  VideoWorker --> Jobs
-  VideoSFN -->|SUCCEEDED event| EventBridge["EventBridge Step Functions event"]
-  EventBridge -->|verify scene / advance next / after Scene 3 start stitching| API
-  API -->|Scene 3 completed| AssemblySFN["Final Assembly Step Functions"]
-  API -->|conditional assembly reservation| AssemblySFN
-  AssemblySFN --> Assembly["FFmpeg + ffprobe Lambda"]
-  Assembly -->|read 3 completed MP4, write final.mp4| Uploads
-  Assembly --> Jobs
-  API -->|presigned GET URLs| Browser
-```
+![Current AFL Video AWS architecture](architecture-high-level.svg)
+
+![Generation sequencing, retry and terminal-failure controls](generation-and-retries.svg)
+
+![Event-driven per-job watchdog](watchdog-architecture.svg)
 
 The diagram is a logical model. After browser upload, job creation and the single `POST /jobs/{jobId}/generate`, **AWS owns the image-completion → Video 1 → Video 2 → Video 3 → final assembly progression**. API Lambda receives EventBridge successful-execution events, verifies prior durable state and conditionally reserves the next step. Browser progress GETs do not submit videos or stitching. Diagram does not represent retries, IAM boundaries or all infrastructure.
 
