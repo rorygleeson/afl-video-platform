@@ -85,7 +85,8 @@ def main():
     repo = Path("infrastructure/app/google-video.yaml").read_text()
     assert NEW in repo and OLD not in repo
     assert '"WaitScene2"' not in repo and '"WaitScene3"' not in repo
-    assert '"Retry":' not in repo, "Paid task unexpected retry"
+    assert '"Submit":{"Type":"Task"' in repo
+    assert '"WaitForVideo":{"Type":"Wait","Seconds":20' in repo
     name = "afl-immediate-handoff-" + os.environ["GITHUB_RUN_ID"]
     created = False
     executed = False
