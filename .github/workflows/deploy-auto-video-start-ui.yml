@@ -1,6 +1,6 @@
 name: Deploy video Preparing status text (frontend only)
 # Frontend-only release: show stitched final video alone after completion, including refresh.
-# Regression assertions updated for the final-only view; rerun before publishing.
+# New-job reset must clear saved personal greeting and reset its 0/80 counter.
 # Includes refresh/reopen and no-duplicate-submission regression tests.
 # Regression fixture covers selfie reselect and AWS-owned video/stitching UI progression.
 # Validate cleared image src and publish only the three UI files.
