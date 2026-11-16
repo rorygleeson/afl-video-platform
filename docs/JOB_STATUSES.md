@@ -218,3 +218,47 @@ this conversion, an image failure with these stored diagnostics can make both
 `GET /jobs/{jobId}` and `GET /jobs/{jobId}/images` return a server error,
 leaving the browser displaying stale `GENERATING` status. The existing status
 poll remains read-only; no extra paid Google request is needed to recover it.
+
+
+## Universal definitive job outcomes — 16 November 2026
+
+**Current implemented source contract (replaces older proposals above):** Both
+`GET /jobs/{jobId}` (`job.progress`) and `GET /jobs/{jobId}/videos`
+(`progress`) now expose `terminal`, `outcome`, `currentStage`,
+`stageStatus`, `finalVideoReady` and, for definitive failures,
+`failureCode`, `message`, `canStartNewJob: true`, `retryable: false`,
+and any available `terminalAt`/`failedScene`. These fields are projected
+**read-only from existing durable DynamoDB scene, sequence and assembly
+records**. There is **no separately persisted jobLifecycle attribute**;
+`job.status` remains the image-pipeline status. Future payment code must
+read the authoritative projection **with suitable customer authorisation**,
+and keep a separate long-lived payment ledger.
+
+| Durable evidence | Projected stage/status | terminal/outcome | Code |
+|---|---|---|---|
+| Image worker finalised `job.status=FAILED` or `PARTIAL_SUCCESS` | `IMAGES / FAILED` | `true / FAILED` | `REFERENCE_IMAGES_FAILED` |
+| Google confirmed safety/policy refusal, atomic videoSequence `BLOCKED` | `VIDEO_N / BLOCKED` | `true / FAILED` | `CONTENT_BLOCKED` |
+| Video `FAILED` with confirmed Google terminal status **and** `attemptNumber>=10` | `VIDEO_N / FAILED` | `true / FAILED` | `VIDEO_ATTEMPTS_EXHAUSTED` |
+| Assembly worker persisted `assembly.status=FAILED` | `STITCHING / FAILED` | `true / FAILED` | `STITCHING_FAILED` |
+| Assembly `COMPLETED` with expected final MP4 key | `COMPLETED / COMPLETED` | `true / COMPLETED` | — |
+
+**Do not conflate:** a failed scene before ten attempts, `SUBMISSION_UNKNOWN`,
+`REVIEW_REQUIRED`, workflow timeouts, missing handoff events, or an
+unfinalised image branch remain nonterminal. The previous manual video retry
+path stays available when eligible. A terminal image/assembly failure and a
+confirmed final exhausted attempt are permanent under today's generation
+contract and reject further API starts/retries/handoffs. No automatic Google
+requests are triggered by projection.
+
+**Frontend:** all definitive failures open the clean failure screen with the
+backend-supplied customer-friendly reason and **Start new video**. This
+survives browser refresh; customer details/previews are hidden, not deleted.
+Completed final MP4s continue to show the final-only experience. Developer
+diagnostics remain available.
+
+**Outstanding before paid launch:** build explicit reprocessing/recovery for
+recoverable stitching/other errors if desired, a backend reconciliation policy
+for indefinitely uncertain states, robust no-login customer authorisation,
+and separate long-lived payment/refund records. No Stripe integration exists.
+Older sections describing a proposed lifecycle or lacking terminal fields are
+historical and superseded by this section.
