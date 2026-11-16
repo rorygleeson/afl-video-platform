@@ -144,10 +144,7 @@ Resources:
           "TimeoutSeconds":3600,
           "States":{
             "PaidGate":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"gate","jobId.$":"$.jobId","sceneId.$":"$.sceneId"}},"ResultPath":"$.gate","Next":"Claim"},
-            "Claim":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"claim","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.claim","Next":"SubmissionSchedule"},
-            "SubmissionSchedule":{"Type":"Choice","Choices":[{"Variable":"$.sceneId","StringEquals":"scene2","Next":"WaitScene2"},{"Variable":"$.sceneId","StringEquals":"scene3","Next":"WaitScene3"}],"Default":"Submit"},
-            "WaitScene2":{"Type":"Wait","Seconds":10,"Next":"Submit"},
-            "WaitScene3":{"Type":"Wait","Seconds":20,"Next":"Submit"},
+            "Claim":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"claim","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$.Execution.Name"}},"ResultPath":"$.claim","Next":"Submit"},
             "Submit":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"submit","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.submit","Next":"WaitForVideo"},
             "WaitForVideo":{"Type":"Wait","Seconds":20,"Next":"PollVideo"},
             "PollVideo":{"Type":"Task","Resource":"arn:aws:states:::lambda:invoke","Parameters":{"FunctionName":"${GoogleWorkerLambda.Arn}","Payload":{"op":"poll","jobId.$":"$.jobId","sceneId.$":"$.sceneId","requestId.$":"$$.Execution.Name"}},"ResultPath":"$.polled","Retry":[{"ErrorEquals":["States.TaskFailed"],"IntervalSeconds":10,"MaxAttempts":3,"BackoffRate":2}],"Next":"InspectVideo"},
