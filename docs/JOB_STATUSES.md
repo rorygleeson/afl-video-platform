@@ -270,3 +270,10 @@ historical and superseded by this section.
 ## Immediate video handoff update — 16 November 2026
 
 Following durable Google video completion and S3 MP4 verification, the existing EventBridge/API backend advances directly to the next named Scene execution. The Google Step Functions `Claim` task transitions straight to `Submit` for all three scenes. Previously fixed waits (10s for Scene 2 and 20s for Scene 3) were removed. No frontend action or timer starts or advances paid video generation. `SUBMISSION_UNKNOWN` and recovery safeguards remain unchanged; `WaitForVideo` remains a 20s provider-poll interval, not a scene-to-scene stagger. The prior timing descriptions elsewhere in this document have been superseded.
+
+
+## Corrected FFmpeg terminal contract — 16 November 2026
+
+The previous warning about premature `STITCHING_FAILED` is addressed by the current API code: a failed *worker attempt* is not necessarily a failed *job*. On `assembly.status=FAILED`, the API reads the **named** `final-{jobId}` Step Functions execution. While it is `RUNNING`, progress reports `STITCHING / RETRYING`, `terminal=false`; no failure screen or refund signal. Only `retryCount=1` **and** named SFN status `FAILED` produce `STITCHING_FAILED, terminal=true, outcome=FAILED`. If the workflow is missing, timed out, aborted, inaccessible, or failed without a persisted second worker failure, status remains `REVIEW_REQUIRED, terminal=false`. Verified completed assembly continues to return `COMPLETED`.
+
+This is a read-only projection; it does not initiate any Google or FFmpeg work. Older warnings above are historical, superseded by this section. See the RA-01 implementation addendum in `RESILIENCE_AUDIT_2026-11-16.md`.
