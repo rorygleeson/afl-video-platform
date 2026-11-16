@@ -1,5 +1,14 @@
 # AFL Video Platform — Resiliency and Payment-Readiness Roadmap
 
+> **RE-AUDIT STATUS — 16 NOVEMBER 2026 (current source): NOT PAYMENT READY.** The latest ranked risk register is [RESILIENCE_AUDIT_2026-11-16.md](RESILIENCE_AUDIT_2026-11-16.md#re-audit-addendum--16-november-2026-after-terminal-lifecycle-immediate-handoff-and-playback-releases). Read that addendum **before** older milestone tables: it supersedes stale claims that all FFmpeg failures are final or that handoff/cleanup are resolved. No AWS change was made in this audit.
+>
+> **Critical, first fix:** `api.definitive_failure()` advertises `STITCHING_FAILED / terminal:true` on any persisted `assembly.FAILED`, but the deployed/source assembly Step Functions has a **15-second wait and one confirmed-failure FFmpeg retry**. The UI can therefore display a final failure during legitimate recovery. **Do not use this outcome to automatically refund Stripe until fixed and fault-tested.**
+>
+> **High-priority open gaps:** missed watchdog start event or >7200s lifetime, ambiguity after Google accepts an unacknowledged POST, conditional terminal fencing during races, no customer-scoped access or long-lived payment ledger, S3 `videos/` objects lacking lifecycle and 7-day DDB job TTL, unverified delivery object, manual-review operational alerting. **Source/CI/deploy success are not end-to-end recovery proof.**
+>
+> **Action sequence:** (1) align stitching retry and final outcome; (2) add fault-injection test matrix; (3) durable missed-handoff/watchdog remediation; (4) concurrency safety and live ASL drift comparison; (5) paid-order recovery/retention; (6) storage cleanup and observability. No new Google paid POSTs as part of these fixes. See RA-01…RA-12 in the audit for verification criteria.
+>
+
 **Status:** Active checklist — documentation/discovery first  
 **Created:** 2026-11-15 (Australia/Melbourne)  
 **Repository:** `rorygleeson/afl-video-platform` (`main`)  
