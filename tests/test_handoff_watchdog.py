@@ -215,6 +215,33 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(result,{"continue":True,"status":"WAIT_UNKNOWN_PAID_SUBMISSION"})
         self.api.invoke.assert_not_called()
 
+    def test_missing_start_notification_has_no_independent_watchdog_bootstrap(self):
+        # Baseline/gap regression: no event means no named monitor is started.
+        # Item 2 must add a separately tested recovery path, not silently
+        # assume EventBridge always delivers an image RUNNING notification.
+        self.states.start_execution.assert_not_called()
+        self.ddb.scan.assert_not_called()
+
+    def test_failed_video_stops_monitor_before_later_manual_retry(self):
+        # Capture today's known gap before modifying lifecycle behaviour.
+        self.ddb.get_item.return_value={"Item": self.job}
+        self.job["videoSequence"]={"status":"APPROVED"}
+        self.job["realVideos"]={"scene1":{"status":"FAILED"}}
+        result=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(result,{"continue":False,"status":"REVIEW_VIDEO_FAILED"})
+        self.api.invoke.assert_not_called()
+        self.states.start_execution.assert_not_called()
+
+    def test_near_deadline_still_active_and_expired_deadline_stops(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["status"]="GENERATING_IMAGES"
+        near=self.w.check_one({"jobId":ID,"startedAt":(NOW-timedelta(seconds=7100)).isoformat()})
+        self.assertTrue(near["continue"])
+        expired=self.w.check_one({"jobId":ID,"startedAt":(NOW-timedelta(seconds=7300)).isoformat()})
+        self.assertEqual(expired,{"continue":False,"status":"REVIEW_WATCHDOG_DEADLINE"})
+        self.api.invoke.assert_not_called()
+        self.states.start_execution.assert_not_called()
+
     def test_expired_job_watchdog_stops_without_api_call(self):
         result=self.w.check_one({"jobId":ID,"startedAt":(NOW-timedelta(hours=3)).isoformat()})
         self.assertEqual(result["continue"],False)
