@@ -664,7 +664,7 @@ const input = document.getElementById('selfie');
             'Last checked: ' + new Date().toLocaleTimeString(),
             'Status checks are read-only. No paid retries.'
           ];
-          document.getElementById('videoDebugText' + n).textContent = lines.join('\\n');
+          document.getElementById('videoDebugText' + n).textContent = lines.join('\n');
           document.getElementById('diagnoseScene' + n).hidden =
             real.status !== 'FAILED' && real.status !== 'REVIEW_REQUIRED';
           if (failedScene === id) document.getElementById('videoDebugDetails' + n).open = true;
