@@ -119,7 +119,8 @@ def check_changes(changes, kind):
         "watchdog": {"WatchdogLambda", "WatchdogMachine", "WatchdogMachineRole",
                      "EveryMinute", "InvokeFromEventBridge"},
         "image": {"ImageWorkerLambda", "ImageWorkerRole", "ImageStateMachine",
-                  "ImageReconcileSchedule", "ImageReconcileInvokePermission"},
+                  "ImageStateMachineRole", "ImageReconcileSchedule",
+                  "ImageReconcileInvokePermission"},
     }[kind]
     required = {"watchdog": {"WatchdogLambda"},
                 "image": {"ImageWorkerLambda", "ImageWorkerRole"}}[kind]
