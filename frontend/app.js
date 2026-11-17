@@ -190,6 +190,8 @@ const input = document.getElementById('selfie');
         resumeNotice.textContent = 'Resumed your previous video. Progress is saved in AWS.';
       } else {
         resumeNotice.hidden = true;
+        // Restore terminal Google failure evidence, not just the outcome card.
+        void refreshVideos(true);
       }
       rememberSessionKey();
       startPolling();
@@ -613,8 +615,9 @@ const input = document.getElementById('selfie');
   // Switching tabs, locking the phone or backgrounding this page cannot
   // interrupt the AWS handoff between completed scene MP4s.
 
-  async function refreshVideos() {
-    if (!currentJobId || document.hidden || videoTestSection.hidden) return;
+  async function refreshVideos(allowTerminalDiagnostics = false) {
+    if (!currentJobId || document.hidden ||
+        (videoTestSection.hidden && !allowTerminalDiagnostics)) return;
     if (videoBusy) {
       // A paid POST can complete while an older status GET is still running.
       // Remember to fetch fresh state instead of silently dropping that poll.
@@ -1175,6 +1178,9 @@ const input = document.getElementById('selfie');
       updateNewJobAvailability();
       if (isTerminalFailure(latestJobProgress)) {
         stopPolling();
+        // Customer panels stay hidden; the existing read-only video GET
+        // refreshes final developer diagnostics even on a terminal screen.
+        void refreshVideos(true);
         return;
       }
       const scenes = record.job.scenes || {};
