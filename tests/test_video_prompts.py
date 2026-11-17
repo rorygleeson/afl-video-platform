@@ -106,6 +106,19 @@ class VideoPromptTests(unittest.TestCase):
         self.assertIn("No wide-open shouting mouth", prompt)
         self.assertEqual(mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")["durationSeconds"], 5)
 
+    def test_scene3_every_visible_player_has_matching_uniform(self):
+        job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
+        prompt = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")["prompt"]
+        self.assertIn("KIT — ALL VISIBLE PLAYERS MATCH", prompt)
+        self.assertIn("Every other on-field player visible in this scene is his teammate", prompt)
+        self.assertIn("matching shorts colour and matching socks design/colours", prompt)
+        self.assertIn("NO opposition players or different uniforms", prompt)
+        self.assertNotIn("Any opposition players visible", prompt)
+        self.assertIn("neutral, closed-mouth selfie-derived face", prompt)
+        self.assertIn("ONLY the TWO existing background teammates", prompt)
+        self.assertIn("Alex Tonelli has won the premiership for Geelong Cats!", prompt)
+        self.assertEqual(mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")["durationSeconds"], 5)
+
     def test_commentary_is_offscreen_no_player_lip_sync(self):
         job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
         for scene in ("scene1", "scene2", "scene3"):
