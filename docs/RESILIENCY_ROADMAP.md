@@ -233,3 +233,17 @@ Source-verifiable tasks to complete **before paid rollout**: (a) independently r
 - Handle API Gateway 429 / `Limit Exceeded` explicitly: preserve saved job ID, show a clear temporary status-access/quota message instead of implying generation failure or frozen 94% stitching, and back off retries safely.
 - Test quota exhaustion → browser refresh → quota restoration → same-job recovery and final MP4 download, without a new generation request; separately validate API throttling versus quota exhaustion.
 - Keep this **minor priority** behind watchdog/handoff resilience, duplicate-payment prevention, durable recovery, and other critical pre-Stripe gates. Current 100,000/month quota is a temporary development setting, not a substitute for sensible polling.
+
+
+## Item 2 — watchdog / event-handoff careful audit checkpoint (17 November 2026)
+
+**Status: SOURCE AUDIT COMPLETE; implementation, CI fault injection and AWS deployment NOT STARTED. HIGH priority, OPEN.** Re-read `src/handoff_watchdog/handler.py`, `infrastructure/app/handoff-watchdog.yaml`, image/video completion EventBridge rules, and existing watchdog tests. No paid Google calls or live AWS mutations made.
+
+**Verified limitations and required acceptance gates:**
+1. `watch-{jobId}` starts only after an image SFN `RUNNING` EventBridge notification. Lost notification means no monitor exists. Require a durable *event-independent* missed-start detector (bounded, targeted, with no always-on full-table scan); prove dropped-start recovery and duplicate-start idempotency.
+2. Both the SFN's `TimeoutSeconds` and Lambda's `MAX_LIFETIME_SECONDS` are 7200. Require observable escalation/reconciliation for still-active jobs at/after deadline; distinguish Step Functions timeout from durable operator alert. Test a synthetic >2h job.
+3. The monitor currently stops at `REVIEW_VIDEO_FAILED` (even if a manual scene retry later succeeds) and on `REVIEW_*` from `reconcile()`. Ensure later authorised retries regain monitoring and no review is silently lost. Test failed scene → manual retry → completed scene → successor handoff.
+4. EventBridge targets have RetryPolicy but no DLQ; successful Lambda returns of `*_NEEDS_REVIEW` do not trigger automatic retry. Add durable, deduplicated review/alert routing and test event-delivery vs application-level failure separately.
+5. Preserve safety: watchdog can GetItem, DescribeExecution, invoke the existing API and start only its own SFN. No DynamoDB scan/write, no direct Google or paid request, no blind retries or extra FFmpeg writer; test zero new model submissions and single named handoff per scene.
+
+**Next safe step:** introduce isolated mocked tests / a no-write review design and inspect exact deployed resource configuration before a guarded runtime change. Do not treat existing unit tests or an uploaded workflow as live coverage. Keep user-visible list updated after each milestone.
