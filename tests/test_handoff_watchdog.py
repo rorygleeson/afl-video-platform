@@ -276,6 +276,53 @@ class WatchdogTests(unittest.TestCase):
         self.api.invoke.assert_not_called()
         self.states.start_execution.assert_not_called()
 
+    def test_15min_deadline_stops_only_named_owned_running_executions(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["jobDeadlineAt"]=int(NOW.timestamp()) - 1
+        self.job["paidVideoApprovals"]={"scene1":{"executionName":"real-"+ID+"-scene1"}}
+        self.states.describe_execution.return_value={"status":"RUNNING"}
+        result=self.w.check_one({"jobId":ID, "startedAt":NOW.isoformat()})
+        self.assertEqual(result,{"continue":False,"status":"JOB_DEADLINE_EXCEEDED_PROVIDER_REVIEW"})
+        self.ddb.update_item.assert_called_once()
+        self.assertIn("deadlineStatus",self.ddb.update_item.call_args.kwargs["UpdateExpression"])
+        owners=[call.kwargs["executionArn"] for call in self.states.stop_execution.call_args_list]
+        self.assertEqual(len(owners),3)
+        self.assertIn(self.w.arn_for(self.w.IMAGE_ARN, ID),owners)
+        self.assertIn(self.w.arn_for(self.w.VIDEO_ARN,"real-"+ID+"-scene1"),owners)
+        self.assertIn(self.w.arn_for(self.w.ASSEMBLY_ARN,"final-"+ID),owners)
+        self.api.invoke.assert_not_called()
+        self.states.start_execution.assert_not_called()
+
+    def test_15min_deadline_not_triggered_just_before_limit(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["jobDeadlineAt"]=int(NOW.timestamp()) + 60
+        self.states.describe_execution.return_value={"status":"RUNNING"}
+        outcome=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertTrue(outcome["continue"])
+        self.ddb.update_item.assert_not_called()
+        self.states.stop_execution.assert_not_called()
+
+    def test_15min_finished_video_is_not_killed(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["jobDeadlineAt"]=int(NOW.timestamp()) - 10
+        self.job["assembly"]={"status":"COMPLETED"}
+        outcome=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(outcome["status"],"FINAL_VIDEO_COMPLETED")
+        self.ddb.update_item.assert_not_called()
+        self.states.stop_execution.assert_not_called()
+
+    def test_15min_stop_permission_failure_requires_review(self):
+        from botocore.exceptions import ClientError
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["jobDeadlineAt"]=int(NOW.timestamp()) - 10
+        self.states.describe_execution.return_value={"status":"RUNNING"}
+        self.states.stop_execution.side_effect=ClientError(
+            {"Error":{"Code":"AccessDeniedException","Message":"no permission"}},"StopExecution")
+        outcome=self.w.check_one({"jobId":ID,"startedAt":NOW.isoformat()})
+        self.assertEqual(outcome["status"],"REVIEW_DEADLINE_STOP_UNCERTAIN")
+        self.assertTrue(outcome["continue"])
+        self.api.invoke.assert_not_called()
+
     def test_expired_job_watchdog_stops_without_api_call(self):
         result=self.w.check_one({"jobId":ID,"startedAt":(NOW-timedelta(hours=3)).isoformat()})
         self.assertEqual(result["continue"],False)
