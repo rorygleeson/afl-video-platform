@@ -1,5 +1,6 @@
 name: Test Item 2 watchdog (offline only)
 on:
+  pull_request:
   push:
     branches: [main]
     paths:
