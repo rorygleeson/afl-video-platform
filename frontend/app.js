@@ -633,9 +633,44 @@ const input = document.getElementById('selfie');
       lastVideoSnapshot = data;
       if (data.progress) latestJobProgress = data.progress;
       updateNewJobAvailability();
-      // Failure is already terminal in DynamoDB. No more video polls,
-      // previews or customer-facing scene cards for this failed job.
-      if (isTerminalFailure(latestJobProgress)) return;
+      // A terminal outcome hides the customer scene cards, but developer
+      // diagnostics must still reflect the final DynamoDB snapshot. Otherwise
+      // an earlier PROCESSING result and blank Google error remain on screen.
+      // This is display-only: no Google POST, worker invocation or retries.
+      if (isTerminalFailure(latestJobProgress)) {
+        const failedScene = latestJobProgress?.failedScene;
+        for (const n of [1, 2, 3]) {
+          const id = 'scene' + n;
+          const real = data.videos?.[id] || {};
+          const blocked = data.sequence?.status === 'BLOCKED' && failedScene === id;
+          const lines = [
+            'Job: ' + jobId,
+            'Scene: ' + id,
+            'Mode: ' + (real.mode || 'NOT_REQUESTED'),
+            'Status: ' + (real.status || 'NOT_REQUESTED'),
+            'Retry available: no',
+            'Retry blocked: ' + (real.retryBlockedReason || (blocked ? 'CONTENT_BLOCKED' : '—')),
+            'Paid attempt: ' + (real.attemptNumber || 1) + ' of ' + (real.maxAttempts || 10),
+            'Workflow: ' + (real.workflowStatus || '—'),
+            'Google interaction: ' + (real.interactionId || '—'),
+            'Request: ' + (real.requestId || '—'),
+            'Error: ' + (real.failureCode || real.errorCode || (blocked ? 'CONTENT_BLOCKED' : '—')),
+            'Submitted to Google (UTC): ' + (real.submittedAt || '—'),
+            'Google terminal status: ' + (real.providerFinalStatus || '—'),
+            'Original Google error: ' + (real.providerErrorCode || '—'),
+            'Original error category: ' + (real.providerErrorCategory || '—'),
+            'Original failure observed (UTC): ' + (real.providerFailureObservedAt || '—'),
+            'Completed (UTC): ' + (real.completedAt || '—'),
+            'Last checked: ' + new Date().toLocaleTimeString(),
+            'Status checks are read-only. No paid retries.'
+          ];
+          document.getElementById('videoDebugText' + n).textContent = lines.join('\\n');
+          document.getElementById('diagnoseScene' + n).hidden =
+            real.status !== 'FAILED' && real.status !== 'REVIEW_REQUIRED';
+          if (failedScene === id) document.getElementById('videoDebugDetails' + n).open = true;
+        }
+        return;
+      }
       if (data.sequence?.status === "APPROVED") videoSequenceAttemptUncertain = false;
       availablePaidScenes = [1, 2, 3].filter(n => {
         const id = 'scene' + n;
