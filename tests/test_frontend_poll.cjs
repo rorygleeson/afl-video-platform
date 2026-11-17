@@ -1650,6 +1650,12 @@ test('backend terminal policy exit hides customer inputs, previews and retries a
   assert.equal(h.els.resumeNotice.hidden,true);
   assert.equal(h.els.startNewJob.hidden,false);
   assert.equal(h.els.retryVideoScene2.hidden,true);
+  assert.match(h.els.videoDebugText2.textContent,/Status: FAILED/,
+    'Terminal policy result refreshes scene diagnostics instead of leaving PROCESSING');
+  assert.match(h.els.videoDebugText2.textContent,/Original error category: SAFETY_OR_POLICY/);
+  assert.match(h.els.videoDebugText2.textContent,/Retry blocked: CONTENT_BLOCKED/);
+  assert.equal(h.els.videoDebugDetails2.open,true,
+    'Failed scene diagnostics are expanded for review');
   assert.equal(h.els.videoPlayer1.querySelector('video'),null);
   assert.equal(h.els.preview.hidden,true,'Blocked refresh never downloads the stored selfie');
   assert.equal(h.calls.filter(c=>c.url.endsWith('/selfie')).length,0);
