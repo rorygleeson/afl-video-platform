@@ -150,8 +150,18 @@ def check_changes(changes, kind):
                 else:
                     raise AssertionError(f"{logical}: unrelated static modification")
             else:
-                assert detail.get("ChangeSource") in (
-                    "ResourceReference", "ResourceAttribute"), f"{logical}: unsafe dynamic change"
+                source = detail.get("ChangeSource")
+                if source == "DirectModification":
+                    # CFN may mark an explicit S3 artifact change Dynamic.
+                    # Only the exact intended Lambda Code or IAM policy may
+                    # qualify; never accept another direct configuration edit.
+                    assert attr == "Properties", f"{logical}: direct non-property change"
+                    assert ((logical in ("WatchdogLambda", "ImageWorkerLambda") and name == "Code")
+                            or (logical == "ImageWorkerRole" and name == "Policies")), (
+                        f"{logical}: unexpected dynamic direct modification {name}")
+                else:
+                    assert source in ("ResourceReference", "ResourceAttribute"), (
+                        f"{logical}: unsafe dynamic change")
     print("PREVIEW_ACCEPTED", kind, flush=True)
 
 
