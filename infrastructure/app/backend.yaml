@@ -408,6 +408,10 @@ Resources:
                 Effect: Allow
                 Action: [dynamodb:GetItem, dynamodb:UpdateItem, dynamodb:Scan]
                 Resource: !GetAtt JobsTable.Arn
+              - Sid: BootstrapExistingWatchdogOnly
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-handoff-watchdog'
               - Sid: WorkerLogging
                 Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
