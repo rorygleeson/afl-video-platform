@@ -400,6 +400,17 @@ def generate(worker, job_id, scene_id):
         raise
     worker.scene_update(job_id, scene_id, "GENERATING",
                         {"generationStartedAt": int(time.time())}, expected="SUBMITTING")
+    # Reject late paid submissions after slow preflight or rate-limit waits.
+    # The existing image and any other completed clips are retained.
+    latest = worker.job_by_id(job_id)
+    deadline = latest.get("jobDeadlineAt")
+    if deadline is None and latest.get("generationStartedAt") is not None:
+        deadline = int(latest["generationStartedAt"]) + 900
+    if (latest.get("deadlineStatus") == "EXPIRED" or
+            (deadline is not None and int(time.time()) >= int(deadline))):
+        worker.scene_update(job_id, scene_id, "GENERATING",
+                            {"errorCode": "JOB_DEADLINE_EXCEEDED"}, expected="GENERATING")
+        raise RuntimeError("JOB_DEADLINE_EXCEEDED")
     try:
         # Exactly one Google submission per invocation. 429s are explicitly
         # rejected, so Step Functions can resubmit after a durable Wait state.
