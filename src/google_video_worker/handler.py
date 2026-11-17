@@ -114,6 +114,13 @@ def require_paid_unlock(job=None, scene=None, request=None):
     if not isinstance(job, str) or not JOB_RE.fullmatch(job) or scene not in SCENES:
         raise PermissionError("PAID_SCENE_INVALID")
     item = get_job(job)
+    # Enforce the generation deadline at claim AND immediately before paid POST.
+    deadline = item.get("jobDeadlineAt")
+    if deadline is None and item.get("generationStartedAt") is not None:
+        deadline = int(item["generationStartedAt"]) + 900
+    if (item.get("deadlineStatus") == "EXPIRED" or
+            (deadline is not None and int(time.time()) >= int(deadline))):
+        raise PermissionError("JOB_DEADLINE_EXCEEDED")
     if item.get("videoSequence", {}).get("status") == "BLOCKED":
         raise PermissionError("JOB_CONTENT_BLOCKED")
     approval = item.get("paidVideoApprovals", {}).get(scene, {})
@@ -553,6 +560,9 @@ def submit(job, scene, request):
         finally:
             release(job, scene, request)
         raise
+    # Recheck after slow prompt, S3 and authentication preflight: do not POST
+    # after 15 minutes even if the original admission was earlier.
+    require_paid_unlock(job, scene, request)
     # Set ambiguous state BEFORE issuing the billable POST. A Lambda timeout
     # must NEVER cause Step Functions to resubmit this operation.
     transition(job, scene, request, "PREPARED", "SUBMISSION_UNKNOWN",
