@@ -223,3 +223,13 @@ Eliminated fixed AWS Step Functions submission waits for Scene 2 (10s) and Scene
 Source-verifiable tasks to complete **before paid rollout**: (a) independently read live Google ASL and reconcile the `Claim.requestId.$` path discrepancy (ED-01 / RA-10); (b) preserve/alert application-level `NEEDS_REVIEW` handoff outcomes instead of assuming EventBridge target RetryPolicy will re-invoke Lambda (ED-02); (c) missed watchdog start, 7200s cutoff and no DLQ handling (ED-03); (d) concurrency terminal fences on paid claim (ED-04); (e) unknown provider acceptance (ED-05); (f) final MP4 delivery/retention (ED-06). See [EVENT_DRIVEN_ARCHITECTURE.md](EVENT_DRIVEN_ARCHITECTURE.md) and its three detailed SVG diagrams for exact evidence and acceptance criteria.
 
 **Documentation-only:** new source findings do not imply a live incident or an AWS change. RA-01 FFmpeg status code remains deployment-verified with live fault injection outstanding; RA-02…RA-12 stay open.
+
+
+## Minor priority — API polling and quota UX (17 November 2026)
+
+**Priority: LOW / post-critical resilience work. Status: OPEN.** During a three-scene job, final FFmpeg assembly finished successfully and the MP4 remained downloadable, but the developer API Gateway usage plan had **0 requests remaining** against its previous 10,000/month quota. The browser displayed `Limit Exceeded`, appeared stuck at estimated 94% stitching, and could not retrieve existing job status on refresh. Increasing the quota to 100,000/month restored access and the final video was downloaded successfully. This was an API status-access incident, **not** an FFmpeg failure; it does not prove live FFmpeg fault recovery.
+
+- Reduce redundant/overlapping frontend GET polling (job, images, real-videos, assembly and expanded developer diagnostics), especially when idle, backgrounded, completed, or reconnecting. Keep backend-driven generation independent of polling and never issue billable Google POSTs from a status GET.
+- Handle API Gateway 429 / `Limit Exceeded` explicitly: preserve saved job ID, show a clear temporary status-access/quota message instead of implying generation failure or frozen 94% stitching, and back off retries safely.
+- Test quota exhaustion → browser refresh → quota restoration → same-job recovery and final MP4 download, without a new generation request; separately validate API throttling versus quota exhaustion.
+- Keep this **minor priority** behind watchdog/handoff resilience, duplicate-payment prevention, durable recovery, and other critical pre-Stripe gates. Current 100,000/month quota is a temporary development setting, not a substitute for sensible polling.
