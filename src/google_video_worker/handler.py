@@ -517,9 +517,12 @@ def claim(job, scene, request):
     JOBS.update_item(
         Key={"jobId": job},
         UpdateExpression="SET realVideos.#scene = :value",
-        ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(realVideos.#scene)",
+        ConditionExpression=("attribute_exists(jobId) AND attribute_not_exists(realVideos.#scene) "
+                             "AND (attribute_not_exists(jobDeadlineAt) OR jobDeadlineAt > :nowEpoch) "
+                             "AND attribute_not_exists(deadlineStatus)"),
         ExpressionAttributeNames={"#scene": scene},
         ExpressionAttributeValues={
+            ":nowEpoch": int(time.time()),
             ":value": {"status": "PREPARED", "requestId": request,
                        "sourceImageKey": key, "createdAt": datetime.now(timezone.utc).isoformat()}
         },
