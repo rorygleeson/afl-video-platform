@@ -1,0 +1,43 @@
+name: Verify 15-minute job deadline (offline)
+on:
+  pull_request:
+    paths:
+      - 'src/api/handler.py'
+      - 'src/image_worker/handler.py'
+      - 'src/image_worker/google_direct.py'
+      - 'src/google_video_worker/handler.py'
+      - 'src/handoff_watchdog/handler.py'
+      - 'infrastructure/app/handoff-watchdog.yaml'
+      - 'tests/test_job_deadline.py'
+      - 'tests/test_handoff_watchdog.py'
+      - '.github/workflows/test-job-deadline.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tests/test_job_deadline.py'
+      - '.github/workflows/test-job-deadline.yml'
+permissions:
+  contents: read
+jobs:
+  safe-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Dependencies and CloudFormation lint
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'cfn-lint>=1,<2'
+          cfn-lint infrastructure/app/handoff-watchdog.yaml --regions ap-southeast-2
+      - name: Syntax checks
+        run: |
+          python -m py_compile src/api/handler.py src/image_worker/handler.py src/image_worker/google_direct.py src/google_video_worker/handler.py src/handoff_watchdog/handler.py tests/test_job_deadline.py tests/test_handoff_watchdog.py
+      - name: Deadline safety contracts
+        run: python -m unittest discover -s tests -p 'test_job_deadline.py' -v
+      - name: Watchdog deadline and recovery tests
+        run: python -m unittest discover -s tests -p 'test_handoff_watchdog.py' -v
+      - name: Existing AWS sequencing regressions
+        run: python -m unittest discover -s tests -p 'test_aws_video_sequence.py' -v

@@ -32,6 +32,17 @@ Resources:
                 Effect: Allow
                 Action: dynamodb:GetItem
                 Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/afl-app-dev-jobs'
+              - Sid: MarkOnlyDeadlineOnJobs
+                Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/afl-app-dev-jobs'
+              - Sid: StopOnlyOwnedGenerationExecutions
+                Effect: Allow
+                Action: states:StopExecution
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:afl-app-dev-scene1-pilot:*'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:afl-app-dev-google-omni:real-*'
+                  - !Sub 'arn:${AWS::Partition}:states:${AWS::Region}:${AWS::AccountId}:execution:afl-app-dev-assembly:final-*'
               - Sid: DescribeExistingExecutionsOnly
                 Effect: Allow
                 Action: states:DescribeExecution

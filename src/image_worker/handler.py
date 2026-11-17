@@ -135,10 +135,11 @@ def prepare(job_id):
         job_id,
         "SET #status = :generating, scenes = :scenes, sceneCount = :three, "
         "completedScenes = :zero, failedScenes = :zero, generationStartedAt = :now, "
-        "teamMasterKeys = :masterkeys",
+        "jobDeadlineAt = :deadline, teamMasterKeys = :masterkeys",
         {":generating": "GENERATING_IMAGES",
          ":waiting": "AWAITING_IMAGE_PIPELINE",
          ":scenes": scenes, ":three": 3, ":zero": 0, ":now": int(time.time()),
+         ":deadline": int(time.time()) + 900,
          ":masterkeys": masters},
         {"#status": "status"},
         "#status = :waiting",

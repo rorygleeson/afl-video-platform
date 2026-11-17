@@ -229,6 +229,72 @@ def ensure_monitor_for_existing_image_job(event):
     return {"status": "MONITORING_STARTED_BY_RECONCILER"}
 
 
+
+CUSTOMER_JOB_SECONDS = 900
+
+
+def expire_customer_job(job, now):
+    """Persist a time-limit marker, stop only owned active AWS executions.
+
+    StopExecution stops AWS orchestration, NOT necessarily an already accepted
+    billable Google operation. Preserve all provider IDs, clips and images for
+    refund/charge review. Never issue a new model request.
+    """
+    job_id = job["jobId"]
+    deadline = job.get("jobDeadlineAt")
+    if deadline is None and job.get("generationStartedAt") is not None:
+        deadline = int(job["generationStartedAt"]) + CUSTOMER_JOB_SECONDS
+    if deadline is None or int(now.timestamp()) < int(deadline):
+        return None
+    if (job.get("assembly") or {}).get("status") == "COMPLETED":
+        return {"continue": False, "status": "FINAL_VIDEO_COMPLETED"}
+    try:
+        JOBS.update_item(
+            Key={"jobId": job_id},
+            UpdateExpression="SET deadlineStatus = :expired, deadlineExceededAt = if_not_exists(deadlineExceededAt, :at)",
+            ConditionExpression=(
+                "attribute_exists(jobId) AND "
+                "(attribute_not_exists(deadlineStatus) OR deadlineStatus = :expired) "
+                "AND (attribute_not_exists(assembly) OR assembly.#assemblyStatus <> :completed)"
+            ),
+            ExpressionAttributeNames={"#assemblyStatus": "status"},
+            ExpressionAttributeValues={
+                ":expired": "EXPIRED", ":at": now.isoformat(),
+                ":completed": "COMPLETED",
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return {"continue": False, "status": "REVIEW_DEADLINE_MARKER_RACE"}
+        raise
+    owners = [(IMAGE_ARN, job_id), (ASSEMBLY_ARN, "final-" + job_id)]
+    for scene in SCENES:
+        owner = (job.get("paidVideoApprovals") or {}).get(scene, {}).get("executionName")
+        if isinstance(owner, str) and re.fullmatch(
+                rf"real-{job_id}-{scene}(?:-r(?:[2-9]|10))?", owner):
+            owners.append((VIDEO_ARN, owner))
+    unresolved = []
+    for machine, name in owners:
+        arn = arn_for(machine, name)
+        try:
+            execution = STATES.describe_execution(executionArn=arn)
+            if execution.get("status") != "RUNNING":
+                continue
+            STATES.stop_execution(executionArn=arn,
+                                  error="JobDeadlineExceeded",
+                                  cause="Customer generation time budget reached")
+        except ClientError as exc:
+            if exc.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+                continue
+            LOG.exception("Could not stop active owned execution at deadline")
+            unresolved.append(name)
+    if unresolved:
+        LOG.error("Generation deadline requires AWS execution review: %d active owned executions", len(unresolved))
+        return {"continue": True, "status": "REVIEW_DEADLINE_STOP_UNCERTAIN"}
+    LOG.warning("Customer 15-minute deadline enforced; provider-side cancellation unverified")
+    return {"continue": False, "status": "JOB_DEADLINE_EXCEEDED_PROVIDER_REVIEW"}
+
+
 def check_one(event):
     """Read exactly one job. Never scan or directly start a paid workflow."""
     job_id = event.get("jobId")
@@ -245,6 +311,9 @@ def check_one(event):
     created = when(job.get("createdAt"))
     if not created or created < ACTIVATED or job.get("autoVideoConsent") is not True:
         return {"continue": False, "status": "NOT_AUTHORISED"}
+    deadline_outcome = expire_customer_job(job, now)
+    if deadline_outcome is not None:
+        return deadline_outcome
     if job.get("status") in ("FAILED", "PARTIAL_SUCCESS"):
         return {"continue": False, "status": "IMAGE_JOB_TERMINAL_FAILURE"}
     assembly = job.get("assembly") or {}

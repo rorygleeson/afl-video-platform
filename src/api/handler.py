@@ -303,6 +303,11 @@ def overall_job_progress(job):
     if terminal_failure:
         progress.update(terminal_failure)
         return progress
+    if job.get("deadlineStatus") == "EXPIRED":
+        progress.update({"stageStatus": "REVIEW_REQUIRED", "terminal": False,
+                         "outcome": None, "retryable": False,
+                         "message": "Your 15-minute generation limit was reached. Processing has stopped on AWS; any outstanding provider request requires review."})
+        return progress
 
     if images_completed != len(VIDEO_SCENES):
         if job.get("status") in ("FAILED", "PARTIAL_SUCCESS"):
@@ -477,6 +482,30 @@ def create_job(event):
         if existing and existing.get("requestFingerprint") == fingerprint:
             return response(200, {"job": public_job(existing)})
         return response(409, {"error": "Idempotency-Key has already been used for a different request"})
+
+
+
+JOB_MAX_SECONDS = 900
+
+
+def job_deadline(job):
+    """One immutable generation-start based deadline, with old-job fallback."""
+    stamp = job.get("jobDeadlineAt")
+    if stamp is None and job.get("generationStartedAt") is not None:
+        stamp = int(job["generationStartedAt"]) + JOB_MAX_SECONDS
+    return int(stamp) if stamp is not None else None
+
+
+def admission_deadline_blocked(job):
+    deadline = job_deadline(job)
+    return (job.get("deadlineStatus") == "EXPIRED" or
+            (deadline is not None and int(time.time()) >= deadline))
+
+
+def deadline_response():
+    return response(409, {"status": "JOB_DEADLINE_EXCEEDED",
+                          "error": "The 15-minute generation limit has been reached. No new generation will start."})
+
 
 
 def start_images(job_id):
@@ -662,6 +691,8 @@ def start_assembly(job_id):
     if definitive_failure(job):
         return response(409, {"status": "JOB_TERMINAL_FAILED",
                               "error": "This job has permanently ended"})
+    if admission_deadline_blocked(job):
+        return deadline_response()
     assembly = job.get("assembly") or {}
     if assembly and assembly.get("status") != "QUEUED":
         return response(200, {"jobId": job_id, "assembly": assembly_public(job)})
@@ -681,8 +712,10 @@ def start_assembly(job_id):
             DDB.update_item(
                 Key={"jobId": job_id},
                 UpdateExpression="SET assembly = :record",
-                ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(assembly)",
-                ExpressionAttributeValues={":record": {
+                ConditionExpression=("attribute_exists(jobId) AND attribute_not_exists(assembly) "
+                                     "AND (attribute_not_exists(jobDeadlineAt) OR jobDeadlineAt > :nowEpoch) "
+                                     "AND attribute_not_exists(deadlineStatus)"),
+                ExpressionAttributeValues={":nowEpoch": int(time.time()), ":record": {
                     "status": "QUEUED", "createdAt": datetime.now(timezone.utc).isoformat()}})
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
@@ -956,6 +989,8 @@ def start_real_scene(job_id, scene_id, event):
     if definitive_failure(job):
         return response(409, {"status": "JOB_TERMINAL_FAILED",
                               "error": "This job has permanently ended"})
+    if admission_deadline_blocked(job):
+        return deadline_response()
     if job.get("paidVideoApprovals", {}).get(scene_id) or job.get("realVideos", {}).get(scene_id):
         return response(409, {"error": "This scene already has a paid request; check status, do not retry"})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1005,9 +1040,11 @@ def start_real_scene(job_id, scene_id, event):
             UpdateExpression="SET paidVideoApprovals.#scene = :approval",
             ConditionExpression=("attribute_exists(jobId) AND attribute_not_exists(paidVideoApprovals.#scene) "
                                  "AND attribute_not_exists(realVideos.#scene) "
-                                 "AND (attribute_not_exists(videoSequence) OR videoSequence.#seqStatus <> :blocked)"),
+                                 "AND (attribute_not_exists(videoSequence) OR videoSequence.#seqStatus <> :blocked) "
+                                 "AND (attribute_not_exists(jobDeadlineAt) OR jobDeadlineAt > :nowEpoch) "
+                                 "AND attribute_not_exists(deadlineStatus)"),
             ExpressionAttributeNames={"#scene": scene_id, "#seqStatus": "status"},
-            ExpressionAttributeValues={":blocked": "BLOCKED", ":approval": {
+            ExpressionAttributeValues={":blocked": "BLOCKED", ":nowEpoch": int(time.time()), ":approval": {
                 "status": "REQUESTED", "executionName": name,
                 "createdAt": datetime.now(timezone.utc).isoformat(),
                 "requestFingerprint": hashlib.sha256(token.encode()).hexdigest(),
@@ -1054,6 +1091,8 @@ def start_video_sequence(job_id, event):
     if definitive_failure(job):
         return response(409, {"status": "JOB_TERMINAL_FAILED",
                               "error": "This job has permanently ended"})
+    if admission_deadline_blocked(job):
+        return deadline_response()
     if job.get("assembly"):
         return response(409, {"error": "Final assembly already started"})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1069,8 +1108,10 @@ def start_video_sequence(job_id, event):
             DDB.update_item(
                 Key={"jobId": job_id},
                 UpdateExpression="SET videoSequence = :approval",
-                ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(videoSequence)",
-                ExpressionAttributeValues={":approval": {
+                ConditionExpression=("attribute_exists(jobId) AND attribute_not_exists(videoSequence) "
+                                     "AND (attribute_not_exists(jobDeadlineAt) OR jobDeadlineAt > :nowEpoch) "
+                                     "AND attribute_not_exists(deadlineStatus)"),
+                ExpressionAttributeValues={":nowEpoch": int(time.time()), ":approval": {
                     "status": "APPROVED", "mode": "AWS_EVENT_DRIVEN",
                     "approvedAt": datetime.now(timezone.utc).isoformat(),
                     "requestFingerprint": hashlib.sha256(token.encode()).hexdigest(),
@@ -1273,6 +1314,8 @@ def retry_failed_real_scene(job_id, scene_id, event):
     if definitive_failure(job):
         return response(409, {"status": "JOB_TERMINAL_FAILED",
                               "error": "This job has permanently ended"})
+    if admission_deadline_blocked(job):
+        return deadline_response()
     approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
     current = job.get("realVideos", {}).get(scene_id, {})
     # Replaying the same API request cannot create a third attempt, including
@@ -1335,14 +1378,16 @@ def retry_failed_real_scene(job_id, scene_id, event):
                 "attribute_exists(jobId) AND realVideos.#scene.#status = :failed "
                 "AND realVideos.#scene.requestId = :request "
                 "AND paidVideoApprovals.#scene.executionName = :oldname "
-                "AND (attribute_not_exists(videoSequence) OR videoSequence.#seqStatus <> :blocked)"
+                "AND (attribute_not_exists(videoSequence) OR videoSequence.#seqStatus <> :blocked) "
+                "AND (attribute_not_exists(jobDeadlineAt) OR jobDeadlineAt > :nowEpoch) "
+                "AND attribute_not_exists(deadlineStatus)"
             ),
             ExpressionAttributeNames={"#scene": scene_id, "#status": "status",
                                       "#seqStatus": "status"},
             ExpressionAttributeValues={
                 ":approval": next_approval, ":failed": "FAILED",
                 ":request": old_request, ":oldname": old_name,
-                ":blocked": "BLOCKED",
+                ":blocked": "BLOCKED", ":nowEpoch": int(time.time()),
             },
         )
     except ClientError as exc:
