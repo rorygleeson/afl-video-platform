@@ -215,12 +215,46 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(result,{"continue":True,"status":"WAIT_UNKNOWN_PAID_SUBMISSION"})
         self.api.invoke.assert_not_called()
 
-    def test_missing_start_notification_has_no_independent_watchdog_bootstrap(self):
-        # Baseline/gap regression: no event means no named monitor is started.
-        # Item 2 must add a separately tested recovery path, not silently
-        # assume EventBridge always delivers an image RUNNING notification.
-        self.states.start_execution.assert_not_called()
+    def test_fallback_can_start_monitor_without_eventbridge_start_notification(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.states.describe_execution.return_value={"status":"RUNNING"}
+        result=self.w.lambda_handler({"op":"ensure_monitor","jobId":ID},None)
+        self.assertEqual(result["status"],"MONITORING_STARTED_BY_RECONCILER")
+        self.states.start_execution.assert_called_once()
+        self.assertEqual(self.states.start_execution.call_args.kwargs["name"],"watch-"+ID)
+        self.api.invoke.assert_not_called()
         self.ddb.scan.assert_not_called()
+
+    def test_fallback_duplicate_is_safe_and_not_paid(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.states.describe_execution.return_value={"status":"SUCCEEDED"}
+        self.states.exceptions.ExecutionAlreadyExists=type("ExecutionAlreadyExists",(Exception,),{})
+        self.states.start_execution.side_effect=self.states.exceptions.ExecutionAlreadyExists()
+        result=self.w.lambda_handler({"op":"ensure_monitor","jobId":ID},None)
+        self.assertEqual(result["status"],"ALREADY_MONITORING")
+        self.api.invoke.assert_not_called()
+
+    def test_fallback_rejects_missing_image_execution(self):
+        from botocore.exceptions import ClientError
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.states.describe_execution.side_effect=ClientError(
+            {"Error":{"Code":"ExecutionDoesNotExist","Message":"none"}},"DescribeExecution")
+        self.assertEqual(self.w.lambda_handler({"op":"ensure_monitor","jobId":ID},None)["status"],
+                         "SKIP_IMAGE_EXECUTION_MISSING")
+        self.states.start_execution.assert_not_called()
+
+    def test_fallback_rejects_no_consent_old_or_terminal_job(self):
+        self.ddb.get_item.return_value={"Item":self.job}
+        self.job["autoVideoConsent"]=False
+        self.assertEqual(self.w.lambda_handler({"op":"ensure_monitor","jobId":ID},None)["status"],"IGNORED_UNAUTHORISED")
+        self.job["autoVideoConsent"]=True
+        self.job["createdAt"]=(NOW-timedelta(days=3)).isoformat()
+        self.assertEqual(self.w.lambda_handler({"op":"ensure_monitor","jobId":ID},None)["status"],"IGNORED_OLD_JOB")
+        self.job["createdAt"]=NOW.isoformat()
+        self.job["assembly"]={"status":"COMPLETED"}
+        self.assertEqual(self.w.lambda_handler({"op":"ensure_monitor","jobId":ID},None)["status"],"SKIP_TERMINAL")
+        self.states.start_execution.assert_not_called()
+
 
     def test_failed_video_stops_monitor_before_later_manual_retry(self):
         # Capture today's known gap before modifying lifecycle behaviour.

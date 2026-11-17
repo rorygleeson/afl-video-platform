@@ -1,11 +1,14 @@
 name: Test Item 2 watchdog (offline only)
 on:
+  pull_request:
   push:
     branches: [main]
     paths:
       - '.github/workflows/test-watchdog-item2.yml'
       - 'src/handoff_watchdog/handler.py'
       - 'tests/test_handoff_watchdog.py'
+      - 'src/image_worker/handler.py'
+      - 'tests/test_watchdog_image_reconciler.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,6 +24,8 @@ jobs:
       - name: Install mocking dependencies
         run: python -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
       - name: Syntax verification
-        run: python -m py_compile src/handoff_watchdog/handler.py tests/test_handoff_watchdog.py
+        run: python -m py_compile src/handoff_watchdog/handler.py src/image_worker/handler.py tests/test_handoff_watchdog.py tests/test_watchdog_image_reconciler.py
       - name: Execute Item 2 watchdog regression tests (no AWS access)
         run: python -m unittest discover -s tests -p 'test_handoff_watchdog.py' -v
+      - name: Test existing scheduled reconciler watchdog fallback
+        run: python -m unittest discover -s tests -p 'test_watchdog_image_reconciler.py' -v

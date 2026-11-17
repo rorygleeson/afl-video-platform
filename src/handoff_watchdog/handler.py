@@ -188,6 +188,47 @@ def start_for_image_execution(event):
     return {"status": "MONITORING_STARTED"}
 
 
+
+def ensure_monitor_for_existing_image_job(event):
+    """Independent fallback: bounded image reconciler asks us to start only
+    this job's existing monitor. NEVER launches image/video generation.
+    """
+    job_id = event.get("jobId")
+    if not isinstance(job_id, str) or not JOB_ID.fullmatch(job_id):
+        return {"status": "IGNORED_JOB_ID"}
+    job = JOBS.get_item(Key={"jobId": job_id}, ConsistentRead=True).get("Item")
+    if not job or job.get("autoVideoConsent") is not True:
+        return {"status": "IGNORED_UNAUTHORISED"}
+    created = when(job.get("createdAt"))
+    if not created or created < ACTIVATED:
+        return {"status": "IGNORED_OLD_JOB"}
+    if job.get("status") in ("FAILED", "PARTIAL_SUCCESS") or (
+            (job.get("assembly") or {}).get("status") == "COMPLETED"):
+        return {"status": "SKIP_TERMINAL"}
+    # Do not start a monitor for a created but never-started image job.
+    try:
+        source = STATES.describe_execution(
+            executionArn=arn_for(IMAGE_ARN, job_id))
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ExecutionDoesNotExist":
+            return {"status": "SKIP_IMAGE_EXECUTION_MISSING"}
+        raise
+    if source.get("status") not in ("RUNNING", "SUCCEEDED"):
+        return {"status": "SKIP_IMAGE_EXECUTION_TERMINAL"}
+    # The stable watch-{jobId} name is the same as the original event path,
+    # so simultaneous EventBridge/fallback starts cannot create two monitors.
+    try:
+        STATES.start_execution(
+            stateMachineArn=WATCHDOG_MACHINE_ARN,
+            name="watch-" + job_id,
+            input=json.dumps({"jobId": job_id,
+                              "startedAt": datetime.now(timezone.utc).isoformat()},
+                             separators=(",", ":")))
+    except STATES.exceptions.ExecutionAlreadyExists:
+        return {"status": "ALREADY_MONITORING"}
+    return {"status": "MONITORING_STARTED_BY_RECONCILER"}
+
+
 def check_one(event):
     """Read exactly one job. Never scan or directly start a paid workflow."""
     job_id = event.get("jobId")
@@ -273,6 +314,8 @@ def check_one(event):
 def lambda_handler(event, context):
     if event.get("source") == "aws.states":
         return start_for_image_execution(event)
+    if event.get("op") == "ensure_monitor":
+        return ensure_monitor_for_existing_image_job(event)
     if event.get("op") == "check" and isinstance(event.get("input"), dict):
         return check_one(event["input"])
     return {"continue": False, "status": "IGNORED_INVALID_REQUEST"}
