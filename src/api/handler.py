@@ -479,6 +479,30 @@ def create_job(event):
         return response(409, {"error": "Idempotency-Key has already been used for a different request"})
 
 
+
+JOB_MAX_SECONDS = 900
+
+
+def job_deadline(job):
+    """One immutable generation-start based deadline, with old-job fallback."""
+    stamp = job.get("jobDeadlineAt")
+    if stamp is None and job.get("generationStartedAt") is not None:
+        stamp = int(job["generationStartedAt"]) + JOB_MAX_SECONDS
+    return int(stamp) if stamp is not None else None
+
+
+def admission_deadline_blocked(job):
+    deadline = job_deadline(job)
+    return (job.get("deadlineStatus") == "EXPIRED" or
+            (deadline is not None and int(time.time()) >= deadline))
+
+
+def deadline_response():
+    return response(409, {"status": "JOB_DEADLINE_EXCEEDED",
+                          "error": "The 15-minute generation limit has been reached. No new generation will start."})
+
+
+
 def start_images(job_id):
     """Explicitly start three parallel paid image edits, one execution per job."""
     job = get_job(job_id)
@@ -662,6 +686,8 @@ def start_assembly(job_id):
     if definitive_failure(job):
         return response(409, {"status": "JOB_TERMINAL_FAILED",
                               "error": "This job has permanently ended"})
+    if admission_deadline_blocked(job):
+        return deadline_response()
     assembly = job.get("assembly") or {}
     if assembly and assembly.get("status") != "QUEUED":
         return response(200, {"jobId": job_id, "assembly": assembly_public(job)})
@@ -956,6 +982,8 @@ def start_real_scene(job_id, scene_id, event):
     if definitive_failure(job):
         return response(409, {"status": "JOB_TERMINAL_FAILED",
                               "error": "This job has permanently ended"})
+    if admission_deadline_blocked(job):
+        return deadline_response()
     if job.get("paidVideoApprovals", {}).get(scene_id) or job.get("realVideos", {}).get(scene_id):
         return response(409, {"error": "This scene already has a paid request; check status, do not retry"})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1054,6 +1082,8 @@ def start_video_sequence(job_id, event):
     if definitive_failure(job):
         return response(409, {"status": "JOB_TERMINAL_FAILED",
                               "error": "This job has permanently ended"})
+    if admission_deadline_blocked(job):
+        return deadline_response()
     if job.get("assembly"):
         return response(409, {"error": "Final assembly already started"})
     if any(job.get("scenes", {}).get(scene, {}).get("status") != "COMPLETED"
@@ -1273,6 +1303,8 @@ def retry_failed_real_scene(job_id, scene_id, event):
     if definitive_failure(job):
         return response(409, {"status": "JOB_TERMINAL_FAILED",
                               "error": "This job has permanently ended"})
+    if admission_deadline_blocked(job):
+        return deadline_response()
     approval = job.get("paidVideoApprovals", {}).get(scene_id, {})
     current = job.get("realVideos", {}).get(scene_id, {})
     # Replaying the same API request cannot create a third attempt, including
