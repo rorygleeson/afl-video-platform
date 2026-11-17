@@ -5,7 +5,7 @@ Ambiguous paid requests are never automatically resubmitted.
 """
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 import time
 
@@ -280,37 +280,76 @@ def recover(job_id):
 
 
 def reconcile_stalled():
-    """Bounded dev-only watchdog for abandoned active jobs.
+    """One existing 5-minute scheduled pass: recover stale image jobs AND
+    ensure recently started consenting jobs received their per-job watchdog.
 
-    Safety threshold exceeds both Google image generation and the state-machine
-    timeout. It only marks jobs failed; never launches paid predictions.
+    Never calls a model, starts a paid workflow, or writes job state as part
+    of watchdog startup. This remains a bounded scan (at most 1000 evaluated
+    items) with a documented coverage limitation on larger tables.
     """
-    cutoff = int(time.time()) - 45 * 60
-    checked = recovered = 0
+    now = datetime.now(timezone.utc)
+    cutoff = int(now.timestamp()) - 45 * 60
+    recent = (now - timedelta(hours=2)).isoformat()
+    stale = (Attr("status").eq("GENERATING_IMAGES") &
+             Attr("generationStartedAt").lt(cutoff))
+    monitor = (Attr("autoVideoConsent").eq(True) &
+               Attr("createdAt").gte(recent) &
+               (Attr("status").eq("GENERATING_IMAGES") |
+                Attr("status").eq("COMPLETED")))
+    checked = recovered = checked_monitor = started_monitor = 0
     last_key = None
-    # Bounded scan: keep development Lambda runtime and DynamoDB RCU in check.
+    watcher = boto3.client("lambda", region_name=REGION)
     for _ in range(10):
         kwargs = {
-            "FilterExpression": Attr("status").eq("GENERATING_IMAGES") &
-                                Attr("generationStartedAt").lt(cutoff),
+            "FilterExpression": stale | monitor,
             "Limit": 100,
-            "ProjectionExpression": "jobId, #status, generationStartedAt",
+            "ProjectionExpression": "jobId, #status, generationStartedAt, createdAt, autoVideoConsent",
             "ExpressionAttributeNames": {"#status": "status"},
         }
         if last_key:
             kwargs["ExclusiveStartKey"] = last_key
         page = TABLE.scan(**kwargs)
         for item in page.get("Items", []):
-            checked += 1
-            try:
-                recover(item["jobId"])
-                recovered += 1
-            except Exception:
-                LOG.exception("Could not recover stale job")
+            if (item.get("status") == "GENERATING_IMAGES" and
+                    item.get("generationStartedAt", cutoff + 1) < cutoff):
+                checked += 1
+                try:
+                    recover(item["jobId"])
+                    recovered += 1
+                except Exception:
+                    LOG.exception("Could not recover stale image job")
+            # Never start a monitor for a job with no confirmed image start.
+            # The watchdog independently DescribeExecution-verifies the source.
+            if (item.get("autoVideoConsent") is True and
+                    isinstance(item.get("createdAt"), str) and
+                    item["createdAt"] >= recent and
+                    item.get("status") in ("GENERATING_IMAGES", "COMPLETED")):
+                checked_monitor += 1
+                try:
+                    outcome = watcher.invoke(
+                        FunctionName="afl-app-dev-handoff-watchdog",
+                        InvocationType="RequestResponse",
+                        Payload=json.dumps({"op": "ensure_monitor",
+                                            "jobId": item["jobId"]}).encode())
+                    if outcome.get("FunctionError"):
+                        raise RuntimeError("Watchdog bootstrap Lambda failed")
+                    result = json.loads(outcome["Payload"].read())
+                    if result.get("status") == "MONITORING_STARTED_BY_RECONCILER":
+                        started_monitor += 1
+                    elif str(result.get("status", "")).startswith("REVIEW"):
+                        LOG.warning("Watchdog bootstrap needs operator review")
+                except Exception:
+                    # A failure here must not prevent existing stale-image
+                    # recovery or cause any paid provider request to repeat.
+                    LOG.exception("Watchdog bootstrap inspection failed")
         last_key = page.get("LastEvaluatedKey")
         if not last_key:
             break
-    return {"checked": checked, "recovered": recovered}
+    if last_key:
+        LOG.warning("Bounded image/monitor scan reached 1000-item cap")
+    return {"checked": checked, "recovered": recovered,
+            "monitorChecked": checked_monitor, "monitorStarted": started_monitor,
+            "scanIncomplete": bool(last_key)}
 
 def lambda_handler(event, context):
     op = event["op"]
