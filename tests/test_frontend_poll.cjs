@@ -1643,6 +1643,9 @@ test('backend terminal policy exit hides customer inputs, previews and retries a
   await h.flush();
   assert.equal(h.els.jobFailureScreen.hidden,false);
   assert.match(h.els.jobFailureNotice.textContent,/No further scenes will be generated/);
+  assert.match(h.els.jobFailureNotice.textContent,/celebrity or public-figure likeness/);
+  assert.match(h.els.jobFailureNotice.textContent,/Google did not confirm the specific reason/);
+  assert.match(h.els.jobFailureNotice.textContent,/no automatic paid retry/);
   assert.match(html,/id="jobFailureScreen"[^>]*role="alert"/);
   assert.equal(h.els.jobInputsSection.hidden,true);
   assert.equal(h.els.jobProgressSection.hidden,true);

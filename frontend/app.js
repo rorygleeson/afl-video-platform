@@ -43,9 +43,12 @@ const input = document.getElementById('selfie');
     const terminalFailed = isTerminalFailure(progress);
     document.getElementById('jobFailureScreen').hidden = !terminalFailed;
     document.getElementById('jobInputsSection').hidden = terminalFailed;
-    document.getElementById('jobFailureNotice').textContent = terminalFailed
-      ? (progress.message || 'We could not complete this video. The job has ended.')
-      : '';
+    const policyBlocked = terminalFailed && progress.failureCode === 'CONTENT_BLOCKED';
+    document.getElementById('jobFailureNotice').textContent = policyBlocked
+      ? 'Google rejected this video under its content safety rules. A recognisable celebrity or public-figure likeness can cause this, but Google did not confirm the specific reason. Try a selfie of yourself or another consenting adult in a new video. This job has ended. No further scenes will be generated and no automatic paid retry will occur.'
+      : terminalFailed
+        ? (progress.message || 'We could not complete this video. The job has ended.')
+        : '';
     // Do not clear stored customer inputs, S3 images, MP4s, or the saved job ID.
     // The same terminal view is restored after refreshing the browser.
     if (terminalFailed) {
