@@ -97,6 +97,18 @@ class VideoPromptTests(unittest.TestCase):
         self.assertIn("Never add or invent a fifth post", prompt)
         self.assertIn("CAMERA — COMPLETELY STATIONARY", prompt)
 
+    def test_scene2_ball_reaches_crowd_and_losing_opposition_never_celebrates(self):
+        job = {"team": "collingwood", "firstName": "Test", "lastName": "Player"}
+        prompt = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene2")["prompt"]
+        for requirement in ("LOSING OPPOSITION", "Opposition players NEVER raise arms",
+                            "ONLY on-field player allowed to celebrate",
+                            "DISTANT SPECTATOR STANDS BEHIND THE GOALS",
+                            "disappears ONLY once it reaches the depth of that distant crowd",
+                            "NO football on the grass", "BETWEEN the TWO TALL CENTRAL POSTS"):
+            self.assertIn(requirement, prompt)
+        self.assertNotIn("Essendon", prompt)
+        self.assertNotIn("opposition black-and-red sash kits", prompt)
+
     def test_scene3_neutral_selfie_identity_then_small_smile(self):
         job = {"team": "geelong", "firstName": "Alex", "lastName": "Tonelli"}
         prompt = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")["prompt"]
