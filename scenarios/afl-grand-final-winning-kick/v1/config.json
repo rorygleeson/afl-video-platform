@@ -14,7 +14,7 @@
       "operation": "image_edit",
       "enabled": true,
       "model": "gemini-3-pro-image",
-      "identityOnlyInstructions": "SCENE 2 — REAR THREE-QUARTER APPROACH. Edit ONLY the main foreground player's VISIBLE back/side of head, hair and limited visible facial profile, plus necessary exposed neck/skin-tone matching. Keep the original rear-facing head direction and size. DO NOT turn the player, reveal a frontal face, change the running pose, move the football from both hands or start the kick. Preserve ALL FOUR original white goalposts, including the two tall central and two shorter outer posts, positions and red pads. Defenders, other players, original finished guernsey, black shorts, grass, stadium and lighting must remain untouched."
+      "identityOnlyInstructions": "SCENE 2 — REAR THREE-QUARTER APPROACH. If Image 1 has a grey, white or blank head-shaped mask, treat it as an EDIT PLACEHOLDER, not the customer's appearance. Replace the ENTIRE masked region with the customer's real back/side of head, hair, hairline, ear and any naturally visible facial profile from Image 2; leave NO grey placeholder pixels. Keep the exact original head silhouette, rear-facing direction, scale and neck boundary. Edit ONLY the main foreground player's head/hair and necessary exposed neck/skin-tone matching. DO NOT turn the player, reveal a frontal face, change the running pose, move the football from both hands or start the kick. Preserve ALL FOUR original white goalposts, including the two tall central and two shorter outer posts, their positions and red pads. Defenders, other players, original finished guernsey, black shorts, grass, stadium and lighting must remain untouched."
     },
     {
       "id": "scene3",

@@ -66,14 +66,21 @@ class TeamMasterTests(unittest.TestCase):
         self.assertEqual(set(result.values()), self.keys("collingwood"))
         self.assertEqual(set(fake.reads), self.keys("collingwood"))
 
-    def test_only_collingwood_scenes_1_and_3_use_masked_masters(self):
+    def test_all_three_collingwood_scenes_use_masked_masters(self):
         for team in CONFIG["teamGuernseys"]:
             for scene in ("scene1", "scene2", "scene3"):
                 path = self.scope["team_scene_master_key"](team, scene)
                 suffix = (f"{scene}-start-masked.png"
-                          if team == "collingwood" and scene in ("scene1", "scene3")
+                          if team == "collingwood"
                           else f"{scene}-start.png")
                 self.assertTrue(path.endswith("/" + team + "/" + suffix), path)
+
+    def test_scene2_mask_is_explicitly_replaced_without_changing_the_kick(self):
+        prompt = self.scope["build_image_prompt"](CONFIG, CONFIG["scenes"][1], "collingwood")
+        for required in ("EDIT PLACEHOLDER", "NO grey placeholder pixels",
+                         "back/side of head", "ALL FOUR original white goalposts",
+                         "DO NOT turn the player", "finished guernsey"):
+            self.assertIn(required, prompt)
 
     def test_missing_team_png_fails_closed_instead_of_legacy_fallback(self):
         fake = FakeS3(self.keys("collingwood"))

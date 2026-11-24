@@ -34,7 +34,7 @@ For each scene, image worker reads job/selfie and versioned team template/prompt
 
 Only an explicit HTTP 429 rejection allows automatic new image model submission: up to eight attempts total within 600s retry window, with bounded exponential delay/jitter and respect for Retry-After. Ambiguous POST timeouts are *not* automatically retried. Failed image map iteration is marked failed and Map can progress to another scene; no automatic resume of failed image from checkpoint exists.
 
-Current image master mapping in `src/image_worker/handler.py` chooses the masked `sceneN-start-masked.png` master only for Collingwood scenes 1 and 3; other team/scene combinations use `sceneN-start.png`. Do not generalise masked templates to all teams without checking actual code/assets.
+Current image master mapping in `src/image_worker/handler.py` chooses the masked `sceneN-start-masked.png` master for all three Collingwood scenes; other team/scene combinations use `sceneN-start.png`. Do not generalise masked templates to all teams without checking actual code/assets.
 
 ### 3. Real video scenes
 
