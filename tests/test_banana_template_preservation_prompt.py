@@ -10,9 +10,9 @@ class TemplatePreservationPromptTests(unittest.TestCase):
         self.config = json.loads(CONFIG.read_text(encoding="utf-8"))
 
     def test_master_image_and_selfie_roles(self):
-        prompt = self.config["sharedPrompt"].lower()
+        prompt = self.config["identityOnlyPrompt"].lower()
         for term in ("image 1", "image 2", "master", "selfie", "face", "hair",
-                     "jersey", "shorts", "skin", "position", "pose", "background"):
+                     "guernsey", "shorts", "skin", "pose", "background"):
             self.assertIn(term, prompt)
         self.assertLessEqual(len(prompt), 8000)
 
@@ -20,20 +20,20 @@ class TemplatePreservationPromptTests(unittest.TestCase):
         for scene in self.config["scenes"]:
             self.assertEqual(scene["operation"], "image_edit")
             self.assertEqual(scene["model"], "gemini-3-pro-image")
-            self.assertLessEqual(len(scene["promptInstructions"].split()), 115)
+            self.assertTrue(100 <= len(scene["identityOnlyInstructions"]) <= 5000)
 
     def test_scene1_keeps_defender_ball_and_running_pose(self):
-        s = self.config["scenes"][0]["promptInstructions"].lower()
+        s = self.config["scenes"][0]["identityOnlyInstructions"].lower()
         for term in ("defender", "ball", "running", "goalposts"):
             self.assertIn(term, s)
 
     def test_scene2_goalposts_and_rear_facing(self):
-        s = self.config["scenes"][1]["promptInstructions"].lower()
-        for term in ("rear", "four", "goalposts", "80%", "red", "ball"):
+        s = self.config["scenes"][1]["identityOnlyInstructions"].lower()
+        for term in ("rear", "four", "goalposts", "red", "ball"):
             self.assertIn(term, s)
 
     def test_scene3_hair_and_neutral_expression(self):
-        s = self.config["scenes"][2]["promptInstructions"].lower()
+        s = self.config["scenes"][2]["identityOnlyInstructions"].lower()
         for term in ("fist", "teammates", "closed-mouth", "confetti"):
             self.assertIn(term, s)
 

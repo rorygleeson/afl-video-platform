@@ -37,6 +37,8 @@ class AssemblyHandoffBehaviourTests(unittest.TestCase):
             "VIDEO_SCENES": ("scene1", "scene2", "scene3"),
             "json": json, "ClientError": ClientError,
             "LOG": MagicMock(), "get_job": lambda _: self.job,
+            "definitive_failure": lambda job: False,
+            "assembly_public": lambda job: job.get("assembly", {}),
             "response": lambda status, data: {"statusCode": status, "body": json.dumps(data)},
         }
         import datetime

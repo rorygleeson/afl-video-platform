@@ -81,7 +81,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertIn("GOOGLE_SUBMISSION_UNKNOWN",src)
         self.assertIn('{"errorCode": exc.code, **exc.diagnostic}',src)
         config=(ROOT/"infrastructure/app/backend.yaml").read_text()
-        self.assertIn("MaxConcurrency: 1",config)
+        self.assertIn("MaxConcurrency: 3",config)
 
     def test_failed_image_dynamodb_decimal_counters_are_json_serializable(self):
         import json

@@ -74,7 +74,7 @@ class VideoPromptTests(unittest.TestCase):
         prompt = mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene2")["prompt"]
         self.assertIn("PLAYER ORIENTATION AND IDENTITY — ALWAYS FACING AWAY", prompt)
         self.assertIn("NO TURN TO CAMERA", prompt)
-        self.assertIn("no glance or turn towards the camera", prompt.lower())
+        self.assertIn("he NEVER looks back, pivots, turns around", prompt)
         self.assertIn("never show a frontal face", prompt.lower())
         self.assertIn("rockets HIGH into the air", prompt)
         self.assertIn("HIGH ABOVE THE GROUND", prompt)
@@ -115,7 +115,7 @@ class VideoPromptTests(unittest.TestCase):
         self.assertIn("NO opposition players or different uniforms", prompt)
         self.assertNotIn("Any opposition players visible", prompt)
         self.assertIn("neutral, closed-mouth selfie-derived face", prompt)
-        self.assertIn("ONLY the TWO existing background teammates", prompt)
+        self.assertIn("Only the TWO existing background teammates", prompt)
         self.assertIn("Alex Tonelli has won the premiership for Geelong Cats!", prompt)
         self.assertEqual(mod.render_scene(LocalS3(), "test-scenario-bucket", job, "scene3")["durationSeconds"], 5)
 

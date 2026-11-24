@@ -46,7 +46,8 @@ def image_worker():
     return types.SimpleNamespace(
         VALID_SCENES=worker.VALID_SCENES, ASSET_BUCKET="test-artifacts",
         UPLOAD_BUCKET="test-uploads", S3=Mock(), job_by_id=Mock(), load_scenario=Mock(return_value=CONFIG),
-        build_image_prompt=worker.build_image_prompt, scene_update=Mock())
+        build_image_prompt=worker.build_image_prompt,
+        team_scene_master_key=worker.team_scene_master_key, scene_update=Mock())
 
 
 def setup_scene(scene="scene1"):
@@ -54,6 +55,8 @@ def setup_scene(scene="scene1"):
     mock.job_by_id.return_value = {
         "status": "GENERATING_IMAGES", "team": "geelong",
         "uploadKey": "uploads/selfie.png",
+        "teamMasterKeys": {s: worker.team_scene_master_key("geelong", s)
+                           for s in worker.VALID_SCENES},
         "scenes": {scene: {"status": "PENDING"}},
     }
     return mock
@@ -63,8 +66,10 @@ class ImageContractTests(unittest.TestCase):
     def test_config_three_scenes_and_model(self):
         self.assertEqual([s["id"] for s in CONFIG["scenes"]], list(worker.VALID_SCENES))
         self.assertEqual({s["model"] for s in CONFIG["scenes"]}, {"gemini-3-pro-image"})
-        for i, scene in enumerate(CONFIG["scenes"], 1):
-            self.assertEqual(scene["masterKey"], f"scenarios/afl-grand-final-winning-kick/v1/scene{i}-start.png")
+        for scene in CONFIG["scenes"]:
+            self.assertNotIn("masterKey", scene)
+            self.assertEqual(worker.team_scene_master_key("geelong", scene["id"]),
+                             f"scenarios/afl-grand-final-winning-kick/v1/teams/geelong/{scene['id']}-start.png")
 
     def test_parallel_sfn_and_recovery_unchanged(self):
         template = (ROOT / "infrastructure/app/backend.yaml").read_text()
@@ -85,9 +90,10 @@ class ImageContractTests(unittest.TestCase):
              patch.object(worker, "load_scenario", return_value=CONFIG), \
              patch.object(worker.S3, "head_object") as head, \
              patch.object(worker, "update_job") as update:
+            head.return_value = {"ContentLength": 1_000_000}
             result = worker.prepare("a" * 32)
         self.assertEqual(result["scenes"], ["scene1", "scene2", "scene3"])
-        self.assertEqual(head.call_count, 4)
+        self.assertEqual(head.call_count, 7)  # Selfie + 3 locked master preflight + 3 HEAD checks.
         self.assertEqual(update.call_args.args[2][":scenes"],
                          {s: {"status": "PENDING"} for s in worker.VALID_SCENES})
 
@@ -104,11 +110,12 @@ class ImageContractTests(unittest.TestCase):
                 self.assertEqual(result["status"], "COMPLETED")
                 body = post.call_args.args[1]
                 parts = body["contents"][0]["parts"]
-                self.assertIn("navy blue and white horizontal hoops", parts[0]["text"])
+                self.assertIn("finished team-specific MASTER PHOTO", parts[0]["text"])
                 self.assertEqual(parts[1]["inlineData"]["data"], "master")
                 self.assertEqual(parts[2]["inlineData"]["data"], "selfie")
                 self.assertEqual(body["generationConfig"]["imageConfig"],
                                  {"aspectRatio": "9:16", "imageSize": "2K",
+                                  "personGeneration": "ALLOW_ALL",
                                   "imageOutputOptions": {"mimeType": "image/png"}})
                 self.assertEqual(m.S3.put_object.call_args.kwargs["Key"],
                                  f"results/{'a' * 32}/{scene}.png")
@@ -294,7 +301,7 @@ class ImageContractTests(unittest.TestCase):
              patch.object(worker, "recover", return_value={"status": "FAILED"}) as recovered, \
              patch.object(google, "post_json") as paid:
             worker.reconcile_stalled()
-        recovered.assert_called_once()
+        recovered.assert_not_called()  # Newly scanned jobs are not immediately stale.
         paid.assert_not_called()
 
 

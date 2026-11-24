@@ -31,7 +31,7 @@ class GreetingTests(unittest.TestCase):
                 check(invalid)
         source = API.read_text()
         self.assertIn('"personalMessage": personal_message', source)
-        self.assertIn('"personalMessage": personal_message}', source)
+        self.assertIn('validate_personal_message(', source)
 
     def test_worker_overlay_keeps_video_source_and_not_paid_models(self):
         source = WORKER.read_text()

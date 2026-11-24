@@ -25,14 +25,11 @@ class GoogleStaggerContracts(unittest.TestCase):
         self.template = (ROOT / "infrastructure/app/google-video.yaml").read_text()
         self.current = definition_from_template(self.template)
 
-    def test_scene_offsets_and_overlapping_generation(self):
+    def test_current_video_has_immediate_handoff_without_stagger(self):
         states = self.current["States"]
-        self.assertEqual(states["Claim"]["Next"], "SubmissionSchedule")
-        self.assertEqual(states["SubmissionSchedule"]["Default"], "Submit")
-        routes = {r["StringEquals"]: r["Next"] for r in states["SubmissionSchedule"]["Choices"]}
-        self.assertEqual(routes, {"scene2": "WaitScene2", "scene3": "WaitScene3"})
-        self.assertEqual(states["WaitScene2"], {"Type": "Wait", "Seconds": 10, "Next": "Submit"})
-        self.assertEqual(states["WaitScene3"], {"Type": "Wait", "Seconds": 20, "Next": "Submit"})
+        self.assertEqual(states["Claim"]["Next"], "Submit")
+        for old in ("SubmissionSchedule", "WaitScene2", "WaitScene3"):
+            self.assertNotIn(old, states)
         self.assertEqual(states["Submit"]["Next"], "WaitForVideo")
         self.assertEqual(states["WaitForVideo"]["Seconds"], 20)
 
@@ -48,17 +45,15 @@ class GoogleStaggerContracts(unittest.TestCase):
                           state.get("Parameters", {}).get("Payload", {}).get("op") == "submit"],
                          ["Submit"])
 
-    def test_exact_original_definition_transforms_to_committed_template(self):
-        old_template = self.template.replace(STAGGER_CLAIM_END, CLAIM_END, 1).replace(EXTRA_STATES, "", 1)
-        self.assertEqual(stagger_template(old_template), self.template)
-        # The original one-time stagger transformer intentionally rejected every
-        # retry policy. Test that historical transform independently of the new
-        # read-only PollVideo recovery policy.
-        old_states = definition_from_template(old_template)
+    def test_legacy_stagger_transform_still_produces_stagger_states(self):
+        # Historical deploy helper is retained for rollback analysis; it is
+        # not the current production definition.
+        old_states = json.loads(json.dumps(self.current))
         old_states["States"]["PollVideo"].pop("Retry", None)
-        expected = json.loads(json.dumps(self.current))
-        expected["States"]["PollVideo"].pop("Retry", None)
-        self.assertEqual(stagger_definition(json.dumps(old_states)), expected)
+        staggered = stagger_definition(json.dumps(old_states))
+        self.assertEqual(staggered["States"]["Claim"]["Next"], "SubmissionSchedule")
+        self.assertEqual(staggered["States"]["WaitScene2"]["Seconds"], 10)
+        self.assertEqual(staggered["States"]["WaitScene3"]["Seconds"], 20)
 
     def test_original_tasks_are_unchanged(self):
         states = self.current["States"]

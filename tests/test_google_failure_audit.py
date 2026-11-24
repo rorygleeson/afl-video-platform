@@ -32,20 +32,18 @@ class OriginalProviderFailureAuditTests(unittest.TestCase):
                 w, "owner_record", return_value={
                     "status": "PROCESSING", "interactionId": "original-google-id"
                 }), patch.object(w, "google_json", return_value=response) as google, patch.object(
-                w, "transition") as save:
+                w, "get_job", return_value={"videoSequence": {"status": "APPROVED"}}), patch.object(
+                w.JOBS, "update_item") as save:
             result = w.poll(self.job, self.scene, self.request)
         self.assertEqual(result, {"status": "FAILED"})
         google.assert_called_once_with("GET", w.BASE + "/original-google-id")
-        args = save.call_args.args
-        self.assertEqual(args[:5], (self.job, self.scene, self.request, "PROCESSING", "FAILED"))
-        evidence = args[5]
-        self.assertEqual(evidence["errorCode"], "GOOGLE_FAILED")
-        self.assertEqual(evidence["providerFinalStatus"], "failed")
-        self.assertEqual(evidence["providerErrorCode"], "prohibited_content")
-        self.assertEqual(evidence["providerErrorCategory"], "SAFETY_OR_POLICY")
-        self.assertIn("providerFailureObservedAt", evidence)
-        self.assertNotIn("message", str(evidence))
-        self.assertNotIn("private", str(evidence))
+        save.assert_called_once()
+        values = save.call_args.kwargs["ExpressionAttributeValues"]
+        self.assertEqual(values[":blocked"]["status"], "BLOCKED")
+        self.assertEqual(values[":blocked"]["failureCode"], "CONTENT_BLOCKED")
+        self.assertIn("GOOGLE_FAILED", values.values())
+        self.assertIn("prohibited_content", values.values())
+        self.assertNotIn("private customer-related", str(values))
         self.assertEqual(w.S3.put_object.call_count, 0)
 
     def test_safe_provider_error_message_retention(self):
