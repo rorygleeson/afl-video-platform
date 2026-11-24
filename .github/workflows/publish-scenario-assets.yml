@@ -152,6 +152,7 @@ jobs:
               [ "$1" = "teams/collingwood/scene2-start.png" ] ||
               [ "$1" = "teams/collingwood/scene3-start.png" ] ||
             [ "$1" = "teams/collingwood/scene1-start-masked.png" ] ||
+              [ "$1" = "teams/collingwood/scene2-start-masked.png" ] ||
               [ "$1" = "teams/collingwood/scene3-start-masked.png" ] ||
               [ "$GITHUB_EVENT_NAME" != "push" ] ||
               grep -Fxq "$base/$1" "$tmp/changed"
@@ -188,6 +189,7 @@ jobs:
             upload_and_verify "teams/collingwood/${scene}-start.png" "image/png"
           done
           upload_and_verify "teams/collingwood/scene1-start-masked.png" "image/png"
+          upload_and_verify "teams/collingwood/scene2-start-masked.png" "image/png"
           upload_and_verify "teams/collingwood/scene3-start-masked.png" "image/png"
 
           # Publish only changed team master PNGs, preserving already uploaded
