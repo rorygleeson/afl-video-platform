@@ -12,8 +12,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate audit script without AWS access
-        run: python -m py_compile scripts/audit_live_aws.py
+        run: python -m py_compile scripts/audit_live_aws.py scripts/compare_live_templates.py
       - name: Assume existing GitHub OIDC AWS role
+        id: oidc
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
@@ -24,11 +25,24 @@ jobs:
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
           python scripts/audit_live_aws.py
+      - name: Compare deployed CloudFormation templates with GitHub (read-only)
+        if: always() && steps.oidc.outcome != 'failure'
+        run: |
+          python -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'PyYAML>=6,<7'
+          python scripts/compare_live_templates.py
       - name: Preserve sanitized inventory even on drift or read-access failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: aws-live-inventory
           path: aws-live-inventory.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve sanitized source/live drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aws-source-live-drift
+          path: aws-source-live-drift.json
           if-no-files-found: warn
           retention-days: 7
