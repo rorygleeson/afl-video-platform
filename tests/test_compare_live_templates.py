@@ -35,6 +35,27 @@ class LiveTemplateComparisonTests(unittest.TestCase):
         deployed = parse_template('{"Resources":{"A":{"Type":"AWS::S3::Bucket","Properties":{"BucketName":{"Fn::Sub":"${AWS::StackName}-bucket"}}}}}')
         self.assertTrue(compare(source, deployed)["structurally_equal"])
 
+    def test_state_machine_field_differences_are_sanitized(self):
+        source = {"Resources": {"Flow": {"Type": "AWS::StepFunctions::StateMachine", "Properties": {"Definition": {
+            "StartAt": "Claim", "TimeoutSeconds": 3600, "States": {
+                "Claim": {"Type": "Task", "Parameters": {"Payload": {"secret": "never-display"}}, "Next": "Done"},
+                "Done": {"Type": "Succeed"}}}}}}}
+        live = {"Resources": {"Flow": {"Type": "AWS::StepFunctions::StateMachine", "Properties": {"Definition": {
+            "StartAt": "Claim", "TimeoutSeconds": 900, "States": {
+                "Claim": {"Type": "Task", "Parameters": {"Payload": {"secret": "also-secret"}}, "Next": "Done"},
+                "Done": {"Type": "Succeed"}}}}}}}
+        result = compare(source, live)["changed_resources"][0]["definition_comparison"]
+        self.assertEqual(["States.Claim.Parameters"], result["changed_state_fields"])
+        self.assertEqual(["TimeoutSeconds"], result["changed_workflow_fields"])
+        self.assertNotIn("secret", str(result))
+
+    def test_state_machine_substitution_string_parsed(self):
+        raw = '{"StartAt":"Done","States":{"Done":{"Type":"Succeed"}}}'
+        source = {"Resources": {"Flow": {"Type": "AWS::StepFunctions::StateMachine", "Properties": {"DefinitionString": {"Fn::Sub": raw}}}}}
+        live = {"Resources": {"Flow": {"Type": "AWS::StepFunctions::StateMachine", "Properties": {"DefinitionString": {"Fn::Sub": raw.replace("Succeed", "Fail")}}}}}
+        result = compare(source, live)["changed_resources"][0]["definition_comparison"]
+        self.assertEqual(["States.Done.Type"], result["changed_state_fields"])
+
 
 if __name__ == "__main__":
     unittest.main()
