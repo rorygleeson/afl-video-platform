@@ -54,5 +54,20 @@ class GoogleWorkerReleaseTests(unittest.TestCase):
                     "Details": [{"Target": {"Attribute": "Properties", "Name": "Code"}}]}}])
 
 
+    def test_replacement_rejection_reports_safe_resource_metadata(self):
+        change = {"ResourceChange": {"LogicalResourceId": "DeveloperPreflightInvokePermission",
+            "ResourceType": "AWS::Lambda::Permission", "Action": "Modify", "Replacement": "Conditional",
+            "PhysicalResourceId": "do-not-print-this-id",
+            "Details": [{"Evaluation": "Dynamic", "ChangeSource": "ResourceAttribute",
+                "CausingEntity": "GoogleWorkerLambda.Arn", "Target": {
+                    "Attribute": "Properties", "Name": "FunctionName", "RequiresRecreation": "Always"}}]}}
+        with self.assertRaisesRegex(ValueError, "Blocked CloudFormation change") as caught:
+            validate_changes([change])
+        message = str(caught.exception)
+        self.assertIn("DeveloperPreflightInvokePermission", message)
+        self.assertIn("Conditional", message)
+        self.assertIn("FunctionName", message)
+        self.assertNotIn("do-not-print-this-id", message)
+
 if __name__ == "__main__":
     unittest.main()
