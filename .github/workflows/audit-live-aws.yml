@@ -19,7 +19,7 @@ jobs:
           role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
           aws-region: ap-southeast-2
           role-session-name: afl-readonly-inventory
-      - name: Inspect live stack metadata and Lambda code hashes (no AWS writes)
+      - name: Inspect stacks, Lambda hashes, state machines and event rules (read-only)
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'boto3>=1.35,<2'
