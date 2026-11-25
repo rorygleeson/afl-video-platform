@@ -18,7 +18,7 @@ import zipfile
 
 import boto3
 from botocore.exceptions import ClientError
-from validate_change_set import google_dependency_only
+from validate_change_set import google_dependency_only, google_preflight_permission_only
 
 REGION = "ap-southeast-2"
 ACCOUNT = "134387458447"
@@ -54,15 +54,39 @@ def replace_handler(previous, handler):
     return result
 
 
-def validate_changes(changes):
+def validate_preflight_permission(lam, cf, worker_arn):
+    """Confirm CFN's existing preflight permission is exactly the known scoped grant."""
+    physical = cf.describe_stack_resource(StackName=STACK,
+        LogicalResourceId="DeveloperPreflightInvokePermission")["StackResourceDetail"]["PhysicalResourceId"]
+    policy = json.loads(lam.get_policy(FunctionName=FUNCTION)["Policy"])
+    expected = f"arn:aws:iam::{ACCOUNT}:role/afl-video-github-deploy-role"
+    matching = [s for s in policy.get("Statement", []) if s.get("Sid") == physical]
+    if len(matching) != 1:
+        raise ValueError("Preflight permission CFN statement is missing or ambiguous")
+    statement = matching[0]
+    if (statement.get("Effect") != "Allow"
+        or statement.get("Action") != "lambda:InvokeFunction"
+        or statement.get("Principal") != {"AWS": expected}
+        or statement.get("Resource") != worker_arn
+        or statement.get("Condition")):
+        raise ValueError("Live preflight permission does not match expected scoped grant")
+    return {"sid": physical, "statement": statement}
+
+
+def validate_changes(changes, verified_preflight=False):
     """Reject IAM, state-machine, runtime, description and other modifications."""
     worker = 0
     descriptors = []
     for entry in changes:
         r = entry.get("ResourceChange", {})
         logical = r.get("LogicalResourceId")
+        if google_preflight_permission_only(r) and verified_preflight:
+            descriptors.append({"logical_id": logical, "action": "Modify",
+                                "replacement": "Conditional", "property_names": ["FunctionName"],
+                                "verified_live_preflight_permission": True})
+            continue
         if r.get("Action") != "Modify" or r.get("Replacement") != "False":
-            # Emit only structural change metadata. Do not log physical IDs,
+            # Only log CloudFormation's structural metadata, never physical IDs,
             # parameter values, Lambda environment or other sensitive values.
             detail = [{"name": d.get("Target", {}).get("Name"),
                        "requires_recreation": d.get("Target", {}).get("RequiresRecreation"),
@@ -114,7 +138,7 @@ def review_prior_run(run_id, head_sha, candidate):
         raise ValueError("Current artifact/change set differs from separately reviewed preview")
 
 
-def inspect_changes(cf, change_set_name):
+def inspect_changes(cf, change_set_name, verified_preflight=False):
     change_set = cf.describe_change_set(StackName=STACK, ChangeSetName=change_set_name)
     if change_set.get("Status") != "CREATE_COMPLETE":
         raise ValueError("CloudFormation preview did not complete")
@@ -126,7 +150,7 @@ def inspect_changes(cf, change_set_name):
             raise ValueError("Paginated change-set identity changed")
         changes.extend(page.get("Changes", []))
         token = page.get("NextToken")
-    return change_set, validate_changes(changes)
+    return change_set, validate_changes(changes, verified_preflight=verified_preflight)
 
 
 def main():
@@ -152,6 +176,7 @@ def main():
     live = lam.get_function_configuration(FunctionName=FUNCTION)
     if live["State"] != "Active" or live["LastUpdateStatus"] != "Successful":
         raise ValueError("Google worker not healthy")
+    preflight = validate_preflight_permission(lam, cf, live["FunctionArn"])
     obj = s3.get_object(Bucket=bucket, Key=current_key)["Body"]
     try:
         previous = obj.read()
@@ -185,7 +210,7 @@ def main():
         cf.get_waiter("change_set_create_complete").wait(
             StackName=STACK, ChangeSetName=change_set_name,
             WaiterConfig={"Delay": 5, "MaxAttempts": 48})
-        change_set, changes = inspect_changes(cf, change_set_name)
+        change_set, changes = inspect_changes(cf, change_set_name, verified_preflight=True)
         record = {"verdict": "SAFE_PREVIEW", "stack_id": stack["StackId"],
                   "previous_code_sha": live["CodeSha256"], "proposed_code_sha": proposed_sha,
                   "artifact_key": key, "changes": changes}
@@ -204,6 +229,8 @@ def main():
             raise ValueError("Live Google parameters changed during review")
         if lam.get_function_configuration(FunctionName=FUNCTION)["CodeSha256"] != live["CodeSha256"]:
             raise ValueError("Google code changed during review")
+        if validate_preflight_permission(lam, cf, live["FunctionArn"]) != preflight:
+            raise ValueError("Live preflight Lambda permission changed during review")
         if sf.describe_state_machine(stateMachineArn=machine_arn)["definition"] != machine_before["definition"]:
             raise ValueError("Google state machine changed during review")
         try:
@@ -233,6 +260,7 @@ def main():
         machine_after = sf.describe_state_machine(stateMachineArn=machine_arn)
         if machine_after["definition"] != machine_before["definition"] or machine_after["roleArn"] != machine_before["roleArn"]:
             raise ValueError("Google state machine changed during worker-only release")
+        validate_preflight_permission(lam, cf, current["FunctionArn"])
         print("GOOGLE_IDEMPOTENCY_WORKER_DEPLOYED_AND_VERIFIED", current["CodeSha256"])
     finally:
         if created and not executed:
