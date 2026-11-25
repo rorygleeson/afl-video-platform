@@ -26,12 +26,14 @@ on:
           - backend
           - google
           - deploy_backend
+          - google_worker_preview
+          - deploy_google_worker
       reviewed_preview_run_id:
         description: 'deploy_backend only: successful separately reviewed backend preview run ID from same commit'
         required: false
         type: string
       deployment_confirmation:
-        description: 'For deploy_backend only, type DEPLOY_BACKEND to authorize an AWS update'
+        description: 'For deploy_backend type DEPLOY_BACKEND; for deploy_google_worker type DEPLOY_GOOGLE_WORKER'
         required: false
         type: string
 permissions:
@@ -42,6 +44,53 @@ concurrency:
   group: afl-dev-deploy
   cancel-in-progress: false
 jobs:
+  google_worker:
+    name: Guarded Google idempotency worker-only release
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && (inputs.change_set_preview == 'google_worker_preview' || inputs.change_set_preview == 'deploy_google_worker') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate idempotency and release safeguards offline
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'google-auth[requests]>=2,<3'
+          python3 -m py_compile scripts/release_google_worker.py src/google_video_worker/handler.py
+          python3 -m unittest discover -s tests -p 'test_google_video_stage5a.py' -v
+          python3 -m unittest discover -s tests -p 'test_release_google_worker.py' -v
+      - name: Assume existing OIDC deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-google-idempotency-release
+      - name: Prepare or deploy exact isolated Google worker change set
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_CONFIRMATION: ${{ inputs.deployment_confirmation }}
+          REVIEW_RUN_ID: ${{ inputs.reviewed_preview_run_id }}
+          RELEASE_MODE: ${{ inputs.change_set_preview }}
+        run: |
+          set -euo pipefail
+          if [ "$RELEASE_MODE" = google_worker_preview ]; then
+            python3 -u scripts/release_google_worker.py --mode preview
+          elif [ "$RELEASE_MODE" = deploy_google_worker ]; then
+            python3 -u scripts/release_google_worker.py --mode deploy --reviewed-preview-run-id "$REVIEW_RUN_ID"
+          else
+            exit 1
+          fi
+      - name: Preserve sanitized reviewed Google worker preview
+        if: ${{ always() && inputs.change_set_preview == 'google_worker_preview' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: google-worker-preview-${{ github.run_id }}
+          path: google-worker-preview.json
+          if-no-files-found: warn
+          retention-days: 14
+
   deploy_overall_progress:
     name: Deploy only overall job progress API and diagnostics UI (guarded)
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-overall-job-progress]')
@@ -80,7 +129,7 @@ jobs:
         run: python3 -u scripts/deploy_overall_job_progress.py
 
   baseline:
-    if: ${{ github.ref == 'refs/heads/main' && !contains(github.event.head_commit.message, '[deploy-google-stagger-10s]') && !contains(github.event.head_commit.message, '[deploy-google-failure-audit]') }}
+    if: ${{ github.ref == 'refs/heads/main' && inputs.change_set_preview != 'google_worker_preview' && inputs.change_set_preview != 'deploy_google_worker' && !contains(github.event.head_commit.message, '[deploy-google-stagger-10s]') && !contains(github.event.head_commit.message, '[deploy-google-failure-audit]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
