@@ -190,11 +190,34 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         w.JOBS.update_item.assert_not_called()
         w.SLOTS.put_item.assert_not_called()
 
+    def test_first_attempt_rejects_foreign_execution_before_paid_claim(self):
+        w = self.worker
+        w.PAID_ENABLED = "true"
+        w.MODEL = "gemini-omni-1.2-flash"
+        job = self.event["jobId"]
+        approved = "real-" + job + "-scene1"
+        w.JOBS.get_item.return_value = {"Item": {
+            "paidVideoApprovals": {"scene1": {
+                "status": "REQUESTED", "executionName": approved}},
+            "scenes": {"scene1": {"status": "COMPLETED",
+                                   "resultKey": "results/" + job + "/scene1.png"}},
+            "realVideos": {},
+        }}
+        w.require_paid_unlock(job, "scene1", approved)
+        with self.assertRaisesRegex(PermissionError, "PAID_SCENE_ATTEMPT_MISMATCH"):
+            w.claim(job, "scene1", self.event["requestId"])
+        w.JOBS.update_item.assert_not_called()
+        with patch.object(w, "google_json") as provider:
+            with self.assertRaisesRegex(PermissionError, "PAID_SCENE_ATTEMPT_MISMATCH"):
+                w.submit(job, "scene1", self.event["requestId"])
+            provider.assert_not_called()
+
     def test_paid_claim_ignores_legacy_global_slot_but_prevents_duplicate_scene(self):
         w = self.worker
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
-        job, request = self.event["jobId"], self.event["requestId"]
+        job = self.event["jobId"]
+        request = "real-" + job + "-scene1"
         w.JOBS.get_item.return_value = {"Item": {
             "paidVideoApprovals": {"scene1": {
                 "status": "REQUESTED", "executionName": "real-" + job + "-scene1"}},
@@ -216,7 +239,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
         job = self.event["jobId"]
-        request = self.event["requestId"]
+        request = "real-" + job + "-scene1"
         w.JOBS.get_item.return_value = {"Item": {
             "paidVideoApprovals": {"scene1": {
                 "status": "REQUESTED", "executionName": "real-" + job + "-scene1"
@@ -244,8 +267,9 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         w = self.worker
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
-        job, request = self.event["jobId"], self.event["requestId"]
+        job = self.event["jobId"]
         for scene in ("scene1", "scene2", "scene3"):
+            request = "real-" + job + "-" + scene
             w.JOBS.get_item.return_value = {"Item": {
                 "paidVideoApprovals": {scene: {
                     "status": "REQUESTED",
@@ -271,6 +295,91 @@ class GoogleVideoAdapterTests(unittest.TestCase):
                                  (job, scene, request, "SUBMISSION_UNKNOWN",
                                   "SUBMISSION_UNKNOWN", {"errorCode": "GOOGLE_HTTP_403"}))
             w.SLOTS.put_item.assert_not_called()
+
+    def test_lost_post_response_never_submits_twice_on_retry(self):
+        """Simulate durable DynamoDB CAS and a provider that accepted but timed out."""
+        w = self.worker
+        w.PAID_ENABLED, w.MODEL = "true", "gemini-omni-1.2-flash"
+        job, scene = self.event["jobId"], "scene1"
+        request = "real-" + job + "-" + scene
+        record = {"requestId": request, "status": "PREPARED",
+                  "sourceImageKey": f"results/{job}/{scene}.png"}
+        item = {"paidVideoApprovals": {scene: {"status": "REQUESTED",
+                  "executionName": request}}, "realVideos": {scene: record}}
+
+        def cas(_job, _scene, _request, old, new, extra=None):
+            self.assertEqual((_job, _scene, _request), (job, scene, request))
+            if record["status"] != old:
+                raise RuntimeError("ConditionalCheckFailedException")
+            record.update(extra or {})
+            record["status"] = new
+
+        w.S3.get_object.return_value = {"ContentType": "image/png",
+                                       "Body": __import__("io").BytesIO(b"image")}
+        with (patch.object(w, "get_job", return_value=item),
+              patch.object(w, "render_scene", return_value={
+                  "durationSeconds": 5, "videoGenerationEnabled": True,
+                  "prompt": "test"}),
+              patch.object(w, "transition", side_effect=cas),
+              patch.object(w, "google_json", side_effect=TimeoutError("lost response")) as paid):
+            with self.assertRaises(w.UnknownSubmission):
+                w.submit(job, scene, request)
+            self.assertEqual(record["status"], "SUBMISSION_UNKNOWN")
+            self.assertEqual(record["errorCode"], "GOOGLE_NETWORK_TIMEOUT")
+            with self.assertRaises(w.ContractError):
+                w.submit(job, scene, request)
+            paid.assert_called_once()
+
+    def test_crash_after_unknown_checkpoint_never_submits(self):
+        """If worker crashes after the pre-POST CAS, rerun is blocked."""
+        w = self.worker
+        w.PAID_ENABLED, w.MODEL = "true", "gemini-omni-1.2-flash"
+        job, scene = self.event["jobId"], "scene2"
+        request = "real-" + job + "-" + scene
+        item = {"paidVideoApprovals": {scene: {"status": "REQUESTED",
+                  "executionName": request}},
+                "realVideos": {scene: {"requestId": request,
+                  "status": "SUBMISSION_UNKNOWN"}}}
+        with (patch.object(w, "get_job", return_value=item),
+              patch.object(w, "render_scene") as render,
+              patch.object(w, "google_json") as paid):
+            with self.assertRaises(w.ContractError):
+                w.submit(job, scene, request)
+            render.assert_not_called()
+            paid.assert_not_called()
+
+    def test_provider_acknowledged_then_dynamodb_ack_lost_stays_nonretryable(self):
+        """A confirmed provider ID is not permission for another billable POST."""
+        w = self.worker
+        w.PAID_ENABLED, w.MODEL = "true", "gemini-omni-1.2-flash"
+        job, scene = self.event["jobId"], "scene3"
+        request = "real-" + job + "-" + scene
+        record = {"requestId": request, "status": "PREPARED",
+                  "sourceImageKey": f"results/{job}/{scene}.png"}
+        item = {"paidVideoApprovals": {scene: {"status": "REQUESTED",
+                  "executionName": request}}, "realVideos": {scene: record}}
+
+        def cas(_job, _scene, _request, old, new, extra=None):
+            if old == "SUBMISSION_UNKNOWN" and new == "PROCESSING":
+                raise RuntimeError("DynamoDB response lost after provider accepted")
+            self.assertEqual(record["status"], old)
+            record["status"] = new
+            record.update(extra or {})
+
+        w.S3.get_object.return_value = {"ContentType": "image/png",
+                                       "Body": __import__("io").BytesIO(b"image")}
+        with (patch.object(w, "get_job", return_value=item),
+              patch.object(w, "render_scene", return_value={
+                  "durationSeconds": 10, "videoGenerationEnabled": True,
+                  "prompt": "test"}),
+              patch.object(w, "transition", side_effect=cas),
+              patch.object(w, "google_json", return_value={"id": "accepted-123"}) as paid):
+            with self.assertRaises(RuntimeError):
+                w.submit(job, scene, request)
+            self.assertEqual(record["status"], "SUBMISSION_UNKNOWN")
+            with self.assertRaises(w.ContractError):
+                w.submit(job, scene, request)
+            paid.assert_called_once()
 
     def test_read_only_diagnosis_uses_recorded_interaction_and_never_submits_paid_request(self):
         w = self.worker
@@ -389,8 +498,9 @@ class GoogleVideoAdapterTests(unittest.TestCase):
         w.PAID_ENABLED = "true"
         w.MODEL = "gemini-omni-1.2-flash"
 
-        w.JOBS.get_item.return_value = {"Item": {"paidVideoApprovals": {"scene1": {"status": "REQUESTED", "executionName": "real-" + self.event["jobId"] + "-scene1"}}, "realVideos": {"scene1": {
-            "status": "PROCESSING", "requestId": self.event["requestId"],
+        request = "real-" + self.event["jobId"] + "-scene1"
+        w.JOBS.get_item.return_value = {"Item": {"paidVideoApprovals": {"scene1": {"status": "REQUESTED", "executionName": request}}, "realVideos": {"scene1": {
+            "status": "PROCESSING", "requestId": request,
             "interactionId": "interact-12345"
         }}}}
         w.google_json = MagicMock(return_value={"status": "completed", "steps": [
@@ -398,7 +508,7 @@ class GoogleVideoAdapterTests(unittest.TestCase):
                 "type": "video", "mime_type": "video/mp4",
                 "data": base64.b64encode(movie).decode()}]}
         ]})
-        result = w.poll(self.event['jobId'], self.event['sceneId'], self.event['requestId'])
+        result = w.poll(self.event['jobId'], self.event['sceneId'], request)
         self.assertEqual(result["status"], "COMPLETED")
         self.assertNotIn("data", result)
         self.assertNotIn("video", result)
