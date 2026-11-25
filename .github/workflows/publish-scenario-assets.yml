@@ -154,6 +154,7 @@ jobs:
             [ "$1" = "teams/collingwood/scene1-start-masked.png" ] ||
               [ "$1" = "teams/collingwood/scene2-start-masked.png" ] ||
               [ "$1" = "teams/collingwood/scene3-start-masked.png" ] ||
+              [ "$1" = "teams/carlton/scene2-start-masked.png" ] ||
               [ "$GITHUB_EVENT_NAME" != "push" ] ||
               grep -Fxq "$base/$1" "$tmp/changed"
           }
@@ -191,6 +192,9 @@ jobs:
           upload_and_verify "teams/collingwood/scene1-start-masked.png" "image/png"
           upload_and_verify "teams/collingwood/scene2-start-masked.png" "image/png"
           upload_and_verify "teams/collingwood/scene3-start-masked.png" "image/png"
+          # One-time repair: this file had its final name before the masked
+          # team upload rule was introduced.
+          upload_and_verify "teams/carlton/scene2-start-masked.png" "image/png"
 
           # Publish only changed team master PNGs, preserving already uploaded
           # artwork in unrelated team folders. Do not upload README placeholders.
