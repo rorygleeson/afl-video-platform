@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: '3.13'
       - name: Install test and AWS dependencies
-        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'google-auth>=2,<3' 'requests>=2,<3'
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'google-auth>=2,<3' 'requests>=2,<3' 'pillow>=10,<13'
       - name: Validate retry policy and worker contract
         run: |
           python3 -m py_compile src/image_worker/handler.py src/image_worker/google_direct.py scripts/deploy_team_master_lookup.py
