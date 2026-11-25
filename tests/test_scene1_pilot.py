@@ -334,6 +334,9 @@ class ImageContractTests(unittest.TestCase):
 
     def test_wif_reuses_working_google_auth_external_account_config(self):
         from google.auth import load_credentials_from_dict
+        # Import the transport submodule before patching its Request class.
+        # Importing google.auth alone does not populate transport.requests.
+        from google.auth.transport import requests as _google_requests
         credentials = Mock(valid=True, token="impersonated")
         with patch("google.auth.load_credentials_from_dict",
                    return_value=(credentials, None)) as load, \
