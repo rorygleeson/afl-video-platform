@@ -84,9 +84,15 @@ const input = document.getElementById('selfie');
     // can be unknown), but must not trap a developer in a read-only screen.
     // Starting fresh requires a separate confirmation and never retries this job.
     const reviewStuck = progress?.stageStatus === 'REVIEW_REQUIRED';
+    // In manual-review mode, completed images are a valid stopping point.
+    // Let the customer discard this local job and begin a fresh reference set
+    // without ever authorising the paid video sequence.
+    const awaitingVideoApproval = referenceImagesReadyForReview &&
+      lastVideoSnapshot?.sequence?.status !== 'APPROVED' &&
+      !Object.values(videos).some(video => video.mode === 'REAL');
     newJobButton.hidden = !currentJobId ||
       !(progress?.canStartNewJob === true || completed || imageFailed ||
-        exhaustedVideo || assemblyFailed || reviewStuck);
+        exhaustedVideo || assemblyFailed || reviewStuck || awaitingVideoApproval);
   }
   function showCurrentJobSelfie(visible) {
     input.hidden = visible;
@@ -287,6 +293,7 @@ const input = document.getElementById('selfie');
   }
   const videoSubmissionLog = new Map();
   let lastImageScenes = {};
+  let referenceImagesReadyForReview = false;
   let imageRetryCountdownTimer = null;
   function updateImageRetryCountdowns() {
     const now = Math.floor(Date.now() / 1000);
@@ -592,6 +599,7 @@ const input = document.getElementById('selfie');
     videoSubmissionLog.clear();
     preflightCheckedJobId = null;
     lastImageScenes = {};
+    referenceImagesReadyForReview = false;
     document.getElementById('imageDiagnosticsText').textContent = 'No image failure diagnostics recorded.';
     syncImageRetryCountdown();
     videoTestSection.hidden = true;
@@ -1258,6 +1266,8 @@ const input = document.getElementById('selfie');
       // Only show video controls after all three reference images are complete.
       const referenceImagesReady = ['scene1', 'scene2', 'scene3']
         .every(id => scenes[id]?.status === 'COMPLETED' && (sceneResults.images || []).some(image => image.sceneId === id && image.url));
+      referenceImagesReadyForReview = referenceImagesReady;
+      updateNewJobAvailability();
       videoTestSection.hidden = !(referenceImagesReady ||
         latestJobProgress?.finalVideoReady === true ||
         isTerminalFailure(latestJobProgress));

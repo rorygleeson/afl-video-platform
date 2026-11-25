@@ -618,6 +618,28 @@ test('manual Start Video approves one backend-owned sequence after three images 
   await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(approvals().length, 1, 'Read-only polling cannot duplicate consent');
 });
+test('Start new video is available at image review and resets without any paid video approval', async () => {
+  const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false}});
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.generateAllVideos.hidden, false);
+  assert.equal(h.els.startNewJob.hidden, false, 'Can reject reference images before paying');
+  h.els.startNewJob.listeners.click();
+  assert.equal(h.localStorage.getItem('afl-video-active-job-v1'), null);
+  assert.equal(h.els.generate.hidden, false);
+  assert.equal(h.els.generate.disabled, false);
+  assert.equal(h.els.team.disabled, false);
+  assert.equal(h.els.generateAllVideos.hidden, true);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length, 0);
+});
+test('restored image-review job offers Start new without an automatic video request', async () => {
+  const h=setup({localMap:new Map([['afl-video-active-job-v1','a'.repeat(32)]]),
+    sessionMap:new Map([['afl-video-dev-key-v1','test-api-key']]),
+    paidScenes:{scene1:false,scene2:false,scene3:false}});
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  assert.equal(h.els.startNewJob.hidden, false);
+  assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length, 0);
+});
 test('three completed images stay read-only while AWS scenes unlock panels and stitching', async () => {
   const options={paidScenes:{scene1:true,scene2:true,scene3:true},realVideos:{}};
   const h=setup(options);
