@@ -20,7 +20,15 @@ class LiveTemplateComparisonTests(unittest.TestCase):
         result = compare(source, live)
         self.assertFalse(result["structurally_equal"])
         self.assertEqual(["A"], [x["logical_id"] for x in result["changed_resources"]])
+        self.assertEqual(["Properties.BucketName"], result["changed_resources"][0]["changed_fields"])
         self.assertNotIn("secret", str(result))
+
+    def test_nested_environment_values_remain_private(self):
+        source = parse_template("Resources:\n  A:\n    Type: AWS::Lambda::Function\n    Properties:\n      Environment:\n        Variables:\n          API_TOKEN: never-display-this\n")
+        live = parse_template("Resources:\n  A:\n    Type: AWS::Lambda::Function\n    Properties:\n      Environment:\n        Variables:\n          API_TOKEN: another-secret\n")
+        changes = compare(source, live)["changed_resources"][0]["changed_fields"]
+        self.assertEqual(["Properties.Environment"], changes)
+        self.assertNotIn("API_TOKEN", str(changes))
 
     def test_cfn_short_tags_normalized(self):
         source = parse_template("Resources:\n  A:\n    Type: AWS::S3::Bucket\n    Properties:\n      BucketName: !Sub '${AWS::StackName}-bucket'\n")
