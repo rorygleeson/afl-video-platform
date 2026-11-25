@@ -133,7 +133,10 @@ def require_paid_unlock(job=None, scene=None, request=None):
     )
     if approval.get("status") != "REQUESTED" or not approved_execution:
         raise PermissionError("PAID_SCENE_NOT_USER_APPROVED")
-    if request is not None and attempt is not None and attempt > 1 and request != execution:
+    # Every paid action must use the exact approved Step Functions execution,
+    # including attempt 1. Otherwise a stale/foreign execution could win the
+    # permanent DynamoDB scene claim and strand the approved execution.
+    if request is not None and request != execution:
         raise PermissionError("PAID_SCENE_ATTEMPT_MISMATCH")
 
 
