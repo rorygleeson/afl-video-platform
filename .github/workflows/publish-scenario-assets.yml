@@ -197,7 +197,7 @@ jobs:
           if [ "$GITHUB_EVENT_NAME" = "push" ]; then
             while IFS= read -r file; do
               case "$file" in
-                "$base"/teams/*/scene[123]-start.png)
+                "$base"/teams/*/scene[123]-start.png|"$base"/teams/*/scene[123]-start-masked.png)
                   rel="${file#"$base"/}"
                   if [ -f "$file" ]; then
                     upload_and_verify "$rel" "image/png"
