@@ -50,6 +50,20 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
 
 
+def resource_field_differences(source, live):
+    """Report only CloudFormation top-level property names, never values or nested keys."""
+    paths = []
+    for name in sorted(set(source) | set(live)):
+        if name == "Properties":
+            a, b = source.get(name) or {}, live.get(name) or {}
+            for property_name in sorted(set(a) | set(b)):
+                if digest(a.get(property_name)) != digest(b.get(property_name)) or (property_name in a) != (property_name in b):
+                    paths.append("Properties." + property_name)
+        elif digest(source.get(name)) != digest(live.get(name)) or (name in source) != (name in live):
+            paths.append(name)
+    return paths
+
+
 def compare(source, live):
     """Only logical identifiers/types/hashes leave this process; no property values."""
     source_resources = source.get("Resources", {})
@@ -59,6 +73,7 @@ def compare(source, live):
         {"logical_id": name,
          "source_type": source_resources[name].get("Type"),
          "live_type": live_resources[name].get("Type"),
+         "changed_fields": resource_field_differences(source_resources[name], live_resources[name]),
          "source_digest": digest(source_resources[name]),
          "live_digest": digest(live_resources[name])}
         for name in shared if digest(source_resources[name]) != digest(live_resources[name])
