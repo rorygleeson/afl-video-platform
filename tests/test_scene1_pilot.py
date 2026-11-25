@@ -69,7 +69,7 @@ class ImageContractTests(unittest.TestCase):
         for scene in CONFIG["scenes"]:
             self.assertNotIn("masterKey", scene)
             self.assertEqual(worker.team_scene_master_key("geelong", scene["id"]),
-                             f"scenarios/afl-grand-final-winning-kick/v1/teams/geelong/{scene['id']}-start.png")
+                             f"scenarios/afl-grand-final-winning-kick/v1/teams/geelong/{scene['id']}-start-masked.png")
 
     def test_parallel_sfn_and_recovery_unchanged(self):
         template = (ROOT / "infrastructure/app/backend.yaml").read_text()

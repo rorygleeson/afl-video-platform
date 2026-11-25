@@ -66,14 +66,18 @@ class TeamMasterTests(unittest.TestCase):
         self.assertEqual(set(result.values()), self.keys("collingwood"))
         self.assertEqual(set(fake.reads), self.keys("collingwood"))
 
-    def test_all_three_collingwood_scenes_use_masked_masters(self):
+    def test_all_54_team_scenes_use_masked_masters(self):
         for team in CONFIG["teamGuernseys"]:
             for scene in ("scene1", "scene2", "scene3"):
                 path = self.scope["team_scene_master_key"](team, scene)
-                suffix = (f"{scene}-start-masked.png"
-                          if team == "collingwood"
-                          else f"{scene}-start.png")
+                suffix = f"{scene}-start-masked.png"
                 self.assertTrue(path.endswith("/" + team + "/" + suffix), path)
+
+    def test_all_54_masked_masters_exist_at_expected_paths(self):
+        for team in CONFIG["teamGuernseys"]:
+            for scene in ("scene1", "scene2", "scene3"):
+                path = self.scope["team_scene_master_key"](team, scene)
+                self.assertTrue((BASE / "teams" / team / f"{scene}-start-masked.png").is_file(), path)
 
     def test_scene2_mask_is_explicitly_replaced_without_changing_the_kick(self):
         prompt = self.scope["build_image_prompt"](CONFIG, CONFIG["scenes"][1], "collingwood")

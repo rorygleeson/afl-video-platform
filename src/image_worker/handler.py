@@ -75,12 +75,10 @@ def validate_prompt_config(config):
 
 
 def team_scene_master_key(team, scene_id):
-    """All three Collingwood scenes use masked master artwork."""
+    """Use the team-specific masked master for every scene and every team."""
     if scene_id not in VALID_SCENES:
         raise RuntimeError("Unsupported scene")
-    filename = (scene_id + "-start-masked.png"
-                if team == "collingwood"
-                else scene_id + "-start.png")
+    filename = scene_id + "-start-masked.png"
     return SCENARIO_PREFIX + "teams/" + team + "/" + filename
 
 

@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/deploy-team-master-lookup.yml'
       - 'scripts/deploy_team_master_lookup.py'
+      - 'src/image_worker/handler.py'
 permissions:
   contents: read
   id-token: write
@@ -35,15 +36,10 @@ jobs:
           assert set(cfg['teamGuernseys']) == {p.name for p in (base/'teams').iterdir() if p.is_dir()}
           assert len(cfg['teamGuernseys']) == 18
           assert all((base/'teams'/team/'README.md').is_file() for team in cfg['teamGuernseys'])
-          collingwood = sorted((base/'teams'/'collingwood').glob('scene*-start.png'))
-          assert [p.name for p in collingwood] == [f'scene{i}-start.png' for i in range(1, 4)]
-          for scene in ('scene1', 'scene2', 'scene3'):
-            masked = base/'teams'/'collingwood'/f'{scene}-start-masked.png'
-            assert masked.is_file() and masked.stat().st_size > 100_000
           for team in cfg['teamGuernseys']:
-            for png in (base/'teams'/team).glob('scene*-start.png'):
-              assert png.name in {f'scene{i}-start.png' for i in range(1, 4)}
-              assert png.stat().st_size > 100_000
+            for scene in ('scene1', 'scene2', 'scene3'):
+              masked = base/'teams'/team/f'{scene}-start-masked.png'
+              assert masked.is_file() and masked.stat().st_size > 100_000, masked
           assert all(100 <= len(s['identityOnlyInstructions']) <= 5000 for s in cfg['scenes'])
           image=Path('src/image_worker/handler.py').read_text()
           worker=Path('src/image_worker/google_direct.py').read_text()
@@ -55,7 +51,7 @@ jobs:
           assert 'config["sharedPrompt"]' not in image
           assert 'team_master_keys' in image and 'Team master artwork incomplete' in image
           assert 'scene_id + "-start-masked.png"' in image
-          assert 'if team == "collingwood"' in image
+          assert 'scene_id + "-start.png"' not in image
           assert 'team_scene_master_key(job["team"], scene_id)' in worker
           assert 'sharedPrompt' not in cfg
           assert all('promptInstructions' not in scene and 'masterKey' not in scene
