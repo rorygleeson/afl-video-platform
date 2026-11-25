@@ -1,7 +1,9 @@
 """Offline safety regression tests for the unified Google-worker release."""
 import io
+import hashlib
 import sys
 import unittest
+from unittest.mock import patch
 import zipfile
 from pathlib import Path
 
@@ -16,11 +18,19 @@ class GoogleWorkerReleaseTests(unittest.TestCase):
             archive.writestr("handler.py", b"old")
             archive.writestr("video_prompts.py", b"keep prompt bytes")
             archive.writestr("pkg/dependency.py", b"keep dependency bytes")
-        result = replace_handler(raw.getvalue(), b"new")
+        with patch("release_google_worker.EXPECTED_PRIOR_HANDLER_SHA256", hashlib.sha256(b"old").hexdigest()):
+            result = replace_handler(raw.getvalue(), b"new")
         with zipfile.ZipFile(io.BytesIO(result)) as archive:
             self.assertEqual(b"new", archive.read("handler.py"))
             self.assertEqual(b"keep prompt bytes", archive.read("video_prompts.py"))
             self.assertEqual(b"keep dependency bytes", archive.read("pkg/dependency.py"))
+
+    def test_blocks_unrecognized_live_worker_handler(self):
+        raw = io.BytesIO()
+        with zipfile.ZipFile(raw, "w") as archive:
+            archive.writestr("handler.py", b"live-hotfix-must-not-overwrite")
+        with self.assertRaisesRegex(ValueError, "known pre-PR90"):
+            replace_handler(raw.getvalue(), b"new")
 
     def test_requires_single_code_only_lambda_change(self):
         change = {"ResourceChange": {"LogicalResourceId": "GoogleWorkerLambda",
