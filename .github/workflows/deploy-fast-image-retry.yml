@@ -1,0 +1,34 @@
+name: Deploy faster Google image retries (image worker only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fast-image-retry.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: afl-dev-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install test and AWS dependencies
+        run: python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'google-auth>=2,<3' 'requests>=2,<3'
+      - name: Validate retry policy and worker contract
+        run: |
+          python3 -m py_compile src/image_worker/handler.py src/image_worker/google_direct.py scripts/deploy_team_master_lookup.py
+          python3 -m unittest discover -s tests -p 'test_scene1_pilot.py' -q
+          python3 -m unittest discover -s tests -p 'test_team_master_identity_only.py' -q
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+      - name: Guarded CloudFormation deployment of image worker only
+        run: python3 -u scripts/deploy_team_master_lookup.py

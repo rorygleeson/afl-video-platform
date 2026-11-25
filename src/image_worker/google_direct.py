@@ -339,7 +339,7 @@ def retry_delay(error, attempt):
     import math
     if error.retry_after is not None:
         return max(1, math.ceil(error.retry_after + random.uniform(0, 1)))
-    return min(180, 15 * (2 ** (attempt - 1))) + math.ceil(random.uniform(0, 3))
+    return min(60, 2 ** (attempt - 1) + math.ceil(random.uniform(0, 3)))
 
 
 def generate(worker, job_id, scene_id):

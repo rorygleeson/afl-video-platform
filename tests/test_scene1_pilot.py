@@ -63,6 +63,20 @@ def setup_scene(scene="scene1"):
 
 
 class ImageContractTests(unittest.TestCase):
+    def test_429_backoff_starts_at_one_second_and_caps_at_sixty(self):
+        error = google.GoogleHTTPError(429)
+        with patch.object(google.random, "uniform", return_value=0):
+            self.assertEqual([google.retry_delay(error, n) for n in range(1, 9)],
+                             [1, 2, 4, 8, 16, 32, 60, 60])
+        with patch.object(google.random, "uniform", return_value=0.5):
+            self.assertEqual(google.retry_delay(error, 1), 2)
+            self.assertEqual(google.retry_delay(error, 7), 60)
+
+    def test_google_retry_after_overrides_fast_client_backoff(self):
+        with patch.object(google.random, "uniform", return_value=0):
+            self.assertEqual(google.retry_delay(google.GoogleHTTPError(429, 90), 1), 90)
+            self.assertEqual(google.retry_delay(google.GoogleHTTPError(429, 15), 4), 15)
+
     def test_config_three_scenes_and_model(self):
         self.assertEqual([s["id"] for s in CONFIG["scenes"]], list(worker.VALID_SCENES))
         self.assertEqual({s["model"] for s in CONFIG["scenes"]}, {"gemini-3-pro-image"})
