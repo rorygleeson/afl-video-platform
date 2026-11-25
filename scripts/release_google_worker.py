@@ -26,6 +26,10 @@ STACK = "afl-app-dev-google-video"
 FUNCTION = "afl-app-dev-google-omni-worker"
 PARAM = "GoogleWorkerArtifactKey"
 WORKER = Path("src/google_video_worker/handler.py")
+# Exact source bytes immediately before PR #90's five-line change. A live
+# hotfix or other worker revision must NEVER be silently replaced by this release.
+EXPECTED_PRIOR_HANDLER_SHA256 = "cc05259e11834e00589b2694194fd11214744dbf74c47c0049fff9ff02453337"
+EXPECTED_PR90_HANDLER_SHA256 = "8a1024bf8a9788d2c4a910f7bb67bc770ac26ffd534aed44c89c6f0a08039f67"
 
 
 def code_sha(data):
@@ -37,6 +41,8 @@ def replace_handler(previous, handler):
     with zipfile.ZipFile(io.BytesIO(previous)) as old:
         if old.testzip() is not None or old.namelist().count("handler.py") != 1:
             raise ValueError("Unexpected original worker ZIP layout")
+        if hashlib.sha256(old.read("handler.py")).hexdigest() != EXPECTED_PRIOR_HANDLER_SHA256:
+            raise ValueError("Live worker handler is NOT the known pre-PR90 version; refuse overwrite")
         names = old.namelist()
         with zipfile.ZipFile(output, "w") as new:
             for item in old.infolist():
@@ -144,6 +150,8 @@ def main():
         raise ValueError("Current Google Lambda differs from deployed CFN artifact")
     handler = WORKER.read_bytes()
     compile(handler, "handler.py", "exec")
+    if hashlib.sha256(handler).hexdigest() != EXPECTED_PR90_HANDLER_SHA256:
+        raise ValueError("Repository worker handler differs from approved PR90 target")
     if b'if request is not None and request != execution:' not in handler:
         raise ValueError("Missing first-attempt idempotency guard")
     package = replace_handler(previous, handler)
