@@ -1068,13 +1068,15 @@ def start_video_sequence(job_id, event):
         try:
             DDB.update_item(
                 Key={"jobId": job_id},
-                UpdateExpression="SET videoSequence = :approval",
+                # The manual approval activates the same AWS watchdog and
+                # recovery path used by jobs approved during creation.
+                UpdateExpression="SET videoSequence = :approval, autoVideoConsent = :consent",
                 ConditionExpression="attribute_exists(jobId) AND attribute_not_exists(videoSequence)",
                 ExpressionAttributeValues={":approval": {
                     "status": "APPROVED", "mode": "AWS_EVENT_DRIVEN",
                     "approvedAt": datetime.now(timezone.utc).isoformat(),
                     "requestFingerprint": hashlib.sha256(token.encode()).hexdigest(),
-                }},
+                }, ":consent": True},
             )
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":

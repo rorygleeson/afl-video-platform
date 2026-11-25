@@ -15,6 +15,7 @@ const input = document.getElementById('selfie');
   const pollStatus = document.getElementById('pollStatus');
   const videoTestSection = document.getElementById('videoTestSection');
   const generateAllVideos = document.getElementById('generateAllVideos');
+  let videoSequenceApprovalInFlight = false;
   const videoTestMessage = document.getElementById('videoTestMessage');
   const apiBaseUrl = window.AFL_CONFIG?.apiBaseUrl;
   let previewUrl, currentJobId, currentPhase = 'Initialising';
@@ -578,6 +579,7 @@ const input = document.getElementById('selfie');
     generateAllVideos.hidden = true;
     generateAllVideos.disabled = true;
     generateAllVideos.textContent = 'Generate All 3 Videos (paid, sequential)';
+    videoSequenceApprovalInFlight = false;
     document.getElementById('videoPanel1').hidden = false;
     document.getElementById('videoPanel2').hidden = true;
     document.getElementById('videoPanel3').hidden = true;
@@ -693,8 +695,14 @@ const input = document.getElementById('selfie');
       });
       // Backend owns the paid sequence after the job's recorded consent.
       // This GET only renders state: never submit a paid video from polling.
-      generateAllVideos.hidden = true;
-      generateAllVideos.disabled = true;
+      const sequenceApproved = data.sequence?.status === 'APPROVED' ||
+        Object.values(data.videos || {}).some(video => video.mode === 'REAL');
+      const showApproval = !sequenceApproved && !finalReady &&
+        !isTerminalFailure(latestJobProgress);
+      generateAllVideos.hidden = !showApproval;
+      generateAllVideos.disabled = videoSequenceApprovalInFlight || videoSequenceAttemptUncertain;
+      generateAllVideos.textContent = videoSequenceApprovalInFlight
+        ? 'Starting video…' : 'Start Video — generate all 3 scenes (paid)';
       for (const n of [1, 2, 3]) {
         // Render only the current stage and already completed stages.
         // A failed stage remains visible for diagnostics/manual retry.
@@ -1113,6 +1121,44 @@ const input = document.getElementById('selfie');
   function showStatus(message) {
     status.textContent = message;
   }
+
+  // Temporary reference-image review gate. This is the ONLY browser action
+  // that grants consent for the AWS-owned three-scene paid video sequence.
+  generateAllVideos.addEventListener('click', async () => {
+    if (!currentJobId || generateAllVideos.hidden || generateAllVideos.disabled ||
+        videoSequenceApprovalInFlight) return;
+    if (!window.confirm('Start all 3 paid video scenes? This authorises AWS to run ' +
+        'the scenes sequentially after you have reviewed the reference images.')) return;
+    const jobId = currentJobId;
+    videoSequenceApprovalInFlight = true;
+    generateAllVideos.disabled = true;
+    generateAllVideos.textContent = 'Starting video…';
+    videoTestMessage.textContent = 'Submitting video approval once…';
+    try {
+      await api('/jobs/' + jobId + '/real-videos/sequence', {
+        method: 'POST',
+        headers: {'Idempotency-Key': crypto.randomUUID()},
+        body: JSON.stringify({confirmPaidSequence: true}),
+      });
+      if (jobId !== currentJobId) return;
+      generateAllVideos.hidden = true;
+      videoTestMessage.textContent = 'Video sequence approved. AWS will generate scenes 1, 2 and 3 in order.';
+      void refreshVideos();
+      void refreshJob();
+    } catch (error) {
+      if (jobId !== currentJobId) return;
+      // A network failure could mean AWS accepted this paid request. Never
+      // allow another click until the user has verified backend state.
+      videoSequenceAttemptUncertain = error instanceof TypeError;
+      videoTestMessage.textContent = 'Video approval not confirmed: ' + error.message +
+        (videoSequenceAttemptUncertain
+          ? ' Check job status before trying again; no automatic paid retry.'
+          : ' No video approval was confirmed.');
+      void refreshVideos();
+    } finally {
+      videoSequenceApprovalInFlight = false;
+    }
+  });
 
   function setPhase(phase) {
     currentPhase = phase;
@@ -1549,9 +1595,9 @@ const input = document.getElementById('selfie');
           firstName,
           lastName,
           personalMessage: document.getElementById('personalMessage').value.trim(),
-          // Authorise the existing three-scene sequence at job creation;
-          // AWS waits for successful image completion before starting video.
-          confirmPaidSequence: true,
+          // Temporary review gate: AWS must not start paid videos from image
+          // completion alone. Consent arrives only from the explicit button.
+          confirmPaidSequence: false,
         }),
       });
       if (!/^[0-9a-f]{32}$/.test(created.job?.jobId || '')) {

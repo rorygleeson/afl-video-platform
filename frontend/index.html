@@ -10,8 +10,8 @@
 <body>
 <main>
   <h1>AFL Video Lab</h1>
-  <p>Upload a selfie to create three reference images. Video 1 starts automatically when all three are ready, followed by videos 2 and 3.</p>
-  <p class="poll-status">Video generation starts automatically when all three reference images are ready. Video retries remain manual.</p>
+  <p>Upload a selfie to create three reference images. Review them before choosing whether to start the paid video sequence.</p>
+  <p class="poll-status">Temporary review mode: videos will not start until you press Start Video. Once approved, scenes 1, 2 and 3 run sequentially.</p>
   <label for="key">x-api-key</label>
   <input id="key" type="password" placeholder="Enter API key" autocomplete="off" aria-describedby="apiConnectionStatus">
   <p id="apiConnectionStatus" class="poll-status" role="status" aria-live="polite">API access is checked automatically before uploading.</p>
@@ -61,8 +61,8 @@
     <p id="pollStatus" class="poll-status" role="status" aria-live="polite" hidden></p>
   </section>
   <section id="videoTestSection" hidden>
-    <h2 id="generationVideosHeading" style="margin-bottom:6px">Generating Video</h2>
-    <button id="generateAllVideos" type="button" hidden disabled style="display:none" aria-hidden="true" tabindex="-1">Video generation automatic</button>
+    <h2 id="generationVideosHeading" style="margin-bottom:6px">Video generation</h2>
+    <button id="generateAllVideos" type="button" hidden disabled>Start Video — generate all 3 scenes (paid)</button>
     <div class="video-scene" id="videoPanel1">
       <strong>Scene 1 · Run-up · 4 seconds</strong>
       <button id="scene1Preflight" type="button" hidden aria-hidden="true" tabindex="-1">Recheck readiness</button>

@@ -510,7 +510,7 @@ test('reference images gate video controls, existing mock records do not unlock 
     'Mock video does not unlock Scene 2; only a completed real MP4 does');
   assert.equal(h.els.videoPanel3.hidden, true,
     'Mock video does not unlock Scene 3; only a completed real MP4 does');
-  assert.equal(h.els.generateAllVideos.hidden, true, 'Mock result cannot authorize paid scene');
+  assert.equal(h.els.generateAllVideos.hidden, false, 'Only a manual click can authorize the sequence');
   assert.match(h.els.videoStatus1.textContent, /Real video not generated/);
   assert.equal(h.els.assembleFinal.hidden, true);
   assert.equal(h.calls.filter(c => /\/videos\/scene[123]$/.test(c.url) && c.opts.method === 'POST').length, 0);
@@ -553,14 +553,14 @@ test('Scene 1 preflight is read-only and makes no video POST', async () => {
   assert.equal(h.calls.filter(c => /\/videos\/scene1$/.test(c.url) && c.opts.method === 'POST').length, 0);
 });
 
-test('real Scene 1 paid button remains hidden and never starts without approval', async () => {
+test('real Scene 1 stays unsubmitted until the video approval button is clicked', async () => {
   const h = setup();
   await h.els.generate.listeners.click();
   await h.flush();
   await h.nextTimer();
   await h.nextTimer();
   await h.els.scene1Preflight.listeners.click();
-  assert.equal(h.els.generateAllVideos.hidden, true);
+  assert.equal(h.els.generateAllVideos.hidden, false);
   assert.equal(h.calls.filter(c => c.url.endsWith('/real-videos/scene1')).length, 0);
 });
 
@@ -600,8 +600,23 @@ test('video status polling never starts paid generation without backend approval
   const h=setup({paidScenes:{scene1:false,scene2:false,scene3:false}});
   await h.els.generate.listeners.click();
   await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
-  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.equal(h.els.generateAllVideos.hidden,false);
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
+});
+test('manual Start Video approves one backend-owned sequence after three images are ready', async () => {
+  const h = setup({paidScenes:{scene1:false,scene2:false,scene3:false}});
+  await h.els.generate.listeners.click();
+  await h.flush(); await h.nextTimer(); await h.nextTimer(); await h.flush();
+  const approvals = () => h.calls.filter(c => c.url.endsWith('/real-videos/sequence') &&
+    c.opts.method === 'POST');
+  assert.equal(approvals().length, 0, 'Image completion never grants paid consent');
+  assert.equal(h.els.generateAllVideos.hidden, false);
+  await h.els.generateAllVideos.listeners.click(); await h.flush();
+  assert.equal(approvals().length, 1, 'Explicit button grants exactly one approval');
+  assert.deepEqual(JSON.parse(approvals()[0].opts.body), {confirmPaidSequence:true});
+  assert.equal(h.els.generateAllVideos.hidden, true);
+  await h.els.refresh.listeners.click(); await h.flush();
+  assert.equal(approvals().length, 1, 'Read-only polling cannot duplicate consent');
 });
 test('three completed images stay read-only while AWS scenes unlock panels and stitching', async () => {
   const options={paidScenes:{scene1:true,scene2:true,scene3:true},realVideos:{}};
@@ -611,9 +626,9 @@ test('three completed images stay read-only while AWS scenes unlock panels and s
   const approvals=()=>h.calls.filter(c=>c.url.endsWith('/real-videos/sequence') && c.opts.method==='POST');
   assert.equal(approvals().length,0, 'Backend owns video sequence submission');
   const jobPosts=h.calls.filter(c=>c.url.endsWith('/jobs') && c.opts.method==='POST');
-  assert.equal(JSON.parse(jobPosts[0].opts.body).confirmPaidSequence,true,
-    'Consent is recorded at initial job creation');
-  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.equal(JSON.parse(jobPosts[0].opts.body).confirmPaidSequence,false,
+    'Video consent is withheld at initial job creation');
+  assert.equal(h.els.generateAllVideos.hidden,false);
   assert.equal(h.els.videoPanel2.hidden,true);
   options.realVideos.scene1={mode:'REAL',status:'COMPLETED',url:'https://example.invalid/scene1.mp4'};
   await h.els.refresh.listeners.click(); await h.flush();
@@ -721,7 +736,7 @@ test('already approved sequence never triggers automatic paid resubmission', asy
   assert.equal(h.els.generateAllVideos.hidden,true);
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
 });
-test('browser never attempts paid approval even when backend reports uncertain status', async () => {
+test('status polling never submits a video approval, even with an uncertain backend', async () => {
   const h=setup({paidScenes:{scene1:true,scene2:true,scene3:true},
     realVideos:{},deferPaidVideoResponses:true});
   await h.els.generate.listeners.click();
@@ -730,7 +745,7 @@ test('browser never attempts paid approval even when backend reports uncertain s
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
   await h.els.refresh.listeners.click(); await h.flush();
   assert.equal(h.calls.filter(c=>c.url.endsWith('/real-videos/sequence')).length,0);
-  assert.equal(h.els.generateAllVideos.hidden,true);
+  assert.equal(h.els.generateAllVideos.hidden,false);
 });
 test('stale video polling cannot initiate an AWS-owned paid sequence', async () => {
   const h=setup({paidScenes:{scene1:true,scene2:true,scene3:true}});
@@ -1063,7 +1078,7 @@ test('observed S3 HTTP error is not automatically retried', async () => {
 
 
 test('video section uses simple user-friendly generation heading without AWS explanation', () => {
-  assert.match(html, /<h2 id="generationVideosHeading" style="margin-bottom:6px">Generating Video<\/h2>/);
+  assert.match(html, /<h2 id="generationVideosHeading" style="margin-bottom:6px">Video generation<\/h2>/);
   assert.doesNotMatch(html, /id="realVideoGate"/);
   assert.doesNotMatch(script, /AWS is generating scenes in sequence/);
   assert.doesNotMatch(script, /Video status updated — see each scene above/);

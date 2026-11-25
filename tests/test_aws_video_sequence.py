@@ -147,6 +147,9 @@ class AwsVideoSequenceTests(unittest.TestCase):
                          f"real-{self.id}-scene1")
         self.assertTrue(any("videoSequence" in c.kwargs.get("UpdateExpression", "")
                             for c in self.ddb.update_item.call_args_list))
+        self.assertTrue(any("autoVideoConsent = :consent" in c.kwargs.get("UpdateExpression", "")
+                            and c.kwargs.get("ExpressionAttributeValues", {}).get(":consent") is True
+                            for c in self.ddb.update_item.call_args_list))
         self.assertTrue(any("paidVideoApprovals.#scene" in c.kwargs.get("UpdateExpression", "")
                             for c in self.ddb.update_item.call_args_list))
         self.assertEqual(self.route({"confirmPaidSequence": False})[0], 400)
