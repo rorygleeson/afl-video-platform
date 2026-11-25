@@ -62,7 +62,18 @@ def validate_changes(changes):
         r = entry.get("ResourceChange", {})
         logical = r.get("LogicalResourceId")
         if r.get("Action") != "Modify" or r.get("Replacement") != "False":
-            raise ValueError("Change set contains a replacement or non-modification")
+            # Emit only structural change metadata. Do not log physical IDs,
+            # parameter values, Lambda environment or other sensitive values.
+            detail = [{"name": d.get("Target", {}).get("Name"),
+                       "requires_recreation": d.get("Target", {}).get("RequiresRecreation"),
+                       "evaluation": d.get("Evaluation"),
+                       "change_source": d.get("ChangeSource"),
+                       "causing_entity": d.get("CausingEntity")}
+                      for d in r.get("Details", [])]
+            raise ValueError("Blocked CloudFormation change: " + json.dumps({
+                "logical_id": logical, "resource_type": r.get("ResourceType"),
+                "action": r.get("Action"), "replacement": r.get("Replacement"),
+                "details": detail}, sort_keys=True))
         if logical == "GoogleWorkerLambda":
             if r.get("ResourceType") != "AWS::Lambda::Function":
                 raise ValueError("Unexpected worker resource type")
