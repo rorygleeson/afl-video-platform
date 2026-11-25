@@ -125,10 +125,14 @@ def review_prior_run(run_id, head_sha, candidate):
     repo = os.environ["GITHUB_REPOSITORY"]
     run = json.loads(subprocess.check_output(
         ["gh", "api", f"repos/{repo}/actions/runs/{run_id}"], text=True))
+    # GitHub's workflow-run REST response does not consistently expose
+    # workflow_dispatch inputs. The preview-only artifact below is mandatory
+    # proof of mode and its content is independently compared to this run.
+    declared_mode = (run.get("inputs") or {}).get("change_set_preview")
     if (run.get("event") != "workflow_dispatch" or run.get("conclusion") != "success"
             or run.get("head_branch") != "main" or run.get("head_sha") != head_sha
-            or not str(run.get("path", "")).endswith(".github/workflows/release.yml")
-            or run.get("inputs", {}).get("change_set_preview") != "google_worker_preview"):
+            or not str(run.get("path", "")).split("@", 1)[0].endswith(".github/workflows/release.yml")
+            or declared_mode not in (None, "google_worker_preview")):
         raise ValueError("Reviewed run is not a successful same-commit Google worker preview")
     with tempfile.TemporaryDirectory(prefix="reviewed-google-worker-") as td:
         subprocess.run(["gh", "run", "download", run_id, "--repo", repo,
