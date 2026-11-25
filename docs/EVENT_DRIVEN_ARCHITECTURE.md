@@ -99,3 +99,18 @@ For each stuck job, the runbook should check **DynamoDB owner**, then **named SF
 **Verified here:** current GitHub source and IaC definitions, deterministic job identifiers, existing status projections, source-configured retry/poll/timeout limits and watchdog predicates. **Not verified here:** live AWS deployed Step Functions definition/permissions, provider-side actual acceptance, live event delivery latency, independent cross-region visibility, real payment billing/refund, or fault-injection recovery.
 
 The canonical API endpoint list remains [API_ENDPOINTS.md](API_ENDPOINTS.md); status semantics in [JOB_STATUSES.md](JOB_STATUSES.md). This document intentionally adds **event-specific detail**, without redefining the 20 API route schemas. No AWS resources or model calls were changed.
+
+## 26 November 2026 source re-review — watchdog lifecycle and acknowledged handoffs
+
+This addendum supersedes stale **ED-01** source findings above: current `infrastructure/app/google-video.yaml` has `Claim.requestId.$ = $$.Execution.Name` (same context reference as Submit/PollVideo/Finalize). Earlier concern about `$.Execution.Name` is historical, not an active source defect. Source/live state-level comparison previously found only non-behavioural Comment differences ([read-only audit #11](https://github.com/rorygleeson/afl-video-platform/actions/runs/45716382229)). Google worker idempotency change subsequently passed guarded AWS release [#57](https://github.com/rorygleeson/afl-video-platform/actions/runs/45724387945); this does not independently test live fault recovery.
+
+Review of current watchdog and handoff source confirms six remaining **design/recovery gaps** with detailed priority and acceptance guidance in [RESILIENCY_ROADMAP.md](RESILIENCY_ROADMAP.md#read-only-watchdog-and-handoff-code-review--26-november-2026):
+
+1. 7200-second watchdog timeout and worker-side deadline can leave active long jobs without monitoring.
+2. `watch-{jobId}` is not rearmable after the Standard execution ends, including post-failure manual retries.
+3. The five-minute missed-start fallback is real but scans only up to 1,000 evaluated DynamoDB items and recent two-hour consenting jobs; it is not guaranteed coverage.
+4. Business-level `*_HANDOFF_NEEDS_REVIEW` returns can successfully acknowledge an asynchronous Lambda invocation. No completion/start EventBridge DLQ is configured in source; durable operational review is needed.
+5. `REVIEW*` statuses and stopped monitors have no source-evident durable operator queue; watchdog log group retention is 14 days.
+6. An existing next-scene approval/record causes watchdog reconciliation to skip paid attempts even if the corresponding execution was never started. This avoids duplicate Google charges but leaves an explicit review/recovery gap.
+
+**Review scope:** source files and existing test definitions only, no test execution or live AWS changes. Existing conservative no-double-submit policy must remain. Rory deferred further testing on this date; any fixes and live validation require a separate scoped release decision.
