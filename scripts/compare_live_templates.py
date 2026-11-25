@@ -64,6 +64,41 @@ def resource_field_differences(source, live):
     return paths
 
 
+def unwrap_definition(resource):
+    props = resource.get("Properties") or {}
+    definition = props.get("Definition", props.get("DefinitionString"))
+    if isinstance(definition, dict) and "Fn::Sub" in definition:
+        definition = definition["Fn::Sub"]
+        if isinstance(definition, list):
+            definition = definition[0]
+    if isinstance(definition, str):
+        return json.loads(definition)
+    if isinstance(definition, dict):
+        return definition
+    raise ValueError("State-machine definition not recognized")
+
+
+def compare_state_machine_definitions(source, live):
+    """Report ASL state/field names, never payloads, expressions, comments or values."""
+    a, b = unwrap_definition(source), unwrap_definition(live)
+    a_states, b_states = a.get("States", {}), b.get("States", {})
+    fields = []
+    for state_name in sorted(set(a_states) & set(b_states)):
+        left, right = a_states[state_name], b_states[state_name]
+        for field in sorted(set(left) | set(right)):
+            if digest(left.get(field)) != digest(right.get(field)) or (field in left) != (field in right):
+                fields.append("States." + state_name + "." + field)
+    return {
+        "source_only_states": sorted(set(a_states) - set(b_states)),
+        "live_only_states": sorted(set(b_states) - set(a_states)),
+        "changed_state_fields": fields,
+        "changed_workflow_fields": sorted(
+            field for field in (set(a) | set(b)) - {"States"}
+            if digest(a.get(field)) != digest(b.get(field)) or (field in a) != (field in b)
+        ),
+    }
+
+
 def compare(source, live):
     """Only logical identifiers/types/hashes leave this process; no property values."""
     source_resources = source.get("Resources", {})
@@ -78,6 +113,13 @@ def compare(source, live):
          "live_digest": digest(live_resources[name])}
         for name in shared if digest(source_resources[name]) != digest(live_resources[name])
     ]
+    for entry in changed:
+        if entry["source_type"] == entry["live_type"] == "AWS::StepFunctions::StateMachine":
+            name = entry["logical_id"]
+            try:
+                entry["definition_comparison"] = compare_state_machine_definitions(source_resources[name], live_resources[name])
+            except (ValueError, TypeError, KeyError):
+                entry["definition_comparison"] = {"inspection_error": "DefinitionParseError"}
     differences = {
         "source_only_resources": sorted(set(source_resources) - set(live_resources)),
         "live_only_resources": sorted(set(live_resources) - set(source_resources)),
