@@ -64,6 +64,27 @@ def inspected_changes(cf, stack, name, logical):
         r = item["ResourceChange"]
         ident = r["LogicalResourceId"]
         details = r.get("Details", [])
+        # A stable API Lambda ARN is referenced by the existing proxy method.
+        # CloudFormation may recalculate this Integration even for Code-only updates.
+        # Allow only the known non-replacing dynamic reference, never a static
+        # integration edit or an API Gateway replacement.
+        proxy_dependency = (
+            logical == "ApiLambda" and ident == "ProxyAny"
+            and r.get("ResourceType") == "AWS::ApiGateway::Method"
+            and r.get("Action") == "Modify" and r.get("Replacement") == "False"
+            and bool(details) and all(
+                d.get("Evaluation") == "Dynamic"
+                and d.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
+                and str(d.get("CausingEntity", "")).startswith("ApiLambda")
+                and d.get("Target", {}).get("Attribute") == "Properties"
+                and d.get("Target", {}).get("Name") == "Integration"
+                and d.get("Target", {}).get("RequiresRecreation") in ("Never", None)
+                for d in details)
+        )
+        if proxy_dependency:
+            descriptions.append({"logical_id": ident, "action": "Modify",
+                                 "property": "Integration", "verified_dynamic_api_reference": True})
+            continue
         if (r.get("Action") != "Modify" or r.get("Replacement") != "False"
                 or r.get("ResourceType") != "AWS::Lambda::Function" or ident != logical
                 or not details or any(
@@ -77,7 +98,7 @@ def inspected_changes(cf, stack, name, logical):
                                          "properties": [d.get("Target", {}).get("Name") for d in details]}))
         seen_code = True
         descriptions.append({"logical_id": ident, "action": "Modify", "property": "Code"})
-    if not seen_code or len(changes) != 1:
+    if not seen_code or len([x for x in changes if x["ResourceChange"]["LogicalResourceId"] == logical]) != 1:
         raise ValueError("Exactly one Lambda Code modification required per stack")
     return first["ChangeSetId"], descriptions
 
