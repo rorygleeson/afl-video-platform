@@ -69,44 +69,54 @@ def at(root, path):
     return result
 
 
-def validate_exact_template_transition(old, new, label):
-    # Modify only preapproved paths, then demand FULL structural equality.
-    expected = json.loads(json.dumps(old))
+def differences(a, b, path=()):
+    """Yield only paths; never include live configuration values in logs."""
+    if isinstance(a, dict) and isinstance(b, dict):
+        for key in sorted(set(a) | set(b)):
+            if key not in a or key not in b:
+                yield ".".join(map(str, path + (key,)))
+            else:
+                yield from differences(a[key], b[key], path + (key,))
+    elif isinstance(a, list) and isinstance(b, list):
+        if len(a) != len(b):
+            yield ".".join(map(str, path)) + ".length"
+        else:
+            for i, (x, y) in enumerate(zip(a, b)):
+                yield from differences(x, y, path + (i,))
+    elif a != b:
+        yield ".".join(map(str, path))
+
+
+def validate_exact_template_transition(old, source, label):
+    """Build an EXACT-live-derived template; source is an approval reference only.
+
+    Unrelated source/live differences are reported, but NEVER included in the
+    CloudFormation change-set template. Only enumerated fields can change.
+    """
+    migrated = json.loads(json.dumps(old))
     for path, (old_value, new_value) in EXPECTED[label].items():
-        current = at(expected, path[:-1])
+        parent = at(migrated, path[:-1])
         key = path[-1]
-        actual = current[key]
-        if label == "watchdog" and path[-1] == "DefinitionString":
+        actual = parent[key]
+        if label == "watchdog" and key == "DefinitionString":
             old_string = "${WatchdogLambda.Arn}"
             new_string = "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-handoff-watchdog"
             if not isinstance(actual, dict) or set(actual) != {"Fn::Sub"} or actual["Fn::Sub"].count(old_string) != 1:
                 raise ValueError("Live watchdog state machine definition differs from expected stable reference")
-            current[key] = {"Fn::Sub": actual["Fn::Sub"].replace(old_string, new_string)}
+            target = {"Fn::Sub": actual["Fn::Sub"].replace(old_string, new_string)}
         else:
             if actual != old_value:
                 raise ValueError("Unexpected live template at " + label + "." + ".".join(map(str, path)))
-            current[key] = new_value
-    if expected != new:
-        # Report only first divergent paths, no source template body or secrets.
-        def differences(a, b, path=()):
-            if isinstance(a, dict) and isinstance(b, dict):
-                for key in sorted(set(a) | set(b)):
-                    if key not in a or key not in b:
-                        yield ".".join(map(str, path + (key,)))
-                    else:
-                        yield from differences(a[key], b[key], path + (key,))
-            elif isinstance(a, list) and isinstance(b, list):
-                if len(a) != len(b):
-                    yield ".".join(map(str, path)) + ".length"
-                else:
-                    for i, (x, y) in enumerate(zip(a, b)):
-                        yield from differences(x, y, path + (i,))
-            elif a != b:
-                yield ".".join(map(str, path))
-        changed = list(differences(expected, new))
-        raise ValueError("Unapproved source/live template differences for " + label +
-                         ": " + json.dumps(changed[:30]))
-    return True
+            target = new_value
+        # Cross-check approved source property; it cannot supply any other fields.
+        if at(source, path) != target:
+            raise ValueError("Source approved reference differs at " + label + "." + ".".join(map(str, path)))
+        parent[key] = target
+    if not list(differences(old, migrated)):
+        raise ValueError("No approved migration changes detected: " + label)
+    # The report identifies pre-existing source/live divergence, not a migration.
+    excluded_source_differences = list(differences(migrated, source))
+    return migrated, excluded_source_differences
 
 
 def summarize_change_set(cf, name, stack):
@@ -156,14 +166,18 @@ def main():
                 raise ValueError("Stack is not steady: " + label)
             raw_live = cf.get_template(StackName=stack_name)["TemplateBody"]
             raw_source = Path(path).read_text()
-            validate_exact_template_transition(parse_template(raw_live),
-                                               parse_template(raw_source), label)
+            migrated, excluded_paths = validate_exact_template_transition(
+                parse_template(raw_live), parse_template(raw_source), label)
+            proposed_body = json.dumps(migrated, separators=(",", ":"))
+            # Prove serialization preserved the exact reviewed migration tree.
+            if json.loads(proposed_body) != migrated:
+                raise ValueError("Migration template serialization changed semantics")
             name = "stable-references-" + os.environ["GITHUB_RUN_ID"] + "-" + label
             params = [{"ParameterKey": p["ParameterKey"], "UsePreviousValue": True}
                       for p in stack.get("Parameters", [])]
             cf.create_change_set(
                 StackName=stack_name, ChangeSetName=name, ChangeSetType="UPDATE",
-                TemplateBody=raw_source, Parameters=params,
+                TemplateBody=proposed_body, Parameters=params,
                 Capabilities=["CAPABILITY_NAMED_IAM"])
             created.append((stack_name, name))
             cf.get_waiter("change_set_create_complete").wait(
@@ -171,6 +185,8 @@ def main():
                 WaiterConfig={"Delay": 5, "MaxAttempts": 48})
             report["stacks"].append({
                 "label": label, "stack_id": stack["StackId"],
+                "excluded_source_only_path_count": len(excluded_paths),
+                "excluded_source_only_paths": excluded_paths[:30],
                 "changes": summarize_change_set(cf, name, stack_name),
             })
         Path("reference-migration-preview.json").write_text(json.dumps(report, indent=2) + "\n")
