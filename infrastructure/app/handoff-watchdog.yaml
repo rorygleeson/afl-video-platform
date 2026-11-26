@@ -98,7 +98,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: lambda:InvokeFunction
-                Resource: !GetAtt WatchdogLambda.Arn
+                Resource: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-handoff-watchdog'
   WatchdogMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
@@ -120,7 +120,7 @@ Resources:
               "Type": "Task",
               "Resource": "arn:aws:states:::lambda:invoke",
               "Parameters": {
-                "FunctionName": "${WatchdogLambda.Arn}",
+                "FunctionName": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-handoff-watchdog",
                 "Payload": {
                   "op": "check",
                   "input.$": "$"
@@ -161,7 +161,7 @@ Resources:
             - RUNNING
       Targets:
         - Id: StartJobWatchdog
-          Arn: !GetAtt WatchdogLambda.Arn
+          Arn: !Sub 'arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:afl-app-dev-handoff-watchdog'
           RetryPolicy:
             MaximumEventAgeInSeconds: 3600
             MaximumRetryAttempts: 12
@@ -169,9 +169,9 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       Action: lambda:InvokeFunction
-      FunctionName: !GetAtt WatchdogLambda.Arn
+      FunctionName: afl-app-dev-handoff-watchdog
       Principal: events.amazonaws.com
-      SourceArn: !GetAtt EveryMinute.Arn
+      SourceArn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/afl-app-dev-handoff-watchdog-image-start'
 Outputs:
   WatchdogArn:
     Value: !GetAtt WatchdogLambda.Arn
