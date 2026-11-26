@@ -415,3 +415,10 @@ The proposed source-only template refactor decouples stable-name functions from 
 Direct `lambda:UpdateFunctionCode` is **not** the chosen steady-state path: it would leave CloudFormation's configured S3 artifact key behind the actual code deployment and Lambda code differences are not reliably surfaced by CloudFormation drift detection. Existing unified release ownership is retained; no new AWS services or automatic deployment are introduced.
 
 **Status: design/source proposed, live migration NOT executed, recovery tracking NOT deployed.**
+
+
+### Guarded one-time template migration preview tooling — 26 November 2026
+
+The existing unified release workflow now offers **`reference_migration_preview`**, implemented by `scripts/preview_reference_migration.py` and offline tests in `tests/test_reference_migration.py`. It requires main, the existing deployment-role identity, steady backend/watchdog stacks, and a full parsed source-versus-live template comparison where only the six documented source substitutions from PR #107 are allowed. If source/live templates contain any other differences, it **stops before creating change sets** and reports only changed paths. On a match it builds separate ephemeral change sets with existing parameter values, gathers all resource actions including replacement and recreation metadata into `reference-migration-preview.json`, then deletes both without executing. A green workflow means **preview completed for human review**, never permission migration approved. The verdict is always `REVIEW_REQUIRED_NO_DEPLOYMENT`. This preview does not upload code, deploy, modify permissions or start videos.
+
+Next: run this preview once and review its complete report. **There is intentionally no migration-execution mode yet.** Do not run `recovery_preview` or `deploy_recovery` until the one-time live migration is independently reviewed and completed. If the change set reports a permission replacement, stop and design a controlled migration/rollback rather than silently allowing it. If other source/live differences are reported, reconcile them with read-only inspection first.

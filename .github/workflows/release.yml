@@ -28,6 +28,7 @@ on:
           - deploy_backend
           - google_worker_preview
           - deploy_google_worker
+          - reference_migration_preview
           - recovery_preview
           - deploy_recovery
       reviewed_preview_run_id:
@@ -90,6 +91,40 @@ jobs:
         with:
           name: google-worker-preview-${{ github.run_id }}
           path: google-worker-preview.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  reference_migration_preview:
+    name: Guarded stable-reference CloudFormation preview (never execute)
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.change_set_preview == 'reference_migration_preview' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Validate migration source and release ownership
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'PyYAML>=6,<7'
+          python3 -m py_compile scripts/preview_reference_migration.py
+          python3 -m unittest discover -s tests -p 'test_reference_migration.py' -v
+          python3 scripts/check_deployment_ownership.py --enforce
+      - name: Assume existing GitHub OIDC deployment role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::134387458447:role/afl-video-github-deploy-role
+          aws-region: ap-southeast-2
+          role-session-name: afl-reference-migration-preview
+      - name: Inspect live templates and create temporary unexecuted change sets
+        run: python3 -u scripts/preview_reference_migration.py
+      - name: Preserve sanitized reference migration preview
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: reference-migration-preview-${{ github.run_id }}
+          path: reference-migration-preview.json
           if-no-files-found: warn
           retention-days: 14
 
