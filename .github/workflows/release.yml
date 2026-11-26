@@ -109,6 +109,7 @@ jobs:
           set -euo pipefail
           python3 -m pip install --disable-pip-version-check 'boto3>=1.35,<2' 'PyYAML>=6,<7'
           python3 -m py_compile scripts/preview_reference_migration.py
+          python3 -m unittest discover -s tests -p 'test_reference_migration.py' -v
           python3 scripts/check_deployment_ownership.py --enforce
       - name: Assume existing GitHub OIDC deployment role
         uses: aws-actions/configure-aws-credentials@v4
