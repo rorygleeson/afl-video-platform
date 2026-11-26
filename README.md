@@ -21,7 +21,7 @@ A mobile-friendly web app that puts you into personalised football scenes. Choos
 
 ## Architecture
 
-![AFL Video Platform high-level architecture showing AWS serverless services, orchestration, storage and Google AI integrations](docs/architecture-high-level-overview.png)
+![AFL Video Platform high-level architecture showing AWS serverless services, orchestration, storage and Google AI integrations](docs/architecture-high-level-overview.svg)
 
 The platform runs on **AWS** and integrates with **Google Cloud** for AI video generation. **Amazon CloudFront and S3** host the web app and store images and videos; **API Gateway and Lambda** provide the backend; **AWS Step Functions** coordinates processing; and **DynamoDB** tracks each job. The current reference-image worker uses a **direct Google Vertex image-generation adapter**, while **Google Vertex AI's Interactions API** uses **Gemini Omni 1.2 Flash** to generate the football video scenes. Historical Replicate integration notes remain in dated development documents. **Google Cloud Workload Identity Federation** enables the AWS video worker to authenticate securely to Google Cloud.
 
