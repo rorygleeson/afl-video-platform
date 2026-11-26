@@ -311,11 +311,41 @@ def check_one(event):
     return {"continue": True, "status": outcome}
 
 
+
+def record_recovery_issue(job_id, reason):
+    """Ask the existing IAM-authorised API to persist a deduplicated review.
+
+    Never write DynamoDB directly or submit a Google request.
+    """
+    result = API.invoke(
+        FunctionName=API_ARN,
+        InvocationType="RequestResponse",
+        Payload=json.dumps({"op": "record_recovery_issue",
+                            "jobId": job_id, "reason": reason}).encode(),
+    )
+    if result.get("FunctionError"):
+        raise RuntimeError("API recovery-issue recording failed")
+    answer = json.loads(result["Payload"].read())
+    if not isinstance(answer, dict) or answer.get("status") not in (
+            "RECOVERY_ISSUE_RECORDED", "RECOVERY_ISSUE_ALREADY_RECORDED"):
+        raise RuntimeError("API did not confirm recovery issue persistence")
+
+
+def needs_durable_review(status):
+    return (isinstance(status, str) and
+            (status.startswith("REVIEW_") or status in (
+                "NEXT_SCENE_HANDOFF_NEEDS_REVIEW",
+                "ASSEMBLY_HANDOFF_NEEDS_REVIEW")))
+
+
 def lambda_handler(event, context):
     if event.get("source") == "aws.states":
         return start_for_image_execution(event)
     if event.get("op") == "ensure_monitor":
         return ensure_monitor_for_existing_image_job(event)
     if event.get("op") == "check" and isinstance(event.get("input"), dict):
-        return check_one(event["input"])
+        result = check_one(event["input"])
+        if needs_durable_review(result.get("status")):
+            record_recovery_issue(event["input"].get("jobId"), result["status"])
+        return result
     return {"continue": False, "status": "IGNORED_INVALID_REQUEST"}
