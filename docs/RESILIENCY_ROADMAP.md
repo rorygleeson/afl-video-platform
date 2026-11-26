@@ -372,3 +372,12 @@ The latest existing-`main` flow inspection confirms **all eight findings are alr
 
 **Recommended next engineering slice:** define a durable recovery/alert record and bounded active-job reconciliation that covers **WD-01, WD-03 and WD-04** first. Include monitor-epoch/rearm design (WD-02) in the same architecture review but avoid deploying a wide change set. Follow with a narrow guarded implementation and tests **only when Rory resumes testing**. Provider ambiguity and paid-job handling stay fail-closed. No customer payments should be enabled on this audit alone.
 
+
+
+## Staged recovery-issue persistence — 26 November 2026 (not AWS deployed)
+
+**Scope:** A narrow first implementation of Option 2, using the existing watchdog-to-API synchronous IAM invocation and existing API `dynamodb:UpdateItem` permission. `src/api/handler.py` adds the IAM-only `record_recovery_issue` operation; `src/handoff_watchdog/handler.py` sends selected `REVIEW_*` and handoff-needs-review results to it. The API atomically appends a bounded-code incident to `recoveryIssues` and its deduplication key to `recoveryIssueCodes` only if that reason has not been recorded for the job. First detection timestamp is immutable. The regular job `status`, video approvals, source artifacts, Step Functions and paid Google worker are untouched.
+
+**Important limits:** This records **first occurrence per reason** in the existing 7-day-TTL job, not a persistent financial audit ledger; it does not implement issue resolution, active notification/paging or an operator dashboard. Existing CloudWatch logs record the new incident, but no new alarm destination is configured. A failed internal API invocation bubbles up as a watchdog Lambda error rather than silently reporting success. More than one distinct issue may be appended; repeated identical reasons are deduplicated. It does **not** fix the 1,000-record scan coverage, manual-retry rearm or missing execution recovery.
+
+**Decisions retained:** no GSI; existing five-minute, 1,000-evaluated-record scan; existing two-hour watchdog deadline; no API Gateway routes or new AWS services; no additional watchdog DynamoDB permissions. Separate live source and IaC deployment checks must verify the deployed API and watchdog Lambda code together before this can be marked active. **Testing and AWS deployment have not been performed in this work item** under Rory's requested pause. Do not interpret source merge as live deployment.
