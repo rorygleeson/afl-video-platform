@@ -59,46 +59,73 @@ def inspected_changes(cf, stack, name, logical):
         changes += page.get("Changes", [])
         token = page.get("NextToken")
     descriptions = []
+    rejected = []
     seen_code = False
+    # CloudFormation recalculates references when a stable-name Lambda's Code
+    # parameter changes. The source template itself remains UsePreviousTemplate.
+    watchdog_references = {
+        "WatchdogMachineRole": ("AWS::IAM::Role", {"Policies"}, {"WatchdogLambda"}),
+        "WatchdogMachine": ("AWS::StepFunctions::StateMachine",
+                            {"DefinitionString", "RoleArn"},
+                            {"WatchdogLambda", "WatchdogMachineRole"}),
+        "EveryMinute": ("AWS::Events::Rule", {"Targets"}, {"WatchdogLambda"}),
+        "InvokeFromEventBridge": ("AWS::Lambda::Permission",
+                                   {"FunctionName"}, {"WatchdogLambda", "EveryMinute"}),
+    }
     for item in changes:
         r = item["ResourceChange"]
         ident = r["LogicalResourceId"]
         details = r.get("Details", [])
-        # A stable API Lambda ARN is referenced by the existing proxy method.
-        # CloudFormation may recalculate this Integration even for Code-only updates.
-        # Allow only the known non-replacing dynamic reference, never a static
-        # integration edit or an API Gateway replacement.
-        proxy_dependency = (
-            logical == "ApiLambda" and ident == "ProxyAny"
-            and r.get("ResourceType") == "AWS::ApiGateway::Method"
-            and r.get("Action") == "Modify" and r.get("Replacement") == "False"
+        basic = r.get("Action") == "Modify" and r.get("Replacement") == "False"
+        exact_code = (
+            basic and ident == logical and r.get("ResourceType") == "AWS::Lambda::Function"
             and bool(details) and all(
-                d.get("Evaluation") == "Dynamic"
-                and d.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
-                and str(d.get("CausingEntity", "")).startswith("ApiLambda")
-                and d.get("Target", {}).get("Attribute") == "Properties"
-                and d.get("Target", {}).get("Name") == "Integration"
+                d.get("Target", {}).get("Attribute") == "Properties"
+                and d.get("Target", {}).get("Name") == "Code"
                 and d.get("Target", {}).get("RequiresRecreation") in ("Never", None)
                 for d in details)
         )
-        if proxy_dependency:
+        reference = None
+        if logical == "ApiLambda" and ident == "ProxyAny":
+            reference = ("AWS::ApiGateway::Method", {"Integration"}, {"ApiLambda"})
+        elif logical == "WatchdogLambda":
+            reference = watchdog_references.get(ident)
+        exact_dynamic = (
+            basic and reference is not None and r.get("ResourceType") == reference[0]
+            and bool(details) and all(
+                d.get("Evaluation") == "Dynamic"
+                and d.get("ChangeSource") in ("ResourceReference", "ResourceAttribute")
+                and any(str(d.get("CausingEntity", "")).startswith(x)
+                        for x in reference[2])
+                and d.get("Target", {}).get("Attribute") == "Properties"
+                and d.get("Target", {}).get("Name") in reference[1]
+                and d.get("Target", {}).get("RequiresRecreation") in ("Never", None)
+                for d in details)
+        )
+        if exact_code:
+            seen_code = True
+            descriptions.append({"logical_id": ident, "action": "Modify", "property": "Code"})
+        elif exact_dynamic:
             descriptions.append({"logical_id": ident, "action": "Modify",
-                                 "property": "Integration", "verified_dynamic_api_reference": True})
-            continue
-        if (r.get("Action") != "Modify" or r.get("Replacement") != "False"
-                or r.get("ResourceType") != "AWS::Lambda::Function" or ident != logical
-                or not details or any(
-                    d.get("Target", {}).get("Attribute") != "Properties"
-                    or d.get("Target", {}).get("Name") != "Code"
-                    or d.get("Target", {}).get("RequiresRecreation") not in ("Never", None)
-                    for d in details)):
-            raise ValueError("BLOCKED UNEXPECTED CLOUDFORMATION RESOURCE: " +
-                             json.dumps({"logical_id": ident, "action": r.get("Action"),
-                                         "replacement": r.get("Replacement"),
-                                         "properties": [d.get("Target", {}).get("Name") for d in details]}))
-        seen_code = True
-        descriptions.append({"logical_id": ident, "action": "Modify", "property": "Code"})
-    if not seen_code or len([x for x in changes if x["ResourceChange"]["LogicalResourceId"] == logical]) != 1:
+                                 "dynamic_reference_properties": sorted(
+                                     {d["Target"]["Name"] for d in details})})
+        else:
+            # Log metadata for ALL blocked resources in one preview. Never
+            # serialize template bodies, function configuration or payloads.
+            rejected.append({
+                "logical_id": ident, "resource_type": r.get("ResourceType"),
+                "action": r.get("Action"), "replacement": r.get("Replacement"),
+                "details": [{"property": d.get("Target", {}).get("Name"),
+                             "evaluation": d.get("Evaluation"),
+                             "source": d.get("ChangeSource"),
+                             "cause": d.get("CausingEntity"),
+                             "requires_recreation": d.get("Target", {}).get("RequiresRecreation")}
+                            for d in details]})
+    if rejected:
+        raise ValueError("BLOCKED CLOUDFORMATION DEPENDENCIES: " +
+                         json.dumps(rejected, sort_keys=True))
+    if not seen_code or len([x for x in changes
+                             if x["ResourceChange"]["LogicalResourceId"] == logical]) != 1:
         raise ValueError("Exactly one Lambda Code modification required per stack")
     return first["ChangeSetId"], descriptions
 
