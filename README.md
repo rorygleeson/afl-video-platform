@@ -33,6 +33,7 @@ The platform runs on **AWS** and integrates with **Google Cloud** for AI video g
 
 - [Current AWS architecture](docs/ARCHITECTURE.md)
 - [Complete HTTP API contract — 20 routes](docs/API_ENDPOINTS.md)
+- [OpenAPI 3.1 specification — 20 routes (JSON)](docs/openapi.json)
 - [Job statuses and terminal outcomes](docs/JOB_STATUSES.md)
 - [Retry, timeout and error-handling contract](docs/RETRIES_AND_TIMEOUTS.md)
 - [AWS infrastructure inventory](docs/INFRASTRUCTURE.md)
