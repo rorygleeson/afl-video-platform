@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1550" height="1610" viewBox="0 0 1550 1610" role="img" aria-label="AFL video platform AWS architecture with each application Lambda and EventBridge connections"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#47758f"/></marker></defs><rect width="1550" height="1610" fill="#fafcff"/>
+<text x="45" y="54" font-family="Arial,sans-serif" font-size="33" font-weight="700" fill="#14344d">AFL Video Platform | AWS serverless architecture</text>
+<text x="45" y="84" font-family="Arial,sans-serif" font-size="17" font-weight="400" fill="#526a7a">Six application Lambdas shown individually  •  EventBridge targets explicitly connected  •  Source architecture, 26 Nov 2026</text>
+<text x="45" y="122" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#476579">01  MOBILE USER, WEB DELIVERY AND API</text>
+<line x1="45" y1="135" x2="1505" y2="135" stroke="#d8e5ee" stroke-width="2"/>
+<rect x="45" y="160" width="240" height="104" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<rect x="60" y="178" width="25" height="47" rx="5" fill="none" stroke="#276b96" stroke-width="2.6"/><circle cx="72" cy="218" r="2" fill="#276b96"/>
+<text x="96" y="190" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Mobile user</text>
+<text x="61" y="240" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Selfie and team selection</text>
+<rect x="345" y="160" width="240" height="104" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="361" y="190" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">CloudFront + S3</text>
+<text x="361" y="215" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Web SPA delivery</text>
+<text x="361" y="236" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Private asset storage</text>
+<rect x="645" y="160" width="240" height="104" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="661" y="190" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">API Gateway</text>
+<text x="661" y="215" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">REST API + API key</text>
+<text x="661" y="236" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Routes to API Lambda</text>
+<rect x="945" y="160" width="240" height="104" rx="14" fill="#fff2df" stroke="#e9ad55" stroke-width="2"/>
+<text x="961" y="190" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">API Lambda</text>
+<text x="961" y="215" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">afl-app-dev-api</text>
+<text x="961" y="236" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Job / event handoff</text>
+<rect x="1245" y="160" width="260" height="104" rx="14" fill="#f5efff" stroke="#ac96cb" stroke-width="2"/>
+<text x="1261" y="190" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">DynamoDB + S3</text>
+<text x="1261" y="215" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Jobs and checkpoints</text>
+<text x="1261" y="236" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Selfies / video files</text>
+<path d="M285 210 L340 210" fill="none" stroke="#47758f" stroke-width="2.7" marker-end="url(#arrow)"/>
+<path d="M585 210 L640 210" fill="none" stroke="#47758f" stroke-width="2.7" marker-end="url(#arrow)"/>
+<path d="M885 210 L940 210" fill="none" stroke="#47758f" stroke-width="2.7" marker-end="url(#arrow)"/>
+<path d="M1185 210 L1240 210" fill="none" stroke="#47758f" stroke-width="2.7" marker-end="url(#arrow)"/>
+<text x="45" y="307" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#476579">02  REFERENCE IMAGE GENERATION</text>
+<line x1="45" y1="320" x2="1505" y2="320" stroke="#d8e5ee" stroke-width="2"/>
+<rect x="45" y="345" width="310" height="104" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="61" y="374" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Image Step Functions</text>
+<text x="61" y="400" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">afl-app-dev-scene1-pilot</text>
+<text x="61" y="421" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Parallel Map: 3 branches</text>
+<rect x="430" y="345" width="310" height="104" rx="14" fill="#fff2df" stroke="#e9ad55" stroke-width="2"/>
+<text x="446" y="374" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Image worker Lambda</text>
+<text x="446" y="400" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">afl-app-dev-image-worker</text>
+<text x="446" y="421" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Image generation + reconciliation</text>
+<rect x="815" y="345" width="310" height="104" rx="14" fill="#eef8ed" stroke="#89b892" stroke-width="2"/>
+<text x="831" y="374" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Google Vertex AI</text>
+<text x="831" y="400" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Gemini image generation</text>
+<text x="831" y="421" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Three reference images</text>
+<rect x="1200" y="345" width="305" height="104" rx="14" fill="#f5efff" stroke="#ac96cb" stroke-width="2"/>
+<text x="1216" y="374" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">S3 + DynamoDB</text>
+<text x="1216" y="400" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Scene PNGs and image status</text>
+<text x="1216" y="421" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Completion checkpoints</text>
+<path d="M355 395 L425 395" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M740 395 L810 395" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M1125 395 L1195 395" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<text x="45" y="490" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#476579">03  VIDEO GENERATION — ONE SCENE AT A TIME</text>
+<line x1="45" y1="503" x2="1505" y2="503" stroke="#d8e5ee" stroke-width="2"/>
+<rect x="45" y="528" width="310" height="104" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="61" y="557" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Video Step Functions</text>
+<text x="61" y="583" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">afl-app-dev-google-omni</text>
+<text x="61" y="604" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Submit, wait 20s, poll</text>
+<rect x="430" y="528" width="310" height="104" rx="14" fill="#fff2df" stroke="#e9ad55" stroke-width="2"/>
+<text x="446" y="557" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Google video Lambda</text>
+<text x="446" y="583" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">afl-app-dev-google-omni-worker</text>
+<text x="446" y="604" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Calls Vertex Interactions API</text>
+<rect x="815" y="528" width="310" height="104" rx="14" fill="#eef8ed" stroke="#89b892" stroke-width="2"/>
+<text x="831" y="557" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Google Vertex AI</text>
+<text x="831" y="583" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Gemini Omni 1.2 Flash</text>
+<text x="831" y="604" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Generate each scene MP4</text>
+<rect x="1200" y="528" width="305" height="104" rx="14" fill="#f5efff" stroke="#ac96cb" stroke-width="2"/>
+<text x="1216" y="557" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">S3 + DynamoDB</text>
+<text x="1216" y="583" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Scene 1 → 2 → 3 completed</text>
+<text x="1216" y="604" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">No simultaneous paid submissions</text>
+<path d="M355 578 L425 578" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M740 578 L810 578" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M1125 578 L1195 578" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<text x="45" y="674" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#476579">04  FINAL ASSEMBLY</text>
+<line x1="45" y1="687" x2="1505" y2="687" stroke="#d8e5ee" stroke-width="2"/>
+<rect x="45" y="712" width="310" height="104" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="61" y="741" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Assembly Step Functions</text>
+<text x="61" y="767" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">afl-app-dev-assembly</text>
+<text x="61" y="788" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Final named execution</text>
+<rect x="430" y="712" width="310" height="104" rx="14" fill="#fff2df" stroke="#e9ad55" stroke-width="2"/>
+<text x="446" y="741" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Assembly Lambda (FFmpeg)</text>
+<text x="446" y="767" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">afl-app-dev-assembly</text>
+<text x="446" y="788" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Stitches verified scene MP4s</text>
+<rect x="815" y="712" width="310" height="104" rx="14" fill="#f5efff" stroke="#ac96cb" stroke-width="2"/>
+<text x="831" y="741" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">S3 final video</text>
+<text x="831" y="767" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">videos/{jobId}/final.mp4</text>
+<text x="831" y="788" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Presigned download</text>
+<rect x="1200" y="712" width="305" height="104" rx="14" fill="#f5f5f5" stroke="#b6bcc1" stroke-width="2"/>
+<text x="1216" y="741" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Video worker Lambda</text>
+<text x="1216" y="767" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">afl-app-dev-video-worker</text>
+<text x="1216" y="788" font-family="Arial,sans-serif" font-size="15" font-weight="400" fill="#526a7a">Legacy backend/mock path</text>
+<path d="M355 762 L425 762" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M740 762 L810 762" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<text x="45" y="858" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#476579">05  EVENTBRIDGE DELIVERY — ACTUAL LAMBDA TARGETS</text>
+<line x1="45" y1="871" x2="1505" y2="871" stroke="#d8e5ee" stroke-width="2"/>
+<text x="55" y="908" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#64748b">Step Functions / schedule</text>
+<text x="447" y="908" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#64748b">EventBridge rule</text>
+<text x="824" y="908" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#64748b">Lambda target</text>
+<text x="1204" y="908" font-family="Arial,sans-serif" font-size="16" font-weight="700" fill="#64748b">Next action</text>
+<rect x="45" y="927" width="310" height="62" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="61" y="956" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Image SFN SUCCEEDED</text>
+<rect x="430" y="927" width="310" height="62" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="446" y="956" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Image completion event</text>
+<rect x="815" y="927" width="310" height="62" rx="14" fill="#fff2df" stroke="#e9ad55" stroke-width="2"/>
+<text x="831" y="956" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">API Lambda</text>
+<rect x="1200" y="927" width="305" height="62" rx="14" fill="#f5efff" stroke="#ac96cb" stroke-width="2"/>
+<text x="1216" y="956" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Validate, start Video 1</text>
+<path d="M355 958 L425 958" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M740 958 L810 958" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M1125 958 L1195 958" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<rect x="45" y="1001" width="310" height="62" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="61" y="1030" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Video SFN SUCCEEDED</text>
+<rect x="430" y="1001" width="310" height="62" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="446" y="1030" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Video completion event</text>
+<rect x="815" y="1001" width="310" height="62" rx="14" fill="#fff2df" stroke="#e9ad55" stroke-width="2"/>
+<text x="831" y="1030" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">API Lambda</text>
+<rect x="1200" y="1001" width="305" height="62" rx="14" fill="#f5efff" stroke="#ac96cb" stroke-width="2"/>
+<text x="1216" y="1030" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Start next / assembly</text>
+<path d="M355 1032 L425 1032" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M740 1032 L810 1032" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M1125 1032 L1195 1032" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<rect x="45" y="1075" width="310" height="62" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="61" y="1104" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Image SFN RUNNING</text>
+<rect x="430" y="1075" width="310" height="62" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="446" y="1104" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Watchdog-start event</text>
+<rect x="815" y="1075" width="310" height="62" rx="14" fill="#fff2df" stroke="#e9ad55" stroke-width="2"/>
+<text x="831" y="1104" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Watchdog Lambda</text>
+<rect x="1200" y="1075" width="305" height="62" rx="14" fill="#f5efff" stroke="#ac96cb" stroke-width="2"/>
+<text x="1216" y="1104" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Start per-job watcher</text>
+<path d="M355 1106 L425 1106" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M740 1106 L810 1106" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M1125 1106 L1195 1106" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<rect x="45" y="1149" width="310" height="62" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="61" y="1178" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Every 5 minutes</text>
+<rect x="430" y="1149" width="310" height="62" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="446" y="1178" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Image reconcile schedule</text>
+<rect x="815" y="1149" width="310" height="62" rx="14" fill="#fff2df" stroke="#e9ad55" stroke-width="2"/>
+<text x="831" y="1178" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Image worker Lambda</text>
+<rect x="1200" y="1149" width="305" height="62" rx="14" fill="#f5efff" stroke="#ac96cb" stroke-width="2"/>
+<text x="1216" y="1178" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Check stalled images</text>
+<path d="M355 1180 L425 1180" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M740 1180 L810 1180" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<path d="M1125 1180 L1195 1180" fill="none" stroke="#47758f" stroke-width="2.7"  marker-end="url(#arrow)"/>
+<rect x="45" y="1240" width="1460" height="88" rx="12" fill="#fff6e8" stroke="#ecc38f" stroke-width="2"/>
+<text x="64" y="1270" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#14344d">Watchdog Lambda</text>
+<text x="64" y="1297" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#526a7a">afl-app-dev-handoff-watchdog</text>
+<text x="504" y="1270" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#14344d">→  Watchdog Step Functions (afl-app-dev-handoff-watchdog)</text>
+<text x="504" y="1297" font-family="Arial,sans-serif" font-size="16" font-weight="400" fill="#526a7a">60-second checks; Step Functions invokes the same watchdog Lambda</text>
+<text x="45" y="1357" font-family="Arial,sans-serif" font-size="21" font-weight="700" fill="#476579">06  PLATFORM SECURITY AND OPERATIONS</text>
+<line x1="45" y1="1370" x2="1505" y2="1370" stroke="#d8e5ee" stroke-width="2"/>
+<rect x="45" y="1390" width="345" height="107" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="61" y="1420" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">AWS IAM roles / policies</text>
+<text x="61" y="1446" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Lambda, Step Functions and</text><text x="61" y="1467" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">GitHub OIDC deployment roles</text>
+<rect x="415" y="1390" width="345" height="107" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="431" y="1420" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Amazon CloudWatch</text>
+<text x="431" y="1446" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Lambda and Step Functions logs</text>
+<text x="431" y="1467" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Runtime diagnostics</text>
+<rect x="785" y="1390" width="345" height="107" rx="14" fill="#eef5fb" stroke="#85a8c3" stroke-width="2"/>
+<text x="801" y="1420" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">AWS CloudFormation</text>
+<text x="801" y="1446" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Infrastructure as code</text>
+<text x="801" y="1467" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">GitHub Actions release control</text>
+<rect x="1155" y="1390" width="350" height="107" rx="14" fill="#eef8ed" stroke="#89b892" stroke-width="2"/>
+<text x="1171" y="1420" font-family="Arial,sans-serif" font-size="19" font-weight="700" fill="#14344d">Google Workload Identity</text>
+<text x="1171" y="1446" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">AWS worker → Google Vertex</text>
+<text x="1171" y="1467" font-family="Arial,sans-serif" font-size="15" fill="#526a7a">Federated cloud authentication</text>
+<rect x="45" y="1527" width="1460" height="52" rx="10" fill="#f1f5f9" stroke="#d4dee6"/>
+<text x="64" y="1559" font-family="Arial,sans-serif" font-size="16" fill="#526a7a">Logical AWS architecture (source-verified). Not every preflight/smoke resource is shown. No Stripe payment integration deployed.</text></svg>
