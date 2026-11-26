@@ -26,17 +26,23 @@ class StableReferenceMigrationTests(unittest.TestCase):
 
     def test_backend_exact_references_only(self):
         previous, source = self.old_from_source("backend", "infrastructure/app/backend.yaml")
-        self.assertTrue(validate_exact_template_transition(previous, source, "backend"))
+        migrated, excluded = validate_exact_template_transition(previous, source, "backend")
+        self.assertEqual(migrated, source)
+        self.assertEqual(excluded, [])
         source["Resources"]["ProxyAny"]["Properties"]["ApiKeyRequired"] = False
-        with self.assertRaisesRegex(ValueError, "Unapproved"):
-            validate_exact_template_transition(previous, source, "backend")
+        migrated, excluded = validate_exact_template_transition(previous, source, "backend")
+        self.assertTrue(migrated["Resources"]["ProxyAny"]["Properties"]["ApiKeyRequired"])
+        self.assertEqual(excluded, ["Resources.ProxyAny.Properties.ApiKeyRequired"])
 
     def test_watchdog_exact_references_only(self):
         previous, source = self.old_from_source("watchdog", "infrastructure/app/handoff-watchdog.yaml")
-        self.assertTrue(validate_exact_template_transition(previous, source, "watchdog"))
+        migrated, excluded = validate_exact_template_transition(previous, source, "watchdog")
+        self.assertEqual(migrated, source)
+        self.assertEqual(excluded, [])
         source["Resources"]["EveryMinute"]["Properties"]["State"] = "DISABLED"
-        with self.assertRaisesRegex(ValueError, "Unapproved"):
-            validate_exact_template_transition(previous, source, "watchdog")
+        migrated, excluded = validate_exact_template_transition(previous, source, "watchdog")
+        self.assertEqual(migrated["Resources"]["EveryMinute"]["Properties"]["State"], "ENABLED")
+        self.assertEqual(excluded, ["Resources.EveryMinute.Properties.State"])
 
     def test_unexpected_live_reference_refused(self):
         previous, source = self.old_from_source("watchdog", "infrastructure/app/handoff-watchdog.yaml")
