@@ -397,3 +397,21 @@ Safety constraints: known pre-PR103 handler bytes from source commit `871abc9931
 ### Recovery preview #60: watchdog target dependency — 26 November 2026
 
 The follow-up [recovery preview #60](https://github.com/rorygleeson/afl-video-platform/actions/workflows/release.yml) progressed past the known API proxy reference but safely blocked the existing watchdog EventBridge rule `EveryMinute.Targets` (`Modify / False`). It did not upload an artifact or execute CloudFormation. The watchdog template has known dynamic Lambda references from `EveryMinute.Targets`, `WatchdogMachine.DefinitionString`, `WatchdogMachineRole.Policies` and `InvokeFromEventBridge.FunctionName`. The validator now checks **all** these exact dependencies using existing resource types, dynamic reference origin, specific property names, non-replacement and no-recreation requirements. Any static change, conditional replacement or unknown resource remains blocked, and the preview now reports all rejected resources together so issues are not uncovered one by one. No permission change or live deployment is implied. A fresh same-commit preview is required.
+
+
+### Stable Lambda-reference migration proposal — 26 November 2026
+
+Recovery preview after PR #106 correctly rejected `InvokeFromEventBridge` in the existing `afl-app-dev-handoff-watchdog` stack. CloudFormation reported `Modify / Conditional` replacement with dynamically evaluated `FunctionName` from `WatchdogLambda.Arn` and `SourceArn` from `EveryMinute.Arn`; each `RequiresRecreation: Always`. Nothing was deployed. This is an infrastructure dependency design problem, **not** justification to relax the release safety guard.
+
+The proposed source-only template refactor decouples stable-name functions from unrelated resources: API `ProxyAny.Integration.Uri` uses the known `afl-app-dev-api` ARN; watchdog `WatchdogMachineRole.Policies`, `WatchdogMachine.DefinitionString`, `EveryMinute.Targets` and `InvokeFromEventBridge.FunctionName` use the known `afl-app-dev-handoff-watchdog` ARN/name; `InvokeFromEventBridge.SourceArn` uses the known `afl-app-dev-handoff-watchdog-image-start` EventBridge rule ARN. The dynamic role reference in `WatchdogMachine.RoleArn` is intentionally unchanged. No IAM permissions, handler logic, resources, source events or retry limits are altered.
+
+**This PR does not migrate AWS.** The existing recovery release uses `UsePreviousTemplate=True` and therefore does not activate these source template changes. Required before recovery deployment:
+
+1. Create a **separate guarded CloudFormation template migration preview** against exact live backend and watchdog stacks, preserving all parameters and existing handler artifacts. Verify template/source provenance and compare actual evaluated ARNs, permissions and event targets; review *every* change-set action. Do not automatically accept `AWS::Lambda::Permission` replacement, even if the final ARN appears identical.
+2. If any replacement/removal/permission interruption is proposed, stop and explicitly approve a safe migration strategy (including rollback and verification of the EventBridge invocation policy) before execution. Do not let the recovery-code release implicitly execute it.
+3. After a validated infrastructure migration and checks confirming existing API/Step Functions/EventBridge invocation paths, run the recovery-code-only CloudFormation preview. Expect exactly two isolated Lambda Code modifications, one per stack. The current validator must continue blocking unexpected resource changes.
+4. Only then use a separately reviewed same-commit `deploy_recovery` action and verify both live Lambda hashes. If a stage fails, do not blindly rerun.
+
+Direct `lambda:UpdateFunctionCode` is **not** the chosen steady-state path: it would leave CloudFormation's configured S3 artifact key behind the actual code deployment and Lambda code differences are not reliably surfaced by CloudFormation drift detection. Existing unified release ownership is retained; no new AWS services or automatic deployment are introduced.
+
+**Status: design/source proposed, live migration NOT executed, recovery tracking NOT deployed.**
