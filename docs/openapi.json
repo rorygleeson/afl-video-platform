@@ -3,7 +3,7 @@
   "info": {
     "title": "AFL Video Platform API",
     "version": "2026-11-26-source",
-    "description": "Source-derived contract for the development REST API. Verified against src/api/handler.py, infrastructure/app/backend.yaml and docs/API_ENDPOINTS.md; NOT an export or validation of the live deployed stage. 20 application method/path operations. All operations use API Gateway x-api-key; OPTIONS is a separate CORS mock. No Stripe, customer authentication or entitlement APIs currently exist. Signed S3 URLs expire in 300 seconds; do not publish real keys or returned signed URLs."
+    "description": "Source-derived contract for the development REST API. Verified against src/api/handler.py, infrastructure/app/backend.yaml and docs/API_ENDPOINTS.md; NOT an export or validation of the live deployed stage. 20 application method/path operations. All operations use API Gateway x-api-key; OPTIONS is a separate CORS mock. No Stripe, customer authentication or entitlement APIs currently exist. Signed S3 URLs expire in 300 seconds; do not publish real keys or returned signed URLs. Lambda proxy mapping is documentary: the actual API Gateway is configured by infrastructure/app/backend.yaml with one ANY /{proxy+} AWS_PROXY integration. The integration URI includes an illustrative CloudFormation-style account placeholder and is not intended for import."
   },
   "servers": [
     {
@@ -87,6 +87,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "lambda_handler"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -133,6 +145,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "presign_upload"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -202,6 +226,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "create_job"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -258,6 +294,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "public_job + overall_job_progress"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -305,6 +353,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "selfie_for_job"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -354,6 +414,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "start_images"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -401,6 +473,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "images_for_job"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -462,6 +546,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "preview_video_prompt"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -510,6 +606,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "scene1_preflight"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -547,6 +655,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "google_auth_check"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -584,6 +704,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "paid_google_connectivity_check"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -664,6 +796,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "start_video_sequence"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -757,6 +901,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "start_real_scene"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -854,6 +1010,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "retry_failed_real_scene"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -916,6 +1084,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "failed_video_diagnostic"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -963,6 +1143,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "video_status"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -1036,6 +1228,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "video_status"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       },
       "post": {
@@ -1107,6 +1311,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "start_mock_video"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     },
@@ -1156,6 +1372,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "start_assembly"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       },
       "get": {
@@ -1214,6 +1442,18 @@
           "503": {
             "$ref": "#/components/responses/Error503"
           }
+        },
+        "x-aws-lambda-handler": {
+          "functionName": "afl-app-dev-api",
+          "source": "src/api/handler.py",
+          "dispatcher": "lambda_handler",
+          "handler": "assembly_public"
+        },
+        "x-amazon-apigateway-integration": {
+          "type": "aws_proxy",
+          "httpMethod": "POST",
+          "uri": "arn:aws:apigateway:ap-southeast-2:lambda:path/2015-03-31/functions/arn:aws:lambda:ap-southeast-2:${AWS::AccountId}:function:afl-app-dev-api/invocations",
+          "passthroughBehavior": "when_no_match"
         }
       }
     }
