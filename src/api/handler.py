@@ -1466,9 +1466,59 @@ def google_auth_check():
     return response(200, {"status": "AUTHENTICATED", "videoGenerationEnabled": False})
 
 
+
+RECOVERY_REASON_RE = re.compile(
+    r"^(?:REVIEW_[A-Z0-9_]{3,64}|NEXT_SCENE_HANDOFF_NEEDS_REVIEW|ASSEMBLY_HANDOFF_NEEDS_REVIEW)$"
+)
+
+
+def record_recovery_issue(event):
+    """Persist a bounded, deduplicated review incident; never mutate job status.
+
+    Only IAM-authorised direct Lambda callers can reach this internal operation.
+    Recovery records do not approve, launch or retry paid Google work.
+    """
+    job_id = event.get("jobId")
+    reason = event.get("reason")
+    if (not isinstance(job_id, str) or not JOB_RE.fullmatch(job_id)
+            or not isinstance(reason, str) or not RECOVERY_REASON_RE.fullmatch(reason)):
+        return {"status": "INVALID_RECOVERY_ISSUE"}
+    occurred_at = datetime.now(timezone.utc).isoformat()
+    issue = {"reason": reason, "status": "NEEDS_REVIEW", "firstDetectedAt": occurred_at}
+    try:
+        DDB.update_item(
+            Key={"jobId": job_id},
+            UpdateExpression=(
+                "SET recoveryIssueCodes = list_append(if_not_exists(recoveryIssueCodes, :empty), :codes), "
+                "recoveryIssues = list_append(if_not_exists(recoveryIssues, :empty), :issues)"
+            ),
+            ConditionExpression=(
+                "attribute_exists(jobId) AND "
+                "(attribute_not_exists(recoveryIssueCodes) OR NOT contains(recoveryIssueCodes, :reason))"
+            ),
+            ExpressionAttributeValues={
+                ":empty": [], ":codes": [reason], ":issues": [issue], ":reason": reason,
+            },
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            raise
+        # A missing job and a duplicate review event must not be confused.
+        existing = get_job(job_id)
+        if not existing:
+            return {"status": "RECOVERY_JOB_MISSING"}
+        if reason in (existing.get("recoveryIssueCodes") or []):
+            return {"status": "RECOVERY_ISSUE_ALREADY_RECORDED"}
+        raise RuntimeError("Could not persist recovery issue after concurrent job update")
+    LOG.error("RECOVERY_ISSUE_RECORDED jobId=%s reason=%s", job_id, reason)
+    return {"status": "RECOVERY_ISSUE_RECORDED"}
+
+
 def lambda_handler(event, context):
     # Internal IAM-authorised watchdog invocation only. Public API Gateway
     # wraps caller JSON inside "body", not the top-level Lambda event.
+    if event.get("op") == "record_recovery_issue":
+        return record_recovery_issue(event)
     if event.get("op") == "reconcile_assembly":
         job_id = event.get("jobId")
         if not isinstance(job_id, str) or not re.fullmatch(r"[0-9a-f]{32}", job_id):
